@@ -120,8 +120,11 @@ export class TaskStore {
       } else if (task.status === "aborted") {
         await this.appendEvent(task.id, "aborted", {
           status: task.status,
-          message: task.error ?? "Task aborted",
-          data: { finishReason: task.finishReason },
+          message: task.abortReason ?? task.error ?? "Task aborted",
+          data: {
+            finishReason: task.finishReason,
+            abortRequestedAt: task.abortRequestedAt,
+          },
         });
       }
     }
