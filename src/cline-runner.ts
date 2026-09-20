@@ -32,8 +32,12 @@ export class ClineRunner {
     cline.subscribe((event: any) => {
       this.lastActivityAt = Date.now();
 
-      if (event?.type === "chunk" && event?.payload?.type === "text") {
-        process.stdout.write(event.payload.text);
+      if (event?.type === "chunk") {
+        if (event?.payload?.type === "text") {
+          process.stdout.write(event.payload.text);
+        } else if (event?.payload?.type === "reasoning") {
+          process.stdout.write("\n[cline reasoning activity]\n");
+        }
         return;
       }
 
@@ -43,21 +47,51 @@ export class ClineRunner {
       }
 
       if (event?.type === "agent_event") {
-        const type = event?.payload?.event?.type;
+        const agentEvent = event?.payload?.event;
+        const type = agentEvent?.type;
+
         if (type === "iteration_start") {
-          process.stdout.write("\n[cline iteration started]\n");
+          const iteration = agentEvent?.iteration ?? agentEvent?.index;
+          process.stdout.write(`\n[cline iteration started${iteration !== undefined ? `: ${iteration}` : ""}]\n`);
         } else if (type === "content_start") {
-          process.stdout.write("\n[cline content/tool activity]\n");
+          const content = agentEvent?.content ?? agentEvent?.part ?? agentEvent?.data;
+          const contentType = content?.type ?? agentEvent?.contentType ?? "activity";
+          const toolName =
+            content?.toolName ??
+            content?.name ??
+            content?.tool?.name ??
+            agentEvent?.toolName;
+          process.stdout.write(
+            `\n[cline content_start: ${contentType}${toolName ? `; tool=${toolName}` : ""}]\n`,
+          );
+        } else if (type === "content_update") {
+          const content = agentEvent?.content ?? agentEvent?.part ?? agentEvent?.data;
+          const toolName = content?.toolName ?? content?.name ?? agentEvent?.toolName;
+          if (toolName) {
+            process.stdout.write(`\n[cline tool update: ${toolName}]\n`);
+          }
+        } else if (type === "content_end") {
+          const content = agentEvent?.content ?? agentEvent?.part ?? agentEvent?.data;
+          const contentType = content?.type ?? agentEvent?.contentType ?? "activity";
+          const toolName = content?.toolName ?? content?.name ?? agentEvent?.toolName;
+          process.stdout.write(
+            `\n[cline content_end: ${contentType}${toolName ? `; tool=${toolName}` : ""}]\n`,
+          );
         } else if (type === "usage") {
-          process.stdout.write("\n[cline usage updated]\n");
+          const usage = agentEvent?.usage ?? agentEvent?.data?.usage;
+          const input = usage?.inputTokens ?? usage?.input_tokens;
+          const output = usage?.outputTokens ?? usage?.output_tokens;
+          process.stdout.write(
+            `\n[cline usage${input !== undefined || output !== undefined ? `: input=${input ?? "?"}, output=${output ?? "?"}` : " updated"}]\n`,
+          );
         } else if (type === "error") {
-          process.stdout.write("\n[cline agent error]\n");
+          process.stdout.write(`\n[cline agent error: ${agentEvent?.error?.message ?? agentEvent?.message ?? "unknown"}]\n`);
         }
         return;
       }
 
       if (event?.type === "hook") {
-        process.stdout.write("\n[cline tool hook]\n");
+        process.stdout.write(`\n[cline tool hook: ${event?.payload?.toolName ?? event?.payload?.name ?? "unknown"}]\n`);
         return;
       }
 
@@ -70,6 +104,13 @@ export class ClineRunner {
   }
 
   private modelConfig() {
+    const capabilities: Array<"tools" | "streaming" | "reasoning" | "reasoning-effort"> = [
+      "tools",
+      "streaming",
+      "reasoning",
+      "reasoning-effort",
+    ];
+
     return {
       providerId: this.worker.providerId,
       modelId: this.worker.modelId,
@@ -77,8 +118,19 @@ export class ClineRunner {
       baseUrl: this.worker.baseUrl,
       cwd: this.workspace,
       workspaceRoot: this.workspace,
-      maxInputTokens: this.worker.maxInputTokens,
-      maxOutputTokens: this.worker.maxOutputTokens,
+      knownModels: {
+        [this.worker.modelId]: {
+          id: this.worker.modelId,
+          name: this.worker.modelId,
+          contextWindow: this.worker.contextWindow,
+          maxInputTokens: this.worker.maxInputTokens,
+          maxTokens: this.worker.maxTokensPerTurn,
+          capabilities,
+        },
+      },
+      thinking: this.worker.reasoningEffort !== "none",
+      reasoningEffort: this.worker.reasoningEffort,
+      maxTokensPerTurn: this.worker.maxTokensPerTurn,
       ...(this.worker.timeoutMs > 0 ? { timeoutMs: this.worker.timeoutMs } : {}),
       ...(this.worker.maxIterations > 0 ? { maxIterations: this.worker.maxIterations } : {}),
       enableTools: true,
