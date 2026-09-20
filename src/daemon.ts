@@ -45,6 +45,10 @@ function errorPayload(error: unknown) {
   };
 }
 
+function isTerminal(task: OrchestratorTask): boolean {
+  return task.status === "completed" || task.status === "failed" || task.status === "aborted";
+}
+
 export async function startDaemon(
   workspace: string,
   worker: WorkerConfig,
@@ -56,6 +60,9 @@ export async function startDaemon(
   // Deliberately serialize all model work. This mirrors OLLAMA_NUM_PARALLEL=1
   // and prevents multiple client requests from competing for the local model.
   let tail: Promise<void> = Promise.resolve();
+  let closing = false;
+  let activeTaskId: string | undefined;
+
   function serial<T>(job: () => Promise<T>): Promise<T> {
     const next = tail.then(job, job);
     tail = next.then(
@@ -65,8 +72,31 @@ export async function startDaemon(
     return next;
   }
 
-  function enqueue(label: string, job: () => Promise<unknown>) {
-    void serial(job).catch((error) => {
+  async function abortIfPending(taskId: string, reason: string): Promise<void> {
+    const task = await store.load(taskId);
+    if (isTerminal(task)) return;
+    try {
+      await runner.abort(taskId, reason);
+    } catch (error) {
+      const latest = await store.load(taskId);
+      if (!isTerminal(latest)) throw error;
+    }
+  }
+
+  function enqueue(taskId: string, label: string, job: () => Promise<unknown>) {
+    void serial(async () => {
+      if (closing) {
+        await abortIfPending(taskId, "Daemon shutting down before task started");
+        return;
+      }
+
+      activeTaskId = taskId;
+      try {
+        await job();
+      } finally {
+        if (activeTaskId === taskId) activeTaskId = undefined;
+      }
+    }).catch((error) => {
       process.stderr.write(
         `\n[orchestrator job failed: ${label}: ${error instanceof Error ? error.message : String(error)}]\n`,
       );
@@ -79,8 +109,9 @@ export async function startDaemon(
 
       if (req.method === "GET" && url.pathname === "/health") {
         json(res, 200, {
-          status: "running",
+          status: closing ? "shutting_down" : "running",
           workspace,
+          activeTaskId,
           worker: {
             providerId: worker.providerId,
             modelId: worker.modelId,
@@ -125,6 +156,11 @@ export async function startDaemon(
       }
 
       if (req.method === "POST" && url.pathname === "/run") {
+        if (closing) {
+          json(res, 503, { error: "Orchestrator daemon is shutting down" });
+          return;
+        }
+
         const body = await readJson(req);
         const goal = String(body?.goal ?? "").trim();
         if (!goal) {
@@ -153,11 +189,16 @@ export async function startDaemon(
         // Acknowledge immediately. Model/tool work continues inside the daemon;
         // clients poll /tasks/:id instead of holding one long HTTP request open.
         json(res, 202, task);
-        enqueue(`run ${task.id}`, () => runner.start(task));
+        enqueue(task.id, `run ${task.id}`, () => runner.start(task));
         return;
       }
 
       if (req.method === "POST" && url.pathname === "/resume") {
+        if (closing) {
+          json(res, 503, { error: "Orchestrator daemon is shutting down" });
+          return;
+        }
+
         const body = await readJson(req);
         const taskId = String(body?.taskId ?? "").trim();
         const prompt = String(body?.prompt ?? "").trim();
@@ -185,7 +226,7 @@ export async function startDaemon(
         process.stdout.write(`\n[orchestrator task queued for resume: ${task.id}]\n`);
 
         json(res, 202, task);
-        enqueue(`resume ${task.id}`, () => runner.resume(task, prompt));
+        enqueue(task.id, `resume ${task.id}`, () => runner.resume(task, prompt));
         return;
       }
 
@@ -218,19 +259,40 @@ export async function startDaemon(
   );
 
   await new Promise<void>((resolve) => {
-    let closing = false;
     const shutdown = async (signal: string) => {
       if (closing) return;
       closing = true;
+      const reason = `Daemon shutdown (${signal})`;
       process.stdout.write(`\n[orchestrator daemon shutting down: ${signal}]\n`);
 
-      server.close(async () => {
+      const stoppedAccepting = new Promise<void>((serverClosed) => {
+        server.close(() => serverClosed());
+      });
+
+      try {
+        if (activeTaskId) {
+          await abortIfPending(activeTaskId, reason);
+        }
+
+        // Drain the serial queue. Any task that had been accepted but not yet
+        // started sees closing=true in enqueue() and is persisted as aborted.
+        await tail;
+        await runner.close(reason);
+        await stoppedAccepting;
+        process.stdout.write("[orchestrator daemon shutdown complete]\n");
+      } catch (error) {
+        process.stderr.write(
+          `\n[orchestrator shutdown warning: ${error instanceof Error ? error.message : String(error)}]\n`,
+        );
         try {
-          await runner.close(`daemon ${signal}`);
+          await runner.close(reason);
         } finally {
           resolve();
         }
-      });
+        return;
+      }
+
+      resolve();
     };
 
     process.once("SIGINT", () => void shutdown("SIGINT"));
