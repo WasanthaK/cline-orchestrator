@@ -20,6 +20,7 @@ Usage:
   npm run dev -- status <workspace> <task-id>
   npm run dev -- events <workspace> <task-id>
   npm run dev -- resume <workspace> <task-id> <prompt...>
+  npm run dev -- abort <workspace> <task-id> [reason...]
 
 Environment:
   ORCH_PROVIDER=ollama-openai   # recommended for local Ollama
@@ -47,7 +48,7 @@ Provider notes:
 
 Architecture:
   daemon owns the long-lived ClineCore session runtime.
-  run/resume are thin localhost clients and require the daemon to be running.
+  run/resume/abort are thin localhost clients and require the daemon to be running.
 `);
   process.exit(1);
 }
@@ -287,6 +288,19 @@ async function main() {
     const completed = await waitForDaemonTask(queued.id);
     if (completed.lastOutput) console.log(`\n${completed.lastOutput}`);
     if (completed.error) console.error(`\n[error: ${completed.error}]`);
+    return;
+  }
+
+  if (command === "abort") {
+    const [taskId, ...reasonParts] = rest;
+    if (!taskId) usage();
+    const reason = reasonParts.join(" ").trim() || "Task aborted by user";
+    const task = await daemonRequest<OrchestratorTask>(
+      `/tasks/${encodeURIComponent(taskId)}/abort`,
+      { reason },
+    );
+    console.log(`[orchestrator task: ${task.id}; status=${task.status}]`);
+    console.log(`[abort reason: ${task.abortReason ?? reason}]`);
     return;
   }
 
