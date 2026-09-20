@@ -147,6 +147,32 @@ async function daemonRequest<T>(pathName: string, body?: unknown): Promise<T> {
   return payload as T;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTerminalStatus(status: OrchestratorTask["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "aborted";
+}
+
+async function waitForDaemonTask(taskId: string): Promise<OrchestratorTask> {
+  let lastStatus: OrchestratorTask["status"] | undefined;
+
+  while (true) {
+    const task = await daemonRequest<OrchestratorTask>(`/tasks/${encodeURIComponent(taskId)}`);
+    if (task.status !== lastStatus) {
+      console.log(`[status: ${task.status}]`);
+      lastStatus = task.status;
+    }
+
+    if (isTerminalStatus(task.status)) {
+      return task;
+    }
+
+    await sleep(1000);
+  }
+}
+
 async function printAvailableTasks(store: TaskStore) {
   const tasks = await store.list();
   if (tasks.length === 0) {
@@ -202,10 +228,11 @@ async function main() {
     const goal = rest.join(" ").trim();
     if (!goal) usage();
 
-    const completed = await daemonRequest<OrchestratorTask>("/run", { goal });
-    console.log(`[orchestrator task: ${completed.id}]`);
+    const queued = await daemonRequest<OrchestratorTask>("/run", { goal });
+    console.log(`[orchestrator task: ${queued.id}]`);
+    const completed = await waitForDaemonTask(queued.id);
     if (completed.lastOutput) console.log(`\n${completed.lastOutput}`);
-    console.log(`\n[status: ${completed.status}]`);
+    if (completed.error) console.error(`\n[error: ${completed.error}]`);
     return;
   }
 
@@ -214,9 +241,11 @@ async function main() {
     const prompt = promptParts.join(" ").trim();
     if (!taskId || !prompt) usage();
 
-    const completed = await daemonRequest<OrchestratorTask>("/resume", { taskId, prompt });
+    const queued = await daemonRequest<OrchestratorTask>("/resume", { taskId, prompt });
+    console.log(`[orchestrator task: ${queued.id}; resume queued]`);
+    const completed = await waitForDaemonTask(queued.id);
     if (completed.lastOutput) console.log(`\n${completed.lastOutput}`);
-    console.log(`\n[status: ${completed.status}]`);
+    if (completed.error) console.error(`\n[error: ${completed.error}]`);
     return;
   }
 
