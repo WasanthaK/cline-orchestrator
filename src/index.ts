@@ -3,7 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import { ClineRunner } from "./cline-runner.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
-import type { OrchestratorTask, WorkerConfig } from "./types.js";
+import type { OrchestratorTask, ReasoningEffort, WorkerConfig } from "./types.js";
 
 function usage(): never {
   console.error(`
@@ -20,8 +20,10 @@ Environment:
   ORCH_MODEL=qwen38-27b-192k:latest
   ORCH_BASE_URL=http://localhost:11434
   ORCH_API_KEY=
+  ORCH_CONTEXT_WINDOW=196608
   ORCH_MAX_INPUT_TOKENS=180000
-  ORCH_MAX_OUTPUT_TOKENS=16000
+  ORCH_MAX_TOKENS_PER_TURN=4096
+  ORCH_REASONING_EFFORT=none
   ORCH_TIMEOUT_MS=0
   ORCH_MAX_ITERATIONS=0
   ORCH_AUTO_APPROVE_COMMANDS=false
@@ -41,6 +43,14 @@ function readInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function readReasoningEffort(): ReasoningEffort {
+  const value = (process.env.ORCH_REASONING_EFFORT ?? "none").toLowerCase();
+  if (value === "none" || value === "low" || value === "medium" || value === "high" || value === "xhigh") {
+    return value;
+  }
+  return "none";
+}
+
 function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -49,6 +59,20 @@ function workerConfig(): WorkerConfig {
   const requestedProvider = process.env.ORCH_PROVIDER ?? "ollama-openai";
   const modelId = process.env.ORCH_MODEL ?? "qwen38-27b-192k:latest";
   const configuredBaseUrl = stripTrailingSlash(process.env.ORCH_BASE_URL ?? "http://localhost:11434");
+  const common = {
+    modelId,
+    contextWindow: readInt("ORCH_CONTEXT_WINDOW", 196608),
+    maxInputTokens: readInt("ORCH_MAX_INPUT_TOKENS", 180000),
+    maxTokensPerTurn: readInt(
+      "ORCH_MAX_TOKENS_PER_TURN",
+      readInt("ORCH_MAX_OUTPUT_TOKENS", 4096),
+    ),
+    reasoningEffort: readReasoningEffort(),
+    timeoutMs: readInt("ORCH_TIMEOUT_MS", 0),
+    maxIterations: readInt("ORCH_MAX_ITERATIONS", 0),
+    autoApproveCommands: process.env.ORCH_AUTO_APPROVE_COMMANDS === "true",
+    autoApproveEdits: process.env.ORCH_AUTO_APPROVE_EDITS === "true",
+  };
 
   if (requestedProvider === "ollama-openai") {
     const baseUrl = configuredBaseUrl.endsWith("/v1")
@@ -56,30 +80,18 @@ function workerConfig(): WorkerConfig {
       : `${configuredBaseUrl}/v1`;
 
     return {
+      ...common,
       providerId: "openai-compatible",
-      modelId,
       apiKey: process.env.ORCH_API_KEY || "ollama",
       baseUrl,
-      maxInputTokens: readInt("ORCH_MAX_INPUT_TOKENS", 180000),
-      maxOutputTokens: readInt("ORCH_MAX_OUTPUT_TOKENS", 16000),
-      timeoutMs: readInt("ORCH_TIMEOUT_MS", 0),
-      maxIterations: readInt("ORCH_MAX_ITERATIONS", 0),
-      autoApproveCommands: process.env.ORCH_AUTO_APPROVE_COMMANDS === "true",
-      autoApproveEdits: process.env.ORCH_AUTO_APPROVE_EDITS === "true",
     };
   }
 
   return {
+    ...common,
     providerId: requestedProvider,
-    modelId,
     apiKey: process.env.ORCH_API_KEY,
     baseUrl: configuredBaseUrl,
-    maxInputTokens: readInt("ORCH_MAX_INPUT_TOKENS", 180000),
-    maxOutputTokens: readInt("ORCH_MAX_OUTPUT_TOKENS", 16000),
-    timeoutMs: readInt("ORCH_TIMEOUT_MS", 0),
-    maxIterations: readInt("ORCH_MAX_ITERATIONS", 0),
-    autoApproveCommands: process.env.ORCH_AUTO_APPROVE_COMMANDS === "true",
-    autoApproveEdits: process.env.ORCH_AUTO_APPROVE_EDITS === "true",
   };
 }
 
@@ -125,7 +137,9 @@ async function main() {
   }
 
   const config = workerConfig();
-  console.log(`[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}]`);
+  console.log(
+    `[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}; context=${config.contextWindow}; input=${config.maxInputTokens}; turn=${config.maxTokensPerTurn}; reasoning=${config.reasoningEffort}]`,
+  );
   const runner = new ClineRunner(workspace, config);
 
   if (command === "run") {
