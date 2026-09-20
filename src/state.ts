@@ -1,7 +1,25 @@
 import crypto from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { OrchestratorTask, TaskEvent, TaskEventType, TaskStatus } from "./types.js";
+import { captureGitSnapshot } from "./git-state.js";
+import type {
+  GitSnapshot,
+  OrchestratorTask,
+  TaskEvent,
+  TaskEventType,
+  TaskStatus,
+} from "./types.js";
+
+function isTerminalStatus(status: TaskStatus): boolean {
+  return status === "completed" || status === "failed" || status === "aborted";
+}
+
+function gitSnapshotMessage(phase: "before" | "after", snapshot: GitSnapshot): string {
+  if (!snapshot.available) return `Git ${phase} snapshot unavailable`;
+  const branch = snapshot.branch ?? "(detached)";
+  const head = snapshot.head?.slice(0, 8) ?? "unknown";
+  return `Git ${phase}: ${branch}@${head}; dirty=${snapshot.dirty ? "yes" : "no"}; changed=${snapshot.changedFiles ?? 0}`;
+}
 
 export class TaskNotFoundError extends Error {
   constructor(
@@ -49,6 +67,22 @@ export class TaskStore {
     const retryIncreased = (task.retryCount ?? 0) > (previous.retryCount ?? 0);
     const recoveryIncreased = (task.recoveryCount ?? 0) > (previous.recoveryCount ?? 0);
     const generationIncreased = (task.sessionGeneration ?? 0) > (previous.sessionGeneration ?? 0);
+    const beforeSnapshot = task.lastRunGit?.before;
+    const afterSnapshot = task.lastRunGit?.after;
+    const beforeChanged =
+      beforeSnapshot !== undefined &&
+      beforeSnapshot.capturedAt !== previous.lastRunGit?.before?.capturedAt;
+    const afterChanged =
+      afterSnapshot !== undefined &&
+      afterSnapshot.capturedAt !== previous.lastRunGit?.after?.capturedAt;
+
+    if (beforeChanged && beforeSnapshot) {
+      await this.appendEvent(task.id, "git_snapshot", {
+        status: task.status,
+        message: gitSnapshotMessage("before", beforeSnapshot),
+        data: { phase: "before", snapshot: beforeSnapshot },
+      });
+    }
 
     if (stallIncreased) {
       await this.appendEvent(task.id, "stalled", {
@@ -98,6 +132,14 @@ export class TaskStore {
       }
     }
 
+    if (afterChanged && afterSnapshot) {
+      await this.appendEvent(task.id, "git_snapshot", {
+        status: task.status,
+        message: gitSnapshotMessage("after", afterSnapshot),
+        data: { phase: "after", snapshot: afterSnapshot },
+      });
+    }
+
     if (task.status !== previous.status) {
       if (task.status === "running" && !retryIncreased) {
         await this.appendEvent(task.id, "run_started", {
@@ -133,6 +175,28 @@ export class TaskStore {
   async save(task: OrchestratorTask): Promise<void> {
     await mkdir(this.tasksDir(), { recursive: true });
     const previous = await this.previousTask(task.id);
+
+    if (previous) {
+      const runStarted =
+        task.status === "running" &&
+        previous.status !== "running" &&
+        (task.runCount ?? 0) > (previous.runCount ?? 0);
+      if (runStarted) {
+        task.lastRunGit = {
+          before: await captureGitSnapshot(this.rootDir),
+        };
+      }
+
+      const terminalTransition =
+        isTerminalStatus(task.status) && !isTerminalStatus(previous.status);
+      if (terminalTransition && task.lastRunGit?.before && !task.lastRunGit.after) {
+        task.lastRunGit = {
+          ...task.lastRunGit,
+          after: await captureGitSnapshot(this.rootDir),
+        };
+      }
+    }
+
     task.updatedAt = new Date().toISOString();
     await writeFile(this.taskPath(task.id), JSON.stringify(task, null, 2) + "\n", "utf8");
     await this.inferEvents(previous, task);
