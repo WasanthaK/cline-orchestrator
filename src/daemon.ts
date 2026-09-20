@@ -65,6 +65,14 @@ export async function startDaemon(
     return next;
   }
 
+  function enqueue(label: string, job: () => Promise<unknown>) {
+    void serial(job).catch((error) => {
+      process.stderr.write(
+        `\n[orchestrator job failed: ${label}: ${error instanceof Error ? error.message : String(error)}]\n`,
+      );
+    });
+  }
+
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -110,15 +118,18 @@ export async function startDaemon(
           id: crypto.randomUUID(),
           goal,
           workspace,
-          status: "created",
+          status: "waiting",
           createdAt: now,
           updatedAt: now,
+          lastPrompt: goal,
         };
         await store.save(task);
-        process.stdout.write(`\n[orchestrator task: ${task.id}]\n`);
+        process.stdout.write(`\n[orchestrator task queued: ${task.id}]\n`);
 
-        const completed = await serial(() => runner.start(task));
-        json(res, 200, completed);
+        // Acknowledge immediately. Model/tool work continues inside the daemon;
+        // clients poll /tasks/:id instead of holding one long HTTP request open.
+        json(res, 202, task);
+        enqueue(`run ${task.id}`, () => runner.start(task));
         return;
       }
 
@@ -132,8 +143,20 @@ export async function startDaemon(
         }
 
         const task = await store.load(taskId);
-        const completed = await serial(() => runner.resume(task, prompt));
-        json(res, 200, completed);
+        if (task.status === "running" || task.status === "waiting") {
+          json(res, 409, { error: `Task ${task.id} is already ${task.status}` });
+          return;
+        }
+
+        task.status = "waiting";
+        task.lastPrompt = prompt;
+        task.error = undefined;
+        task.finishReason = undefined;
+        await store.save(task);
+        process.stdout.write(`\n[orchestrator task queued for resume: ${task.id}]\n`);
+
+        json(res, 202, task);
+        enqueue(`resume ${task.id}`, () => runner.resume(task, prompt));
         return;
       }
 
