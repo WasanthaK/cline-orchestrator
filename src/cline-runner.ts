@@ -563,6 +563,10 @@ Continue from the durable state above. Preserve existing work, verify assumption
       await this.store.save(task);
     }
 
+    if (this.abortRequestedTaskIds.has(task.id)) {
+      throw new Error(task.abortReason ?? "Task aborted by user");
+    }
+
     this.lastActivityAt = Date.now();
     const sendPromise: Promise<any> = cline.send({ sessionId, prompt });
     if (this.worker.stallTimeoutMs <= 0) {
