@@ -2,6 +2,7 @@ export type TaskStatus =
   | "created"
   | "running"
   | "waiting"
+  | "stalled"
   | "completed"
   | "failed"
   | "aborted";
@@ -23,10 +24,18 @@ export interface RunMetrics {
   toolCalls: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  attempts?: number;
+  retries?: number;
+  stalls?: number;
   turns: RunIterationMetrics[];
 }
 
-export type SessionRecoveryReason = "session_not_found" | "missing_session_id";
+export type SessionRecoveryReason =
+  | "session_not_found"
+  | "missing_session_id"
+  | "watchdog_stall";
+
+export type RetryReason = "watchdog_stall";
 
 export interface OrchestratorTask {
   id: string;
@@ -41,6 +50,12 @@ export interface OrchestratorTask {
   lastRecoveryAt?: string;
   lastRecoveryReason?: SessionRecoveryReason;
   lastRecoveredFromSessionId?: string;
+  retryCount?: number;
+  stallCount?: number;
+  lastStallAt?: string;
+  lastStallSilenceMs?: number;
+  lastRetryAt?: string;
+  lastRetryReason?: RetryReason;
   lastPrompt?: string;
   lastOutput?: string;
   finishReason?: string;
@@ -60,6 +75,9 @@ export interface WorkerConfig {
   reasoningEffort: ReasoningEffort;
   timeoutMs: number;
   maxIterations: number;
+  stallTimeoutMs: number;
+  maxRetries: number;
+  retryDelayMs: number;
   autoApproveCommands: boolean;
   autoApproveEdits: boolean;
 }
