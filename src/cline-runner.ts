@@ -1,5 +1,5 @@
 import { ClineCore } from "@cline/sdk";
-import type { OrchestratorTask, WorkerConfig } from "./types.js";
+import type { OrchestratorTask, TaskStatus, WorkerConfig } from "./types.js";
 import { TaskStore } from "./state.js";
 
 const READ_TOOLS = new Set(["read_files", "search_codebase", "fetch_web_content"]);
@@ -15,6 +15,7 @@ const EDIT_TOOLS = new Set([
 export class ClineRunner {
   private readonly store: TaskStore;
   private lastActivityAt = Date.now();
+  private streamedText = "";
 
   constructor(
     private readonly workspace: string,
@@ -33,7 +34,8 @@ export class ClineRunner {
       this.lastActivityAt = Date.now();
 
       if (event?.type === "chunk") {
-        if (event?.payload?.type === "text") {
+        if (event?.payload?.type === "text" && event?.payload?.text) {
+          this.streamedText += event.payload.text;
           process.stdout.write(event.payload.text);
         } else if (event?.payload?.type === "reasoning") {
           process.stdout.write("\n[cline reasoning activity]\n");
@@ -51,41 +53,48 @@ export class ClineRunner {
         const type = agentEvent?.type;
 
         if (type === "iteration_start") {
-          const iteration = agentEvent?.iteration ?? agentEvent?.index;
-          process.stdout.write(`\n[cline iteration started${iteration !== undefined ? `: ${iteration}` : ""}]\n`);
-        } else if (type === "content_start") {
-          const content = agentEvent?.content ?? agentEvent?.part ?? agentEvent?.data;
-          const contentType = content?.type ?? agentEvent?.contentType ?? "activity";
-          const toolName =
-            content?.toolName ??
-            content?.name ??
-            content?.tool?.name ??
-            agentEvent?.toolName;
+          process.stdout.write(`\n[cline iteration started: ${agentEvent?.iteration ?? "?"}]\n`);
+        } else if (type === "iteration_end") {
           process.stdout.write(
-            `\n[cline content_start: ${contentType}${toolName ? `; tool=${toolName}` : ""}]\n`,
+            `\n[cline iteration ended: ${agentEvent?.iteration ?? "?"}; tools=${agentEvent?.toolCallCount ?? "?"}]\n`,
           );
+        } else if (type === "content_start") {
+          const contentType = agentEvent?.contentType ?? "activity";
+          const toolName = agentEvent?.toolName;
+
+          if (contentType === "text" && agentEvent?.text) {
+            this.streamedText += agentEvent.text;
+            process.stdout.write(agentEvent.text);
+          } else if (contentType === "reasoning") {
+            process.stdout.write("\n[cline reasoning activity]\n");
+          } else {
+            process.stdout.write(
+              `\n[cline content_start: ${contentType}${toolName ? `; tool=${toolName}` : ""}]\n`,
+            );
+          }
         } else if (type === "content_update") {
-          const content = agentEvent?.content ?? agentEvent?.part ?? agentEvent?.data;
-          const toolName = content?.toolName ?? content?.name ?? agentEvent?.toolName;
+          const toolName = agentEvent?.toolName;
           if (toolName) {
             process.stdout.write(`\n[cline tool update: ${toolName}]\n`);
           }
         } else if (type === "content_end") {
-          const content = agentEvent?.content ?? agentEvent?.part ?? agentEvent?.data;
-          const contentType = content?.type ?? agentEvent?.contentType ?? "activity";
-          const toolName = content?.toolName ?? content?.name ?? agentEvent?.toolName;
-          process.stdout.write(
-            `\n[cline content_end: ${contentType}${toolName ? `; tool=${toolName}` : ""}]\n`,
-          );
+          const contentType = agentEvent?.contentType ?? "activity";
+          const toolName = agentEvent?.toolName;
+          if (contentType === "tool") {
+            process.stdout.write(
+              `\n[cline tool finished: ${toolName ?? "unknown"}${agentEvent?.durationMs !== undefined ? `; ${agentEvent.durationMs}ms` : ""}]\n`,
+            );
+          }
         } else if (type === "usage") {
-          const usage = agentEvent?.usage ?? agentEvent?.data?.usage;
-          const input = usage?.inputTokens ?? usage?.input_tokens;
-          const output = usage?.outputTokens ?? usage?.output_tokens;
           process.stdout.write(
-            `\n[cline usage${input !== undefined || output !== undefined ? `: input=${input ?? "?"}, output=${output ?? "?"}` : " updated"}]\n`,
+            `\n[cline usage: input=${agentEvent?.inputTokens ?? "?"}, output=${agentEvent?.outputTokens ?? "?"}, totalIn=${agentEvent?.totalInputTokens ?? "?"}, totalOut=${agentEvent?.totalOutputTokens ?? "?"}]\n`,
           );
+        } else if (type === "notice") {
+          process.stdout.write(`\n[cline notice: ${agentEvent?.message ?? "unknown"}]\n`);
+        } else if (type === "done") {
+          process.stdout.write(`\n[cline agent done: ${agentEvent?.reason ?? "unknown"}]\n`);
         } else if (type === "error") {
-          process.stdout.write(`\n[cline agent error: ${agentEvent?.error?.message ?? agentEvent?.message ?? "unknown"}]\n`);
+          process.stdout.write(`\n[cline agent error: ${agentEvent?.error?.message ?? "unknown"}]\n`);
         }
         return;
       }
@@ -96,7 +105,13 @@ export class ClineRunner {
       }
 
       if (event?.type === "ended") {
-        process.stdout.write(`\n[cline ended: ${event?.payload?.finishReason ?? "unknown"}]\n`);
+        const finishReason =
+          event?.payload?.finishReason ??
+          event?.payload?.result?.finishReason ??
+          event?.finishReason ??
+          event?.result?.finishReason ??
+          "unknown";
+        process.stdout.write(`\n[cline ended: ${finishReason}]\n`);
       }
     });
 
@@ -199,8 +214,29 @@ export class ClineRunner {
     }, 15000);
   }
 
+  private statusFromFinishReason(finishReason: string | undefined): TaskStatus {
+    if (finishReason === "completed") return "completed";
+    if (finishReason === "aborted") return "aborted";
+    return "failed";
+  }
+
+  private async applyResult(task: OrchestratorTask, result: any): Promise<OrchestratorTask> {
+    task.finishReason = result?.finishReason;
+    task.lastOutput = typeof result?.text === "string" ? result.text : undefined;
+    task.status = this.statusFromFinishReason(task.finishReason);
+
+    if (task.lastOutput && this.streamedText.trim().length === 0) {
+      process.stdout.write(`\n${task.lastOutput}\n`);
+    }
+
+    process.stdout.write(`\n[cline result: ${task.finishReason ?? "unknown"}]\n`);
+    await this.store.save(task);
+    return task;
+  }
+
   async start(task: OrchestratorTask): Promise<OrchestratorTask> {
     const cline = await this.createCore();
+    this.streamedText = "";
     task.status = "running";
     task.lastPrompt = task.goal;
     await this.store.save(task);
@@ -225,10 +261,7 @@ export class ClineRunner {
           prompt: task.goal,
         });
 
-        task.finishReason = result?.finishReason;
-        task.status = result?.finishReason === "error" ? "failed" : "completed";
-        await this.store.save(task);
-        return task;
+        return await this.applyResult(task, result);
       } finally {
         clearInterval(heartbeat);
       }
@@ -250,6 +283,7 @@ export class ClineRunner {
     }
 
     const cline = await this.createCore();
+    this.streamedText = "";
     task.status = "running";
     task.lastPrompt = prompt;
     await this.store.save(task);
@@ -262,10 +296,7 @@ export class ClineRunner {
           prompt,
         });
 
-        task.finishReason = result?.finishReason;
-        task.status = result?.finishReason === "error" ? "failed" : "completed";
-        await this.store.save(task);
-        return task;
+        return await this.applyResult(task, result);
       } finally {
         clearInterval(heartbeat);
       }
