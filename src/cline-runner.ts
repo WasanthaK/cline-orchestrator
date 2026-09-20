@@ -95,8 +95,8 @@ export class ClineRunner {
         prompt,
       });
 
-      task.finishReason = result.result?.finishReason;
-      task.status = result.result?.finishReason === "error" ? "failed" : "completed";
+      task.finishReason = result?.finishReason;
+      task.status = result?.finishReason === "error" ? "failed" : "completed";
       await this.store.save(task);
       return task;
     } catch (error) {
