@@ -1,5 +1,11 @@
 import { ClineCore } from "@cline/sdk";
-import type { OrchestratorTask, TaskStatus, WorkerConfig } from "./types.js";
+import type {
+  OrchestratorTask,
+  RunIterationMetrics,
+  RunMetrics,
+  TaskStatus,
+  WorkerConfig,
+} from "./types.js";
 import { TaskStore } from "./state.js";
 
 const READ_TOOLS = new Set(["read_files", "search_codebase", "fetch_web_content"]);
@@ -17,12 +23,84 @@ export class ClineRunner {
   private lastActivityAt = Date.now();
   private streamedText = "";
   private cline: any | undefined;
+  private currentRunMetrics: RunMetrics | undefined;
+  private currentIteration = 0;
+  private runStartedAtMs = 0;
 
   constructor(
     private readonly workspace: string,
     private readonly worker: WorkerConfig,
   ) {
     this.store = new TaskStore(workspace);
+  }
+
+  private getTurn(iteration: number): RunIterationMetrics | undefined {
+    if (!this.currentRunMetrics) return undefined;
+
+    let turn = this.currentRunMetrics.turns.find((item) => item.iteration === iteration);
+    if (!turn) {
+      turn = {
+        iteration,
+        toolCalls: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+      };
+      this.currentRunMetrics.turns.push(turn);
+      this.currentRunMetrics.turns.sort((a, b) => a.iteration - b.iteration);
+    }
+
+    this.currentRunMetrics.iterations = Math.max(this.currentRunMetrics.iterations, iteration);
+    return turn;
+  }
+
+  private refreshMetricTotals() {
+    if (!this.currentRunMetrics) return;
+    this.currentRunMetrics.toolCalls = this.currentRunMetrics.turns.reduce(
+      (sum, turn) => sum + turn.toolCalls,
+      0,
+    );
+    this.currentRunMetrics.totalInputTokens = this.currentRunMetrics.turns.reduce(
+      (sum, turn) => sum + turn.inputTokens,
+      0,
+    );
+    this.currentRunMetrics.totalOutputTokens = this.currentRunMetrics.turns.reduce(
+      (sum, turn) => sum + turn.outputTokens,
+      0,
+    );
+  }
+
+  private beginRun(task: OrchestratorTask, prompt: string) {
+    this.streamedText = "";
+    this.currentIteration = 0;
+    this.runStartedAtMs = Date.now();
+    this.currentRunMetrics = {
+      startedAt: new Date(this.runStartedAtMs).toISOString(),
+      iterations: 0,
+      toolCalls: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      turns: [],
+    };
+
+    task.runCount = (task.runCount ?? 0) + 1;
+    task.lastRunMetrics = this.currentRunMetrics;
+    task.status = "running";
+    task.lastPrompt = prompt;
+    task.error = undefined;
+  }
+
+  private finishRunMetrics(task: OrchestratorTask) {
+    if (!this.currentRunMetrics) return;
+
+    this.refreshMetricTotals();
+    const completedAtMs = Date.now();
+    this.currentRunMetrics.completedAt = new Date(completedAtMs).toISOString();
+    this.currentRunMetrics.durationMs = completedAtMs - this.runStartedAtMs;
+    task.lastRunMetrics = this.currentRunMetrics;
+
+    process.stdout.write(
+      `\n[cline run metrics: iterations=${this.currentRunMetrics.iterations}; tools=${this.currentRunMetrics.toolCalls}; input=${this.currentRunMetrics.totalInputTokens}; output=${this.currentRunMetrics.totalOutputTokens}; duration=${this.currentRunMetrics.durationMs}ms]\n`,
+    );
   }
 
   private async getCore() {
@@ -56,8 +134,20 @@ export class ClineRunner {
         const type = agentEvent?.type;
 
         if (type === "iteration_start") {
+          const iteration = Number(agentEvent?.iteration ?? 0);
+          if (iteration > 0) {
+            this.currentIteration = iteration;
+            this.getTurn(iteration);
+          }
           process.stdout.write(`\n[cline iteration started: ${agentEvent?.iteration ?? "?"}]\n`);
         } else if (type === "iteration_end") {
+          const iteration = Number(agentEvent?.iteration ?? this.currentIteration ?? 0);
+          const toolCalls = Number(agentEvent?.toolCallCount ?? 0);
+          if (iteration > 0) {
+            const turn = this.getTurn(iteration);
+            if (turn) turn.toolCalls = toolCalls;
+            this.refreshMetricTotals();
+          }
           process.stdout.write(
             `\n[cline iteration ended: ${agentEvent?.iteration ?? "?"}; tools=${agentEvent?.toolCallCount ?? "?"}]\n`,
           );
@@ -89,6 +179,15 @@ export class ClineRunner {
             );
           }
         } else if (type === "usage") {
+          const iteration = this.currentIteration > 0 ? this.currentIteration : 1;
+          const turn = this.getTurn(iteration);
+          const inputTokens = Number(agentEvent?.inputTokens ?? 0);
+          const outputTokens = Number(agentEvent?.outputTokens ?? 0);
+          if (turn) {
+            turn.inputTokens += Number.isFinite(inputTokens) ? inputTokens : 0;
+            turn.outputTokens += Number.isFinite(outputTokens) ? outputTokens : 0;
+            this.refreshMetricTotals();
+          }
           process.stdout.write(
             `\n[cline usage: input=${agentEvent?.inputTokens ?? "?"}, output=${agentEvent?.outputTokens ?? "?"}, totalIn=${agentEvent?.totalInputTokens ?? "?"}, totalOut=${agentEvent?.totalOutputTokens ?? "?"}]\n`,
           );
@@ -235,6 +334,7 @@ export class ClineRunner {
     task.finishReason = result?.finishReason;
     task.lastOutput = typeof result?.text === "string" ? result.text : undefined;
     task.status = this.statusFromFinishReason(task.finishReason);
+    this.finishRunMetrics(task);
 
     if (task.lastOutput && this.streamedText.trim().length === 0) {
       process.stdout.write(`\n${task.lastOutput}\n`);
@@ -247,10 +347,7 @@ export class ClineRunner {
 
   async start(task: OrchestratorTask): Promise<OrchestratorTask> {
     const cline = await this.getCore();
-    this.streamedText = "";
-    task.status = "running";
-    task.lastPrompt = task.goal;
-    task.error = undefined;
+    this.beginRun(task, task.goal);
     await this.store.save(task);
 
     try {
@@ -280,6 +377,7 @@ export class ClineRunner {
     } catch (error) {
       task.status = "failed";
       task.error = error instanceof Error ? error.message : String(error);
+      this.finishRunMetrics(task);
       await this.store.save(task);
       throw error;
     }
@@ -293,10 +391,7 @@ export class ClineRunner {
     }
 
     const cline = await this.getCore();
-    this.streamedText = "";
-    task.status = "running";
-    task.lastPrompt = prompt;
-    task.error = undefined;
+    this.beginRun(task, prompt);
     await this.store.save(task);
 
     try {
@@ -314,6 +409,7 @@ export class ClineRunner {
     } catch (error) {
       task.status = "failed";
       task.error = error instanceof Error ? error.message : String(error);
+      this.finishRunMetrics(task);
       await this.store.save(task);
       throw error;
     }
