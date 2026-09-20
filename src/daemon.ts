@@ -265,20 +265,19 @@ export async function startDaemon(
       const reason = `Daemon shutdown (${signal})`;
       process.stdout.write(`\n[orchestrator daemon shutting down: ${signal}]\n`);
 
-      const stoppedAccepting = new Promise<void>((serverClosed) => {
-        server.close(() => serverClosed());
-      });
-
       try {
         if (activeTaskId) {
           await abortIfPending(activeTaskId, reason);
         }
 
-        // Drain the serial queue. Any task that had been accepted but not yet
-        // started sees closing=true in enqueue() and is persisted as aborted.
+        // Keep the listener alive while draining so polling clients can observe
+        // final task/event state. New run/resume requests receive 503 because
+        // closing=true. Queued work is persisted as aborted by enqueue().
         await tail;
         await runner.close(reason);
-        await stoppedAccepting;
+        await new Promise<void>((serverClosed) => {
+          server.close(() => serverClosed());
+        });
         process.stdout.write("[orchestrator daemon shutdown complete]\n");
       } catch (error) {
         process.stderr.write(
@@ -287,7 +286,7 @@ export async function startDaemon(
         try {
           await runner.close(reason);
         } finally {
-          resolve();
+          server.close(() => resolve());
         }
         return;
       }
