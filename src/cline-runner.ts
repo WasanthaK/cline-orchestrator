@@ -16,6 +16,7 @@ export class ClineRunner {
   private readonly store: TaskStore;
   private lastActivityAt = Date.now();
   private streamedText = "";
+  private cline: any | undefined;
 
   constructor(
     private readonly workspace: string,
@@ -24,7 +25,9 @@ export class ClineRunner {
     this.store = new TaskStore(workspace);
   }
 
-  private async createCore() {
+  private async getCore() {
+    if (this.cline) return this.cline;
+
     const cline = await ClineCore.create({
       clientName: "cline-orchestrator",
       backendMode: "local",
@@ -115,7 +118,15 @@ export class ClineRunner {
       }
     });
 
+    this.cline = cline;
     return cline;
+  }
+
+  async close(reason = "orchestrator shutdown"): Promise<void> {
+    if (!this.cline) return;
+    const cline = this.cline;
+    this.cline = undefined;
+    await cline.dispose(reason);
   }
 
   private modelConfig() {
@@ -235,10 +246,11 @@ export class ClineRunner {
   }
 
   async start(task: OrchestratorTask): Promise<OrchestratorTask> {
-    const cline = await this.createCore();
+    const cline = await this.getCore();
     this.streamedText = "";
     task.status = "running";
     task.lastPrompt = task.goal;
+    task.error = undefined;
     await this.store.save(task);
 
     try {
@@ -270,8 +282,6 @@ export class ClineRunner {
       task.error = error instanceof Error ? error.message : String(error);
       await this.store.save(task);
       throw error;
-    } finally {
-      await cline.dispose("orchestrator run finished");
     }
   }
 
@@ -282,10 +292,11 @@ export class ClineRunner {
       );
     }
 
-    const cline = await this.createCore();
+    const cline = await this.getCore();
     this.streamedText = "";
     task.status = "running";
     task.lastPrompt = prompt;
+    task.error = undefined;
     await this.store.save(task);
 
     try {
@@ -305,8 +316,6 @@ export class ClineRunner {
       task.error = error instanceof Error ? error.message : String(error);
       await this.store.save(task);
       throw error;
-    } finally {
-      await cline.dispose("orchestrator resume finished");
     }
   }
 }
