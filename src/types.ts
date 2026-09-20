@@ -26,6 +26,8 @@ export interface RunMetrics {
   turns: RunIterationMetrics[];
 }
 
+export type SessionRecoveryReason = "session_not_found" | "missing_session_id";
+
 export interface OrchestratorTask {
   id: string;
   goal: string;
@@ -34,6 +36,11 @@ export interface OrchestratorTask {
   createdAt: string;
   updatedAt: string;
   clineSessionId?: string;
+  sessionGeneration?: number;
+  recoveryCount?: number;
+  lastRecoveryAt?: string;
+  lastRecoveryReason?: SessionRecoveryReason;
+  lastRecoveredFromSessionId?: string;
   lastPrompt?: string;
   lastOutput?: string;
   finishReason?: string;
