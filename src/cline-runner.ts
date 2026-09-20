@@ -3,6 +3,7 @@ import type {
   OrchestratorTask,
   RunIterationMetrics,
   RunMetrics,
+  SessionRecoveryReason,
   TaskStatus,
   WorkerConfig,
 } from "./types.js";
@@ -86,6 +87,7 @@ export class ClineRunner {
     task.lastRunMetrics = this.currentRunMetrics;
     task.status = "running";
     task.lastPrompt = prompt;
+    task.finishReason = undefined;
     task.error = undefined;
   }
 
@@ -330,6 +332,85 @@ export class ClineRunner {
     return "failed";
   }
 
+  private async startInteractiveSession(cline: any) {
+    return cline.start({
+      config: this.modelConfig(),
+      prompt: undefined,
+      interactive: true,
+      toolPolicies: this.toolPolicies(),
+      capabilities: this.capabilities(),
+    });
+  }
+
+  private isSessionNotFound(error: unknown): boolean {
+    const value = error as any;
+    return value?.code === "session_not_found" || value?.name === "SessionNotFoundError";
+  }
+
+  private clipped(value: string | undefined, maxChars: number): string {
+    if (!value) return "(none)";
+    if (value.length <= maxChars) return value;
+    return `${value.slice(0, maxChars)}\n...[truncated by orchestrator]`;
+  }
+
+  private buildRecoveryPrompt(
+    task: OrchestratorTask,
+    continuation: string,
+    previousPrompt: string | undefined,
+    previousOutput: string | undefined,
+  ): string {
+    return `You are continuing an orchestrated coding task after the previous Cline runtime session became unavailable.
+
+This is a recovery handoff, not the original conversation. Do not assume you remember hidden context. Treat the current workspace as the source of truth and re-inspect files when needed.
+
+Workspace:
+${task.workspace}
+
+Original task goal:
+${this.clipped(task.goal, 6000)}
+
+Previous user prompt:
+${this.clipped(previousPrompt, 6000)}
+
+Previous worker output:
+${this.clipped(previousOutput, 12000)}
+
+Continuation request:
+${this.clipped(continuation, 6000)}
+
+Continue from the durable state above. Preserve existing work, verify assumptions against the current workspace, and answer or act on the continuation request.`;
+  }
+
+  private async recoverSessionAndSend(
+    cline: any,
+    task: OrchestratorTask,
+    continuation: string,
+    previousPrompt: string | undefined,
+    previousOutput: string | undefined,
+    previousSessionId: string | undefined,
+    reason: SessionRecoveryReason,
+  ) {
+    const session = await this.startInteractiveSession(cline);
+    const previousGeneration = task.sessionGeneration ?? (previousSessionId ? 1 : 0);
+
+    task.lastRecoveredFromSessionId = previousSessionId;
+    task.clineSessionId = session.sessionId;
+    task.sessionGeneration = previousGeneration + 1;
+    task.recoveryCount = (task.recoveryCount ?? 0) + 1;
+    task.lastRecoveryAt = new Date().toISOString();
+    task.lastRecoveryReason = reason;
+    await this.store.save(task);
+
+    process.stdout.write(
+      `\n[cline session recovered: ${previousSessionId ?? "none"} -> ${session.sessionId}; generation=${task.sessionGeneration}; reason=${reason}]\n`,
+    );
+
+    return cline.send({
+      sessionId: session.sessionId,
+      prompt: this.buildRecoveryPrompt(task, continuation, previousPrompt, previousOutput),
+    });
+  }
+
   private async applyResult(task: OrchestratorTask, result: any): Promise<OrchestratorTask> {
     task.finishReason = result?.finishReason;
     task.lastOutput = typeof result?.text === "string" ? result.text : undefined;
@@ -351,17 +432,14 @@ export class ClineRunner {
     await this.store.save(task);
 
     try {
-      const session = await cline.start({
-        config: this.modelConfig(),
-        prompt: undefined,
-        interactive: true,
-        toolPolicies: this.toolPolicies(),
-        capabilities: this.capabilities(),
-      });
+      const session = await this.startInteractiveSession(cline);
 
       task.clineSessionId = session.sessionId;
+      task.sessionGeneration = (task.sessionGeneration ?? 0) + 1;
       await this.store.save(task);
-      process.stdout.write(`[cline session: ${session.sessionId}]\n`);
+      process.stdout.write(
+        `[cline session: ${session.sessionId}; generation=${task.sessionGeneration}]\n`,
+      );
 
       const heartbeat = this.startHeartbeat();
       try {
@@ -384,23 +462,49 @@ export class ClineRunner {
   }
 
   async resume(task: OrchestratorTask, prompt: string): Promise<OrchestratorTask> {
-    if (!task.clineSessionId) {
-      throw new Error(
-        `Task ${task.id} has no Cline session ID. It was created by an older/broken run and cannot be resumed. Start a new task.`,
-      );
-    }
-
+    const previousPrompt = task.lastPrompt;
+    const previousOutput = task.lastOutput;
+    const previousSessionId = task.clineSessionId;
     const cline = await this.getCore();
+
     this.beginRun(task, prompt);
     await this.store.save(task);
 
     try {
       const heartbeat = this.startHeartbeat();
       try {
-        const result = await cline.send({
-          sessionId: task.clineSessionId,
-          prompt,
-        });
+        let result: any;
+
+        if (!previousSessionId) {
+          result = await this.recoverSessionAndSend(
+            cline,
+            task,
+            prompt,
+            previousPrompt,
+            previousOutput,
+            previousSessionId,
+            "missing_session_id",
+          );
+        } else {
+          try {
+            result = await cline.send({
+              sessionId: previousSessionId,
+              prompt,
+            });
+          } catch (error) {
+            if (!this.isSessionNotFound(error)) throw error;
+
+            result = await this.recoverSessionAndSend(
+              cline,
+              task,
+              prompt,
+              previousPrompt,
+              previousOutput,
+              previousSessionId,
+              "session_not_found",
+            );
+          }
+        }
 
         return await this.applyResult(task, result);
       } finally {
