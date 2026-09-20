@@ -17,6 +17,7 @@ export interface OrchestratorTask {
   updatedAt: string;
   clineSessionId?: string;
   lastPrompt?: string;
+  lastOutput?: string;
   finishReason?: string;
   error?: string;
 }
