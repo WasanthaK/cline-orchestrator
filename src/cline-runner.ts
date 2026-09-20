@@ -19,6 +19,22 @@ const EDIT_TOOLS = new Set([
   "delete_file",
 ]);
 
+class WatchdogStallError extends Error {
+  readonly code = "watchdog_stall";
+
+  constructor(
+    readonly sessionId: string,
+    readonly silenceMs: number,
+  ) {
+    super(`Cline produced no activity for ${silenceMs}ms; watchdog aborted session ${sessionId}`);
+    this.name = "WatchdogStallError";
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class ClineRunner {
   private readonly store: TaskStore;
   private lastActivityAt = Date.now();
@@ -26,6 +42,7 @@ export class ClineRunner {
   private cline: any | undefined;
   private currentRunMetrics: RunMetrics | undefined;
   private currentIteration = 0;
+  private currentAttempt = 0;
   private runStartedAtMs = 0;
 
   constructor(
@@ -38,24 +55,31 @@ export class ClineRunner {
   private getTurn(iteration: number): RunIterationMetrics | undefined {
     if (!this.currentRunMetrics) return undefined;
 
-    let turn = this.currentRunMetrics.turns.find((item) => item.iteration === iteration);
+    const attempt = this.currentAttempt > 0 ? this.currentAttempt : 1;
+    let turn = this.currentRunMetrics.turns.find(
+      (item) => (item.attempt ?? 1) === attempt && item.iteration === iteration,
+    );
     if (!turn) {
       turn = {
+        attempt,
         iteration,
         toolCalls: 0,
         inputTokens: 0,
         outputTokens: 0,
       };
       this.currentRunMetrics.turns.push(turn);
-      this.currentRunMetrics.turns.sort((a, b) => a.iteration - b.iteration);
+      this.currentRunMetrics.turns.sort(
+        (a, b) => (a.attempt ?? 1) - (b.attempt ?? 1) || a.iteration - b.iteration,
+      );
+      this.currentRunMetrics.iterations = this.currentRunMetrics.turns.length;
     }
 
-    this.currentRunMetrics.iterations = Math.max(this.currentRunMetrics.iterations, iteration);
     return turn;
   }
 
   private refreshMetricTotals() {
     if (!this.currentRunMetrics) return;
+    this.currentRunMetrics.iterations = this.currentRunMetrics.turns.length;
     this.currentRunMetrics.toolCalls = this.currentRunMetrics.turns.reduce(
       (sum, turn) => sum + turn.toolCalls,
       0,
@@ -73,6 +97,7 @@ export class ClineRunner {
   private beginRun(task: OrchestratorTask, prompt: string) {
     this.streamedText = "";
     this.currentIteration = 0;
+    this.currentAttempt = 0;
     this.runStartedAtMs = Date.now();
     this.currentRunMetrics = {
       startedAt: new Date(this.runStartedAtMs).toISOString(),
@@ -80,6 +105,9 @@ export class ClineRunner {
       toolCalls: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      attempts: 0,
+      retries: 0,
+      stalls: 0,
       turns: [],
     };
 
@@ -101,7 +129,7 @@ export class ClineRunner {
     task.lastRunMetrics = this.currentRunMetrics;
 
     process.stdout.write(
-      `\n[cline run metrics: iterations=${this.currentRunMetrics.iterations}; tools=${this.currentRunMetrics.toolCalls}; input=${this.currentRunMetrics.totalInputTokens}; output=${this.currentRunMetrics.totalOutputTokens}; duration=${this.currentRunMetrics.durationMs}ms]\n`,
+      `\n[cline run metrics: attempts=${this.currentRunMetrics.attempts ?? 1}; retries=${this.currentRunMetrics.retries ?? 0}; stalls=${this.currentRunMetrics.stalls ?? 0}; iterations=${this.currentRunMetrics.iterations}; tools=${this.currentRunMetrics.toolCalls}; input=${this.currentRunMetrics.totalInputTokens}; output=${this.currentRunMetrics.totalOutputTokens}; duration=${this.currentRunMetrics.durationMs}ms]\n`,
     );
   }
 
@@ -141,7 +169,9 @@ export class ClineRunner {
             this.currentIteration = iteration;
             this.getTurn(iteration);
           }
-          process.stdout.write(`\n[cline iteration started: ${agentEvent?.iteration ?? "?"}]\n`);
+          process.stdout.write(
+            `\n[cline iteration started: ${agentEvent?.iteration ?? "?"}; attempt=${this.currentAttempt || 1}]\n`,
+          );
         } else if (type === "iteration_end") {
           const iteration = Number(agentEvent?.iteration ?? this.currentIteration ?? 0);
           const toolCalls = Number(agentEvent?.toolCallCount ?? 0);
@@ -151,7 +181,7 @@ export class ClineRunner {
             this.refreshMetricTotals();
           }
           process.stdout.write(
-            `\n[cline iteration ended: ${agentEvent?.iteration ?? "?"}; tools=${agentEvent?.toolCallCount ?? "?"}]\n`,
+            `\n[cline iteration ended: ${agentEvent?.iteration ?? "?"}; tools=${agentEvent?.toolCallCount ?? "?"}; attempt=${this.currentAttempt || 1}]\n`,
           );
         } else if (type === "content_start") {
           const contentType = agentEvent?.contentType ?? "activity";
@@ -322,7 +352,9 @@ export class ClineRunner {
     this.lastActivityAt = Date.now();
     return setInterval(() => {
       const silentForSeconds = Math.round((Date.now() - this.lastActivityAt) / 1000);
-      process.stdout.write(`\n[orchestrator heartbeat: waiting; last Cline event ${silentForSeconds}s ago]\n`);
+      process.stdout.write(
+        `\n[orchestrator heartbeat: waiting; last Cline event ${silentForSeconds}s ago]\n`,
+      );
     }, 15000);
   }
 
@@ -347,6 +379,10 @@ export class ClineRunner {
     return value?.code === "session_not_found" || value?.name === "SessionNotFoundError";
   }
 
+  private isWatchdogStall(error: unknown): error is WatchdogStallError {
+    return error instanceof WatchdogStallError || (error as any)?.code === "watchdog_stall";
+  }
+
   private clipped(value: string | undefined, maxChars: number): string {
     if (!value) return "(none)";
     if (value.length <= maxChars) return value;
@@ -358,8 +394,16 @@ export class ClineRunner {
     continuation: string,
     previousPrompt: string | undefined,
     previousOutput: string | undefined,
+    reason: SessionRecoveryReason,
   ): string {
-    return `You are continuing an orchestrated coding task after the previous Cline runtime session became unavailable.
+    const reasonText =
+      reason === "watchdog_stall"
+        ? "The previous Cline turn stopped producing activity and was aborted by the orchestrator watchdog."
+        : "The previous Cline runtime session became unavailable.";
+
+    return `You are continuing an orchestrated coding task after a runtime interruption.
+
+${reasonText}
 
 This is a recovery handoff, not the original conversation. Do not assume you remember hidden context. Treat the current workspace as the source of truth and re-inspect files when needed.
 
@@ -372,7 +416,7 @@ ${this.clipped(task.goal, 6000)}
 Previous user prompt:
 ${this.clipped(previousPrompt, 6000)}
 
-Previous worker output:
+Previous worker output / partial interrupted output:
 ${this.clipped(previousOutput, 12000)}
 
 Continuation request:
@@ -381,7 +425,7 @@ ${this.clipped(continuation, 6000)}
 Continue from the durable state above. Preserve existing work, verify assumptions against the current workspace, and answer or act on the continuation request.`;
   }
 
-  private async recoverSessionAndSend(
+  private async recoverSession(
     cline: any,
     task: OrchestratorTask,
     continuation: string,
@@ -389,7 +433,7 @@ Continue from the durable state above. Preserve existing work, verify assumption
     previousOutput: string | undefined,
     previousSessionId: string | undefined,
     reason: SessionRecoveryReason,
-  ) {
+  ): Promise<{ sessionId: string; prompt: string }> {
     const session = await this.startInteractiveSession(cline);
     const previousGeneration = task.sessionGeneration ?? (previousSessionId ? 1 : 0);
 
@@ -405,10 +449,174 @@ Continue from the durable state above. Preserve existing work, verify assumption
       `\n[cline session recovered: ${previousSessionId ?? "none"} -> ${session.sessionId}; generation=${task.sessionGeneration}; reason=${reason}]\n`,
     );
 
-    return cline.send({
+    return {
       sessionId: session.sessionId,
-      prompt: this.buildRecoveryPrompt(task, continuation, previousPrompt, previousOutput),
+      prompt: this.buildRecoveryPrompt(task, continuation, previousPrompt, previousOutput, reason),
+    };
+  }
+
+  private async recordStall(task: OrchestratorTask, silenceMs: number) {
+    task.status = "stalled";
+    task.stallCount = (task.stallCount ?? 0) + 1;
+    task.lastStallAt = new Date().toISOString();
+    task.lastStallSilenceMs = silenceMs;
+    if (this.currentRunMetrics) {
+      this.currentRunMetrics.stalls = (this.currentRunMetrics.stalls ?? 0) + 1;
+      task.lastRunMetrics = this.currentRunMetrics;
+    }
+    await this.store.save(task);
+    process.stdout.write(
+      `\n[orchestrator watchdog: stalled after ${silenceMs}ms without Cline activity]\n`,
+    );
+  }
+
+  private async recordRetry(task: OrchestratorTask) {
+    task.status = "running";
+    task.retryCount = (task.retryCount ?? 0) + 1;
+    task.lastRetryAt = new Date().toISOString();
+    task.lastRetryReason = "watchdog_stall";
+    if (this.currentRunMetrics) {
+      this.currentRunMetrics.retries = (this.currentRunMetrics.retries ?? 0) + 1;
+      task.lastRunMetrics = this.currentRunMetrics;
+    }
+    await this.store.save(task);
+    process.stdout.write(
+      `\n[orchestrator retry: ${task.retryCount}; reason=watchdog_stall; delay=${this.worker.retryDelayMs}ms]\n`,
+    );
+  }
+
+  private async sendWithWatchdog(
+    cline: any,
+    task: OrchestratorTask,
+    sessionId: string,
+    prompt: string,
+  ): Promise<any> {
+    this.currentAttempt += 1;
+    this.currentIteration = 0;
+    if (this.currentRunMetrics) {
+      this.currentRunMetrics.attempts = this.currentAttempt;
+      task.lastRunMetrics = this.currentRunMetrics;
+      await this.store.save(task);
+    }
+
+    this.lastActivityAt = Date.now();
+    const sendPromise: Promise<any> = cline.send({ sessionId, prompt });
+    if (this.worker.stallTimeoutMs <= 0) {
+      return sendPromise;
+    }
+
+    let triggered = false;
+    let rejectWatchdog: (error: WatchdogStallError) => void = () => undefined;
+    const watchdogPromise = new Promise<never>((_, reject) => {
+      rejectWatchdog = reject;
     });
+    const checkEveryMs = Math.max(1000, Math.min(15000, Math.floor(this.worker.stallTimeoutMs / 4)));
+
+    const watchdog = setInterval(() => {
+      if (triggered) return;
+      const silenceMs = Date.now() - this.lastActivityAt;
+      if (silenceMs < this.worker.stallTimeoutMs) return;
+
+      triggered = true;
+      void (async () => {
+        await this.recordStall(task, silenceMs);
+        try {
+          await cline.abort(sessionId, new Error(`orchestrator watchdog stall after ${silenceMs}ms`));
+        } catch (abortError) {
+          process.stdout.write(
+            `\n[orchestrator watchdog abort warning: ${abortError instanceof Error ? abortError.message : String(abortError)}]\n`,
+          );
+        } finally {
+          rejectWatchdog(new WatchdogStallError(sessionId, silenceMs));
+        }
+      })();
+    }, checkEveryMs);
+
+    try {
+      return await Promise.race([sendPromise, watchdogPromise]);
+    } finally {
+      clearInterval(watchdog);
+    }
+  }
+
+  private async executePrompt(
+    cline: any,
+    task: OrchestratorTask,
+    prompt: string,
+    initialSessionId: string | undefined,
+    previousPrompt: string | undefined,
+    previousOutput: string | undefined,
+  ): Promise<any> {
+    let currentSessionId = initialSessionId;
+    let currentPrompt = prompt;
+    let sessionNotFoundRecoveries = 0;
+    let retriesUsed = 0;
+
+    if (!currentSessionId) {
+      const recovered = await this.recoverSession(
+        cline,
+        task,
+        prompt,
+        previousPrompt,
+        previousOutput,
+        currentSessionId,
+        "missing_session_id",
+      );
+      currentSessionId = recovered.sessionId;
+      currentPrompt = recovered.prompt;
+      sessionNotFoundRecoveries = 1;
+    }
+
+    while (true) {
+      try {
+        return await this.sendWithWatchdog(cline, task, currentSessionId, currentPrompt);
+      } catch (error) {
+        if (this.isSessionNotFound(error)) {
+          if (sessionNotFoundRecoveries >= 1) throw error;
+          sessionNotFoundRecoveries += 1;
+          const recovered = await this.recoverSession(
+            cline,
+            task,
+            prompt,
+            previousPrompt,
+            previousOutput,
+            currentSessionId,
+            "session_not_found",
+          );
+          currentSessionId = recovered.sessionId;
+          currentPrompt = recovered.prompt;
+          continue;
+        }
+
+        if (this.isWatchdogStall(error)) {
+          if (retriesUsed >= this.worker.maxRetries) throw error;
+          retriesUsed += 1;
+          await this.recordRetry(task);
+          if (this.worker.retryDelayMs > 0) {
+            await sleep(this.worker.retryDelayMs);
+          }
+
+          const partialOutput = this.streamedText.trim();
+          const recoveryOutput = partialOutput
+            ? `${previousOutput ?? ""}\n\nPartial output from interrupted attempt:\n${partialOutput}`
+            : previousOutput;
+          const recovered = await this.recoverSession(
+            cline,
+            task,
+            prompt,
+            previousPrompt,
+            recoveryOutput,
+            currentSessionId,
+            "watchdog_stall",
+          );
+          currentSessionId = recovered.sessionId;
+          currentPrompt = recovered.prompt;
+          continue;
+        }
+
+        throw error;
+      }
+    }
   }
 
   private async applyResult(task: OrchestratorTask, result: any): Promise<OrchestratorTask> {
@@ -433,7 +641,6 @@ Continue from the durable state above. Preserve existing work, verify assumption
 
     try {
       const session = await this.startInteractiveSession(cline);
-
       task.clineSessionId = session.sessionId;
       task.sessionGeneration = (task.sessionGeneration ?? 0) + 1;
       await this.store.save(task);
@@ -443,11 +650,14 @@ Continue from the durable state above. Preserve existing work, verify assumption
 
       const heartbeat = this.startHeartbeat();
       try {
-        const result = await cline.send({
-          sessionId: session.sessionId,
-          prompt: task.goal,
-        });
-
+        const result = await this.executePrompt(
+          cline,
+          task,
+          task.goal,
+          session.sessionId,
+          undefined,
+          undefined,
+        );
         return await this.applyResult(task, result);
       } finally {
         clearInterval(heartbeat);
@@ -473,39 +683,14 @@ Continue from the durable state above. Preserve existing work, verify assumption
     try {
       const heartbeat = this.startHeartbeat();
       try {
-        let result: any;
-
-        if (!previousSessionId) {
-          result = await this.recoverSessionAndSend(
-            cline,
-            task,
-            prompt,
-            previousPrompt,
-            previousOutput,
-            previousSessionId,
-            "missing_session_id",
-          );
-        } else {
-          try {
-            result = await cline.send({
-              sessionId: previousSessionId,
-              prompt,
-            });
-          } catch (error) {
-            if (!this.isSessionNotFound(error)) throw error;
-
-            result = await this.recoverSessionAndSend(
-              cline,
-              task,
-              prompt,
-              previousPrompt,
-              previousOutput,
-              previousSessionId,
-              "session_not_found",
-            );
-          }
-        }
-
+        const result = await this.executePrompt(
+          cline,
+          task,
+          prompt,
+          previousSessionId,
+          previousPrompt,
+          previousOutput,
+        );
         return await this.applyResult(task, result);
       } finally {
         clearInterval(heartbeat);
