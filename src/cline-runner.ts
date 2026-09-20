@@ -63,21 +63,21 @@ export class ClineRunner {
     await this.store.save(task);
 
     try {
-      // Important: create the session WITHOUT the prompt. Cline's SDK start()
-      // initializes the session and should return immediately. The first user
-      // turn is sent separately so we can persist the session ID before any
-      // inference or tool work begins.
+      // Cline's interactive-session contract: allocate the session first,
+      // without a prompt, then send the first turn using the returned ID.
       const session = await cline.start({
         config: this.modelConfig(),
+        prompt: undefined,
+        interactive: true,
       });
 
       task.clineSessionId = session.sessionId;
       await this.store.save(task);
       process.stdout.write(`[cline session: ${session.sessionId}]\n`);
 
-      const result = await cline.send(session.sessionId, {
-        type: "user_message",
-        text: task.goal,
+      const result = await cline.send({
+        sessionId: session.sessionId,
+        prompt: task.goal,
       });
 
       task.finishReason = result?.finishReason;
@@ -107,9 +107,9 @@ export class ClineRunner {
     await this.store.save(task);
 
     try {
-      const result = await cline.send(task.clineSessionId, {
-        type: "user_message",
-        text: prompt,
+      const result = await cline.send({
+        sessionId: task.clineSessionId,
+        prompt,
       });
 
       task.finishReason = result?.finishReason;
