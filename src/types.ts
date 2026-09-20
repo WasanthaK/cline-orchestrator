@@ -46,6 +46,7 @@ export type TaskEventType =
   | "session_recovered"
   | "stalled"
   | "retrying"
+  | "abort_requested"
   | "completed"
   | "failed"
   | "aborted";
@@ -79,6 +80,8 @@ export interface OrchestratorTask {
   lastStallSilenceMs?: number;
   lastRetryAt?: string;
   lastRetryReason?: RetryReason;
+  abortRequestedAt?: string;
+  abortReason?: string;
   lastPrompt?: string;
   lastOutput?: string;
   finishReason?: string;
