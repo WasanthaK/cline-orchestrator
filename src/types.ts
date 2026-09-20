@@ -10,6 +10,7 @@ export type TaskStatus =
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
 export interface RunIterationMetrics {
+  attempt?: number;
   iteration: number;
   toolCalls: number;
   inputTokens: number;
