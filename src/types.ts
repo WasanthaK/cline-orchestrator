@@ -24,6 +24,10 @@ export interface WorkerConfig {
   modelId: string;
   apiKey?: string;
   baseUrl?: string;
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  timeoutMs: number;
+  maxIterations: number;
   autoApproveCommands: boolean;
   autoApproveEdits: boolean;
 }
