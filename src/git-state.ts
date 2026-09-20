@@ -4,6 +4,7 @@ import type { GitSnapshot } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_STATUS_LINES = 200;
+const ORCHESTRATOR_EXCLUDE = ":(exclude).orchestrator";
 
 async function git(workspace: string, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync("git", args, {
@@ -41,9 +42,29 @@ export async function captureGitSnapshot(workspace: string): Promise<GitSnapshot
     const root = await git(workspace, ["rev-parse", "--show-toplevel"]);
     const head = await git(workspace, ["rev-parse", "HEAD"]);
     const branch = await git(workspace, ["branch", "--show-current"]);
-    const status = await git(workspace, ["status", "--porcelain=v1", "--untracked-files=all"]);
-    const diffShortStat = await git(workspace, ["diff", "--shortstat"]);
-    const stagedDiffShortStat = await git(workspace, ["diff", "--cached", "--shortstat"]);
+    const status = await git(workspace, [
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+      "--",
+      ".",
+      ORCHESTRATOR_EXCLUDE,
+    ]);
+    const diffShortStat = await git(workspace, [
+      "diff",
+      "--shortstat",
+      "--",
+      ".",
+      ORCHESTRATOR_EXCLUDE,
+    ]);
+    const stagedDiffShortStat = await git(workspace, [
+      "diff",
+      "--cached",
+      "--shortstat",
+      "--",
+      ".",
+      ORCHESTRATOR_EXCLUDE,
+    ]);
 
     const allStatusLines = status ? status.split(/\r?\n/).filter(Boolean) : [];
     const counts = countStatus(allStatusLines);
