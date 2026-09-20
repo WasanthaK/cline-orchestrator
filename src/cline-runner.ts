@@ -31,6 +31,15 @@ class WatchdogStallError extends Error {
   }
 }
 
+class TaskStateError extends Error {
+  readonly code = "invalid_task_state";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "TaskStateError";
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -44,6 +53,8 @@ export class ClineRunner {
   private currentIteration = 0;
   private currentAttempt = 0;
   private runStartedAtMs = 0;
+  private activeTask: OrchestratorTask | undefined;
+  private readonly abortRequestedTaskIds = new Set<string>();
 
   constructor(
     private readonly workspace: string,
@@ -258,6 +269,59 @@ export class ClineRunner {
     const cline = this.cline;
     this.cline = undefined;
     await cline.dispose(reason);
+  }
+
+  async abort(taskId: string, reason = "Task aborted by user"): Promise<OrchestratorTask> {
+    const persisted = await this.store.load(taskId);
+    if (
+      persisted.status === "completed" ||
+      persisted.status === "failed" ||
+      persisted.status === "aborted"
+    ) {
+      throw new TaskStateError(`Task ${taskId} is already ${persisted.status}`);
+    }
+
+    const requestedAt = new Date().toISOString();
+    const task = this.activeTask?.id === taskId ? this.activeTask : persisted;
+    task.abortRequestedAt = requestedAt;
+    task.abortReason = reason;
+    this.abortRequestedTaskIds.add(taskId);
+
+    await this.store.appendEvent(taskId, "abort_requested", {
+      status: task.status,
+      message: reason,
+      data: {
+        sessionId: task.clineSessionId,
+        requestedAt,
+      },
+    });
+
+    if (this.activeTask?.id === taskId && this.cline && task.clineSessionId) {
+      try {
+        await this.cline.abort(task.clineSessionId, new Error(reason));
+      } catch (error) {
+        if (!this.isSessionNotFound(error)) {
+          process.stdout.write(
+            `\n[orchestrator abort warning: ${error instanceof Error ? error.message : String(error)}]\n`,
+          );
+        }
+      }
+    }
+
+    const latest = this.activeTask?.id === taskId ? this.activeTask : await this.store.load(taskId);
+    if (latest.status === "completed" || latest.status === "failed") {
+      this.abortRequestedTaskIds.delete(taskId);
+      return latest;
+    }
+
+    latest.abortRequestedAt = requestedAt;
+    latest.abortReason = reason;
+    latest.status = "aborted";
+    latest.finishReason = "aborted";
+    latest.error = undefined;
+    await this.store.save(latest);
+    process.stdout.write(`\n[orchestrator task aborted: ${taskId}; reason=${reason}]\n`);
+    return latest;
   }
 
   private modelConfig() {
@@ -571,6 +635,8 @@ Continue from the durable state above. Preserve existing work, verify assumption
       try {
         return await this.sendWithWatchdog(cline, task, currentSessionId, currentPrompt);
       } catch (error) {
+        if (this.abortRequestedTaskIds.has(task.id)) throw error;
+
         if (this.isSessionNotFound(error)) {
           if (sessionNotFoundRecoveries >= 1) throw error;
           sessionNotFoundRecoveries += 1;
@@ -595,6 +661,7 @@ Continue from the durable state above. Preserve existing work, verify assumption
           if (this.worker.retryDelayMs > 0) {
             await sleep(this.worker.retryDelayMs);
           }
+          if (this.abortRequestedTaskIds.has(task.id)) throw error;
 
           const partialOutput = this.streamedText.trim();
           const recoveryOutput = partialOutput
@@ -635,72 +702,116 @@ Continue from the durable state above. Preserve existing work, verify assumption
   }
 
   async start(task: OrchestratorTask): Promise<OrchestratorTask> {
-    const cline = await this.getCore();
-    this.beginRun(task, task.goal);
-    await this.store.save(task);
+    const persisted = await this.store.load(task.id);
+    if (persisted.status === "aborted") {
+      this.abortRequestedTaskIds.delete(task.id);
+      return persisted;
+    }
+    task = persisted;
+    this.activeTask = task;
 
     try {
-      const session = await this.startInteractiveSession(cline);
-      task.clineSessionId = session.sessionId;
-      task.sessionGeneration = (task.sessionGeneration ?? 0) + 1;
+      const cline = await this.getCore();
+      this.beginRun(task, task.goal);
       await this.store.save(task);
-      process.stdout.write(
-        `[cline session: ${session.sessionId}; generation=${task.sessionGeneration}]\n`,
-      );
 
-      const heartbeat = this.startHeartbeat();
       try {
-        const result = await this.executePrompt(
-          cline,
-          task,
-          task.goal,
-          session.sessionId,
-          undefined,
-          undefined,
+        const session = await this.startInteractiveSession(cline);
+        task.clineSessionId = session.sessionId;
+        task.sessionGeneration = (task.sessionGeneration ?? 0) + 1;
+        await this.store.save(task);
+        process.stdout.write(
+          `[cline session: ${session.sessionId}; generation=${task.sessionGeneration}]\n`,
         );
-        return await this.applyResult(task, result);
-      } finally {
-        clearInterval(heartbeat);
+
+        const heartbeat = this.startHeartbeat();
+        try {
+          const result = await this.executePrompt(
+            cline,
+            task,
+            task.goal,
+            session.sessionId,
+            undefined,
+            undefined,
+          );
+          return await this.applyResult(task, result);
+        } finally {
+          clearInterval(heartbeat);
+        }
+      } catch (error) {
+        if (this.abortRequestedTaskIds.has(task.id) || task.status === "aborted") {
+          task.status = "aborted";
+          task.finishReason = "aborted";
+          task.error = undefined;
+          this.finishRunMetrics(task);
+          await this.store.save(task);
+          return task;
+        }
+
+        task.status = "failed";
+        task.error = error instanceof Error ? error.message : String(error);
+        this.finishRunMetrics(task);
+        await this.store.save(task);
+        throw error;
       }
-    } catch (error) {
-      task.status = "failed";
-      task.error = error instanceof Error ? error.message : String(error);
-      this.finishRunMetrics(task);
-      await this.store.save(task);
-      throw error;
+    } finally {
+      if (this.activeTask?.id === task.id) this.activeTask = undefined;
+      this.abortRequestedTaskIds.delete(task.id);
     }
   }
 
   async resume(task: OrchestratorTask, prompt: string): Promise<OrchestratorTask> {
+    const persisted = await this.store.load(task.id);
+    if (persisted.status === "aborted") {
+      this.abortRequestedTaskIds.delete(task.id);
+      return persisted;
+    }
+    task = persisted;
+    this.activeTask = task;
+
     const previousPrompt = task.lastPrompt;
     const previousOutput = task.lastOutput;
     const previousSessionId = task.clineSessionId;
-    const cline = await this.getCore();
-
-    this.beginRun(task, prompt);
-    await this.store.save(task);
 
     try {
-      const heartbeat = this.startHeartbeat();
-      try {
-        const result = await this.executePrompt(
-          cline,
-          task,
-          prompt,
-          previousSessionId,
-          previousPrompt,
-          previousOutput,
-        );
-        return await this.applyResult(task, result);
-      } finally {
-        clearInterval(heartbeat);
-      }
-    } catch (error) {
-      task.status = "failed";
-      task.error = error instanceof Error ? error.message : String(error);
-      this.finishRunMetrics(task);
+      const cline = await this.getCore();
+      this.beginRun(task, prompt);
       await this.store.save(task);
-      throw error;
+
+      try {
+        const heartbeat = this.startHeartbeat();
+        try {
+          const result = await this.executePrompt(
+            cline,
+            task,
+            prompt,
+            previousSessionId,
+            previousPrompt,
+            previousOutput,
+          );
+          return await this.applyResult(task, result);
+        } finally {
+          clearInterval(heartbeat);
+        }
+      } catch (error) {
+        if (this.abortRequestedTaskIds.has(task.id) || task.status === "aborted") {
+          task.status = "aborted";
+          task.finishReason = "aborted";
+          task.error = undefined;
+          this.finishRunMetrics(task);
+          await this.store.save(task);
+          return task;
+        }
+
+        task.status = "failed";
+        task.error = error instanceof Error ? error.message : String(error);
+        this.finishRunMetrics(task);
+        await this.store.save(task);
+        throw error;
+      }
+    } finally {
+      if (this.activeTask?.id === task.id) this.activeTask = undefined;
+      this.abortRequestedTaskIds.delete(task.id);
     }
   }
 }
