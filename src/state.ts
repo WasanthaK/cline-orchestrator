@@ -32,10 +32,107 @@ export class TaskStore {
     return path.join(this.eventsDir(), `${id}.jsonl`);
   }
 
+  private async previousTask(id: string): Promise<OrchestratorTask | undefined> {
+    try {
+      const raw = await readFile(this.taskPath(id), "utf8");
+      return JSON.parse(raw) as OrchestratorTask;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return undefined;
+      throw error;
+    }
+  }
+
+  private async inferEvents(previous: OrchestratorTask | undefined, task: OrchestratorTask) {
+    if (!previous) return;
+
+    const stallIncreased = (task.stallCount ?? 0) > (previous.stallCount ?? 0);
+    const retryIncreased = (task.retryCount ?? 0) > (previous.retryCount ?? 0);
+    const recoveryIncreased = (task.recoveryCount ?? 0) > (previous.recoveryCount ?? 0);
+    const generationIncreased = (task.sessionGeneration ?? 0) > (previous.sessionGeneration ?? 0);
+
+    if (stallIncreased) {
+      await this.appendEvent(task.id, "stalled", {
+        status: task.status,
+        message: `Watchdog detected ${task.lastStallSilenceMs ?? "unknown"}ms without Cline activity`,
+        data: {
+          stallCount: task.stallCount ?? 0,
+          silenceMs: task.lastStallSilenceMs,
+          sessionId: task.clineSessionId,
+        },
+      });
+    }
+
+    if (retryIncreased) {
+      await this.appendEvent(task.id, "retrying", {
+        status: task.status,
+        message: `Retrying task after ${task.lastRetryReason ?? "interruption"}`,
+        data: {
+          retryCount: task.retryCount ?? 0,
+          reason: task.lastRetryReason,
+        },
+      });
+    }
+
+    if (generationIncreased) {
+      if (recoveryIncreased) {
+        await this.appendEvent(task.id, "session_recovered", {
+          status: task.status,
+          message: `Recovered Cline session generation ${task.sessionGeneration ?? 0}`,
+          data: {
+            generation: task.sessionGeneration,
+            recoveryCount: task.recoveryCount,
+            reason: task.lastRecoveryReason,
+            previousSessionId: task.lastRecoveredFromSessionId,
+            sessionId: task.clineSessionId,
+          },
+        });
+      } else {
+        await this.appendEvent(task.id, "session_started", {
+          status: task.status,
+          message: `Started Cline session generation ${task.sessionGeneration ?? 0}`,
+          data: {
+            generation: task.sessionGeneration,
+            sessionId: task.clineSessionId,
+          },
+        });
+      }
+    }
+
+    if (task.status !== previous.status) {
+      if (task.status === "running" && !retryIncreased) {
+        await this.appendEvent(task.id, "run_started", {
+          status: task.status,
+          message: `Run ${task.runCount ?? 1} started`,
+          data: { runCount: task.runCount ?? 1 },
+        });
+      } else if (task.status === "completed") {
+        await this.appendEvent(task.id, "completed", {
+          status: task.status,
+          message: "Task completed",
+          data: { finishReason: task.finishReason },
+        });
+      } else if (task.status === "failed") {
+        await this.appendEvent(task.id, "failed", {
+          status: task.status,
+          message: task.error ?? "Task failed",
+          data: { finishReason: task.finishReason },
+        });
+      } else if (task.status === "aborted") {
+        await this.appendEvent(task.id, "aborted", {
+          status: task.status,
+          message: task.error ?? "Task aborted",
+          data: { finishReason: task.finishReason },
+        });
+      }
+    }
+  }
+
   async save(task: OrchestratorTask): Promise<void> {
     await mkdir(this.tasksDir(), { recursive: true });
+    const previous = await this.previousTask(task.id);
     task.updatedAt = new Date().toISOString();
     await writeFile(this.taskPath(task.id), JSON.stringify(task, null, 2) + "\n", "utf8");
+    await this.inferEvents(previous, task);
   }
 
   async appendEvent(
@@ -68,14 +165,10 @@ export class TaskStore {
         .map((line) => JSON.parse(line) as TaskEvent);
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
-        // Preserve the same not-found semantics for a genuinely unknown task,
-        // while allowing older tasks created before event logging to return [].
-        try {
-          await this.load(taskId);
-          return [];
-        } catch (loadError) {
-          throw loadError;
-        }
+        // Older tasks created before event logging legitimately have no event file.
+        // Confirm the task itself exists before returning an empty timeline.
+        await this.load(taskId);
+        return [];
       }
       throw error;
     }
