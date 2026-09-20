@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import { ClineRunner } from "./cline-runner.js";
-import { TaskStore } from "./state.js";
+import { TaskNotFoundError, TaskStore } from "./state.js";
 import type { OrchestratorTask, WorkerConfig } from "./types.js";
 
 function usage(): never {
@@ -11,12 +11,13 @@ Cline Orchestrator
 
 Usage:
   npm run dev -- run <workspace> <goal...>
+  npm run dev -- list <workspace>
   npm run dev -- status <workspace> <task-id>
   npm run dev -- resume <workspace> <task-id> <prompt...>
 
 Environment:
   ORCH_PROVIDER=ollama
-  ORCH_MODEL=qwen3.6:27b
+  ORCH_MODEL=qwen38-27b-192k:latest
   ORCH_BASE_URL=http://localhost:11434
   ORCH_API_KEY=
   ORCH_AUTO_APPROVE_COMMANDS=false
@@ -28,12 +29,25 @@ Environment:
 function workerConfig(): WorkerConfig {
   return {
     providerId: process.env.ORCH_PROVIDER ?? "ollama",
-    modelId: process.env.ORCH_MODEL ?? "qwen3.6:27b",
+    modelId: process.env.ORCH_MODEL ?? "qwen38-27b-192k:latest",
     apiKey: process.env.ORCH_API_KEY,
     baseUrl: process.env.ORCH_BASE_URL ?? "http://localhost:11434",
     autoApproveCommands: process.env.ORCH_AUTO_APPROVE_COMMANDS === "true",
     autoApproveEdits: process.env.ORCH_AUTO_APPROVE_EDITS === "true",
   };
+}
+
+async function printAvailableTasks(store: TaskStore) {
+  const tasks = await store.list();
+  if (tasks.length === 0) {
+    console.error("No orchestrator tasks were found for this workspace.");
+    return;
+  }
+
+  console.error("Available tasks:");
+  for (const task of tasks) {
+    console.error(`  ${task.id}  ${task.status.padEnd(10)}  ${task.updatedAt}  ${task.goal.slice(0, 80)}`);
+  }
 }
 
 async function main() {
@@ -42,6 +56,19 @@ async function main() {
 
   const workspace = path.resolve(workspaceArg);
   const store = new TaskStore(workspace);
+
+  if (command === "list") {
+    const tasks = await store.list();
+    if (tasks.length === 0) {
+      console.log("No orchestrator tasks found.");
+      return;
+    }
+
+    for (const task of tasks) {
+      console.log(`${task.id}\t${task.status}\t${task.updatedAt}\t${task.goal}`);
+    }
+    return;
+  }
 
   if (command === "status") {
     const [taskId] = rest;
@@ -88,7 +115,15 @@ async function main() {
   usage();
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  if (error instanceof TaskNotFoundError) {
+    console.error(error.message);
+    const store = new TaskStore(error.workspace);
+    await printAvailableTasks(store);
+    process.exitCode = 2;
+    return;
+  }
+
   console.error(error);
   process.exitCode = 1;
 });
