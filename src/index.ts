@@ -26,6 +26,9 @@ Environment:
   ORCH_REASONING_EFFORT=none
   ORCH_TIMEOUT_MS=0
   ORCH_MAX_ITERATIONS=0
+  ORCH_STALL_TIMEOUT_MS=300000
+  ORCH_MAX_RETRIES=2
+  ORCH_RETRY_DELAY_MS=5000
   ORCH_AUTO_APPROVE_COMMANDS=false
   ORCH_AUTO_APPROVE_EDITS=false
   ORCH_DAEMON_HOST=127.0.0.1
@@ -77,6 +80,9 @@ function workerConfig(): WorkerConfig {
     reasoningEffort: readReasoningEffort(),
     timeoutMs: readInt("ORCH_TIMEOUT_MS", 0),
     maxIterations: readInt("ORCH_MAX_ITERATIONS", 0),
+    stallTimeoutMs: readInt("ORCH_STALL_TIMEOUT_MS", 300000),
+    maxRetries: Math.max(0, readInt("ORCH_MAX_RETRIES", 2)),
+    retryDelayMs: Math.max(0, readInt("ORCH_RETRY_DELAY_MS", 5000)),
     autoApproveCommands: process.env.ORCH_AUTO_APPROVE_COMMANDS === "true",
     autoApproveEdits: process.env.ORCH_AUTO_APPROVE_EDITS === "true",
   };
@@ -218,7 +224,7 @@ async function main() {
     const config = workerConfig();
     const { host, port } = daemonAddress();
     console.log(
-      `[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}; context=${config.contextWindow}; input=${config.maxInputTokens}; turn=${config.maxTokensPerTurn}; reasoning=${config.reasoningEffort}]`,
+      `[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}; context=${config.contextWindow}; input=${config.maxInputTokens}; turn=${config.maxTokensPerTurn}; reasoning=${config.reasoningEffort}; stall=${config.stallTimeoutMs}ms; retries=${config.maxRetries}]`,
     );
     await startDaemon(workspace, config, { host, port });
     return;
