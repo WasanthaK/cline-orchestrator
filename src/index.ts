@@ -2,7 +2,12 @@ import path from "node:path";
 import process from "node:process";
 import { startDaemon } from "./daemon.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
-import type { OrchestratorTask, ReasoningEffort, WorkerConfig } from "./types.js";
+import type {
+  OrchestratorTask,
+  ReasoningEffort,
+  TaskEvent,
+  WorkerConfig,
+} from "./types.js";
 
 function usage(): never {
   console.error(`
@@ -13,6 +18,7 @@ Usage:
   npm run dev -- run <workspace> <goal...>
   npm run dev -- list <workspace>
   npm run dev -- status <workspace> <task-id>
+  npm run dev -- events <workspace> <task-id>
   npm run dev -- resume <workspace> <task-id> <prompt...>
 
 Environment:
@@ -161,17 +167,39 @@ function isTerminalStatus(status: OrchestratorTask["status"]): boolean {
   return status === "completed" || status === "failed" || status === "aborted";
 }
 
+function printEvent(event: TaskEvent) {
+  const suffix = event.message ? `: ${event.message}` : "";
+  console.log(`[event: ${event.type}${suffix}]`);
+}
+
 async function waitForDaemonTask(taskId: string): Promise<OrchestratorTask> {
   let lastStatus: OrchestratorTask["status"] | undefined;
+  const seenEvents = new Set<string>();
+  const encodedTaskId = encodeURIComponent(taskId);
+
+  const printNewEvents = async () => {
+    const events = await daemonRequest<TaskEvent[]>(`/tasks/${encodedTaskId}/events`);
+    for (const event of events) {
+      if (seenEvents.has(event.id)) continue;
+      seenEvents.add(event.id);
+      printEvent(event);
+    }
+  };
 
   while (true) {
-    const task = await daemonRequest<OrchestratorTask>(`/tasks/${encodeURIComponent(taskId)}`);
+    const task = await daemonRequest<OrchestratorTask>(`/tasks/${encodedTaskId}`);
+    await printNewEvents();
+
     if (task.status !== lastStatus) {
       console.log(`[status: ${task.status}]`);
       lastStatus = task.status;
     }
 
     if (isTerminalStatus(task.status)) {
+      // Task JSON is written immediately before its inferred terminal event.
+      // Give that final append a brief chance to become visible, then flush once.
+      await sleep(100);
+      await printNewEvents();
       return task;
     }
 
@@ -217,6 +245,13 @@ async function main() {
     if (!taskId) usage();
     const task = await store.load(taskId);
     console.log(JSON.stringify(task, null, 2));
+    return;
+  }
+
+  if (command === "events") {
+    const [taskId] = rest;
+    if (!taskId) usage();
+    console.log(JSON.stringify(await store.events(taskId), null, 2));
     return;
   }
 
