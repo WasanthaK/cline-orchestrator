@@ -31,6 +31,30 @@ export interface RunMetrics {
   turns: RunIterationMetrics[];
 }
 
+export interface GitSnapshot {
+  capturedAt: string;
+  available: boolean;
+  root?: string;
+  branch?: string;
+  head?: string;
+  detached?: boolean;
+  dirty?: boolean;
+  changedFiles?: number;
+  stagedFiles?: number;
+  unstagedFiles?: number;
+  untrackedFiles?: number;
+  statusLines?: string[];
+  statusTruncated?: boolean;
+  diffShortStat?: string;
+  stagedDiffShortStat?: string;
+  error?: string;
+}
+
+export interface RunGitState {
+  before?: GitSnapshot;
+  after?: GitSnapshot;
+}
+
 export type SessionRecoveryReason =
   | "session_not_found"
   | "missing_session_id"
@@ -41,6 +65,7 @@ export type RetryReason = "watchdog_stall";
 export type TaskEventType =
   | "queued"
   | "resume_queued"
+  | "git_snapshot"
   | "run_started"
   | "session_started"
   | "session_recovered"
@@ -88,6 +113,7 @@ export interface OrchestratorTask {
   error?: string;
   runCount?: number;
   lastRunMetrics?: RunMetrics;
+  lastRunGit?: RunGitState;
 }
 
 export interface WorkerConfig {
