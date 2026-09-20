@@ -6,6 +6,8 @@ export type TaskStatus =
   | "failed"
   | "aborted";
 
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+
 export interface OrchestratorTask {
   id: string;
   goal: string;
@@ -24,8 +26,10 @@ export interface WorkerConfig {
   modelId: string;
   apiKey?: string;
   baseUrl?: string;
+  contextWindow: number;
   maxInputTokens: number;
-  maxOutputTokens: number;
+  maxTokensPerTurn: number;
+  reasoningEffort: ReasoningEffort;
   timeoutMs: number;
   maxIterations: number;
   autoApproveCommands: boolean;
