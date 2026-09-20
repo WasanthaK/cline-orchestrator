@@ -16,7 +16,7 @@ Usage:
   npm run dev -- resume <workspace> <task-id> <prompt...>
 
 Environment:
-  ORCH_PROVIDER=ollama
+  ORCH_PROVIDER=ollama-openai   # recommended for local Ollama
   ORCH_MODEL=qwen38-27b-192k:latest
   ORCH_BASE_URL=http://localhost:11434
   ORCH_API_KEY=
@@ -26,6 +26,10 @@ Environment:
   ORCH_MAX_ITERATIONS=0
   ORCH_AUTO_APPROVE_COMMANDS=false
   ORCH_AUTO_APPROVE_EDITS=false
+
+Provider notes:
+  ollama-openai  -> Cline openai-compatible provider via Ollama /v1 API
+  ollama         -> Cline native Ollama provider
 `);
   process.exit(1);
 }
@@ -37,12 +41,39 @@ function readInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
 function workerConfig(): WorkerConfig {
+  const requestedProvider = process.env.ORCH_PROVIDER ?? "ollama-openai";
+  const modelId = process.env.ORCH_MODEL ?? "qwen38-27b-192k:latest";
+  const configuredBaseUrl = stripTrailingSlash(process.env.ORCH_BASE_URL ?? "http://localhost:11434");
+
+  if (requestedProvider === "ollama-openai") {
+    const baseUrl = configuredBaseUrl.endsWith("/v1")
+      ? configuredBaseUrl
+      : `${configuredBaseUrl}/v1`;
+
+    return {
+      providerId: "openai-compatible",
+      modelId,
+      apiKey: process.env.ORCH_API_KEY || "ollama",
+      baseUrl,
+      maxInputTokens: readInt("ORCH_MAX_INPUT_TOKENS", 180000),
+      maxOutputTokens: readInt("ORCH_MAX_OUTPUT_TOKENS", 16000),
+      timeoutMs: readInt("ORCH_TIMEOUT_MS", 0),
+      maxIterations: readInt("ORCH_MAX_ITERATIONS", 0),
+      autoApproveCommands: process.env.ORCH_AUTO_APPROVE_COMMANDS === "true",
+      autoApproveEdits: process.env.ORCH_AUTO_APPROVE_EDITS === "true",
+    };
+  }
+
   return {
-    providerId: process.env.ORCH_PROVIDER ?? "ollama",
-    modelId: process.env.ORCH_MODEL ?? "qwen38-27b-192k:latest",
+    providerId: requestedProvider,
+    modelId,
     apiKey: process.env.ORCH_API_KEY,
-    baseUrl: process.env.ORCH_BASE_URL ?? "http://localhost:11434",
+    baseUrl: configuredBaseUrl,
     maxInputTokens: readInt("ORCH_MAX_INPUT_TOKENS", 180000),
     maxOutputTokens: readInt("ORCH_MAX_OUTPUT_TOKENS", 16000),
     timeoutMs: readInt("ORCH_TIMEOUT_MS", 0),
@@ -93,7 +124,9 @@ async function main() {
     return;
   }
 
-  const runner = new ClineRunner(workspace, workerConfig());
+  const config = workerConfig();
+  console.log(`[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}]`);
+  const runner = new ClineRunner(workspace, config);
 
   if (command === "run") {
     const goal = rest.join(" ").trim();
