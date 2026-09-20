@@ -38,6 +38,28 @@ export type SessionRecoveryReason =
 
 export type RetryReason = "watchdog_stall";
 
+export type TaskEventType =
+  | "queued"
+  | "resume_queued"
+  | "run_started"
+  | "session_started"
+  | "session_recovered"
+  | "stalled"
+  | "retrying"
+  | "completed"
+  | "failed"
+  | "aborted";
+
+export interface TaskEvent {
+  id: string;
+  taskId: string;
+  type: TaskEventType;
+  timestamp: string;
+  status?: TaskStatus;
+  message?: string;
+  data?: Record<string, unknown>;
+}
+
 export interface OrchestratorTask {
   id: string;
   goal: string;
