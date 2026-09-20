@@ -173,13 +173,42 @@ function printEvent(event: TaskEvent) {
   console.log(`[event: ${event.type}${suffix}]`);
 }
 
-async function waitForDaemonTask(taskId: string): Promise<OrchestratorTask> {
+async function waitForDaemonTask(taskId: string, store: TaskStore): Promise<OrchestratorTask> {
   let lastStatus: OrchestratorTask["status"] | undefined;
+  let fallbackAnnounced = false;
   const seenEvents = new Set<string>();
   const encodedTaskId = encodeURIComponent(taskId);
 
+  const announceFallback = () => {
+    if (fallbackAnnounced) return;
+    fallbackAnnounced = true;
+    console.log("[daemon unavailable; using persisted terminal task state]");
+  };
+
+  const readTask = async (): Promise<OrchestratorTask> => {
+    try {
+      return await daemonRequest<OrchestratorTask>(`/tasks/${encodedTaskId}`);
+    } catch (daemonError) {
+      const persisted = await store.load(taskId);
+      if (!isTerminalStatus(persisted.status)) throw daemonError;
+      announceFallback();
+      return persisted;
+    }
+  };
+
+  const readEvents = async (): Promise<TaskEvent[]> => {
+    try {
+      return await daemonRequest<TaskEvent[]>(`/tasks/${encodedTaskId}/events`);
+    } catch (daemonError) {
+      const persisted = await store.load(taskId);
+      if (!isTerminalStatus(persisted.status)) throw daemonError;
+      announceFallback();
+      return store.events(taskId);
+    }
+  };
+
   const printNewEvents = async () => {
-    const events = await daemonRequest<TaskEvent[]>(`/tasks/${encodedTaskId}/events`);
+    const events = await readEvents();
     for (const event of events) {
       if (seenEvents.has(event.id)) continue;
       seenEvents.add(event.id);
@@ -188,7 +217,7 @@ async function waitForDaemonTask(taskId: string): Promise<OrchestratorTask> {
   };
 
   while (true) {
-    const task = await daemonRequest<OrchestratorTask>(`/tasks/${encodedTaskId}`);
+    const task = await readTask();
     await printNewEvents();
 
     if (task.status !== lastStatus) {
@@ -272,7 +301,7 @@ async function main() {
 
     const queued = await daemonRequest<OrchestratorTask>("/run", { goal });
     console.log(`[orchestrator task: ${queued.id}]`);
-    const completed = await waitForDaemonTask(queued.id);
+    const completed = await waitForDaemonTask(queued.id, store);
     if (completed.lastOutput) console.log(`\n${completed.lastOutput}`);
     if (completed.error) console.error(`\n[error: ${completed.error}]`);
     return;
@@ -285,7 +314,7 @@ async function main() {
 
     const queued = await daemonRequest<OrchestratorTask>("/resume", { taskId, prompt });
     console.log(`[orchestrator task: ${queued.id}; resume queued]`);
-    const completed = await waitForDaemonTask(queued.id);
+    const completed = await waitForDaemonTask(queued.id, store);
     if (completed.lastOutput) console.log(`\n${completed.lastOutput}`);
     if (completed.error) console.error(`\n[error: ${completed.error}]`);
     return;
