@@ -8,6 +8,24 @@ export type TaskStatus =
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
+export interface RunIterationMetrics {
+  iteration: number;
+  toolCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface RunMetrics {
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  iterations: number;
+  toolCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  turns: RunIterationMetrics[];
+}
+
 export interface OrchestratorTask {
   id: string;
   goal: string;
@@ -20,6 +38,8 @@ export interface OrchestratorTask {
   lastOutput?: string;
   finishReason?: string;
   error?: string;
+  runCount?: number;
+  lastRunMetrics?: RunMetrics;
 }
 
 export interface WorkerConfig {
