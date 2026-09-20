@@ -1,7 +1,6 @@
-import crypto from "node:crypto";
 import path from "node:path";
 import process from "node:process";
-import { ClineRunner } from "./cline-runner.js";
+import { startDaemon } from "./daemon.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
 import type { OrchestratorTask, ReasoningEffort, WorkerConfig } from "./types.js";
 
@@ -10,6 +9,7 @@ function usage(): never {
 Cline Orchestrator
 
 Usage:
+  npm run dev -- daemon <workspace>
   npm run dev -- run <workspace> <goal...>
   npm run dev -- list <workspace>
   npm run dev -- status <workspace> <task-id>
@@ -28,10 +28,17 @@ Environment:
   ORCH_MAX_ITERATIONS=0
   ORCH_AUTO_APPROVE_COMMANDS=false
   ORCH_AUTO_APPROVE_EDITS=false
+  ORCH_DAEMON_HOST=127.0.0.1
+  ORCH_DAEMON_PORT=4317
+  ORCH_DAEMON_URL=http://127.0.0.1:4317
 
 Provider notes:
   ollama-openai  -> Cline openai-compatible provider via Ollama /v1 API
   ollama         -> Cline native Ollama provider
+
+Architecture:
+  daemon owns the long-lived ClineCore session runtime.
+  run/resume are thin localhost clients and require the daemon to be running.
 `);
   process.exit(1);
 }
@@ -95,6 +102,51 @@ function workerConfig(): WorkerConfig {
   };
 }
 
+function daemonAddress() {
+  const host = process.env.ORCH_DAEMON_HOST ?? "127.0.0.1";
+  const port = readInt("ORCH_DAEMON_PORT", 4317);
+  const url = stripTrailingSlash(process.env.ORCH_DAEMON_URL ?? `http://${host}:${port}`);
+  return { host, port, url };
+}
+
+async function daemonRequest<T>(pathName: string, body?: unknown): Promise<T> {
+  const { url } = daemonAddress();
+  let response: Response;
+
+  try {
+    response = await fetch(`${url}${pathName}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new Error(
+      `Unable to reach the orchestrator daemon at ${url}. Start it first with: npm run dev -- daemon <workspace>`,
+      { cause: error },
+    );
+  }
+
+  const text = await response.text();
+  let payload: any;
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { error: text || `HTTP ${response.status}` };
+  }
+
+  if (!response.ok) {
+    const error = new Error(payload?.error ?? `Daemon request failed with HTTP ${response.status}`) as Error & {
+      code?: string;
+      sessionId?: string;
+    };
+    error.code = payload?.code;
+    error.sessionId = payload?.sessionId;
+    throw error;
+  }
+
+  return payload as T;
+}
+
 async function printAvailableTasks(store: TaskStore) {
   const tasks = await store.list();
   if (tasks.length === 0) {
@@ -136,29 +188,23 @@ async function main() {
     return;
   }
 
-  const config = workerConfig();
-  console.log(
-    `[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}; context=${config.contextWindow}; input=${config.maxInputTokens}; turn=${config.maxTokensPerTurn}; reasoning=${config.reasoningEffort}]`,
-  );
-  const runner = new ClineRunner(workspace, config);
+  if (command === "daemon") {
+    const config = workerConfig();
+    const { host, port } = daemonAddress();
+    console.log(
+      `[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}; context=${config.contextWindow}; input=${config.maxInputTokens}; turn=${config.maxTokensPerTurn}; reasoning=${config.reasoningEffort}]`,
+    );
+    await startDaemon(workspace, config, { host, port });
+    return;
+  }
 
   if (command === "run") {
     const goal = rest.join(" ").trim();
     if (!goal) usage();
 
-    const now = new Date().toISOString();
-    const task: OrchestratorTask = {
-      id: crypto.randomUUID(),
-      goal,
-      workspace,
-      status: "created",
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await store.save(task);
-    console.log(`[orchestrator task: ${task.id}]`);
-    const completed = await runner.start(task);
+    const completed = await daemonRequest<OrchestratorTask>("/run", { goal });
+    console.log(`[orchestrator task: ${completed.id}]`);
+    if (completed.lastOutput) console.log(`\n${completed.lastOutput}`);
     console.log(`\n[status: ${completed.status}]`);
     return;
   }
@@ -168,8 +214,8 @@ async function main() {
     const prompt = promptParts.join(" ").trim();
     if (!taskId || !prompt) usage();
 
-    const task = await store.load(taskId);
-    const completed = await runner.resume(task, prompt);
+    const completed = await daemonRequest<OrchestratorTask>("/resume", { taskId, prompt });
+    if (completed.lastOutput) console.log(`\n${completed.lastOutput}`);
     console.log(`\n[status: ${completed.status}]`);
     return;
   }
