@@ -115,6 +115,15 @@ export async function startDaemon(
         return;
       }
 
+      const abortMatch = url.pathname.match(/^\/tasks\/([^/]+)\/abort$/);
+      if (req.method === "POST" && abortMatch) {
+        const taskId = decodeURIComponent(abortMatch[1]);
+        const body = await readJson(req);
+        const reason = String(body?.reason ?? "").trim() || "Task aborted by user";
+        json(res, 200, await runner.abort(taskId, reason));
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/run") {
         const body = await readJson(req);
         const goal = String(body?.goal ?? "").trim();
@@ -158,7 +167,7 @@ export async function startDaemon(
         }
 
         const task = await store.load(taskId);
-        if (task.status === "running" || task.status === "waiting") {
+        if (task.status === "running" || task.status === "waiting" || task.status === "stalled") {
           json(res, 409, { error: `Task ${task.id} is already ${task.status}` });
           return;
         }
@@ -188,7 +197,11 @@ export async function startDaemon(
       }
 
       const code = (error as any)?.code;
-      json(res, code === "session_not_found" ? 409 : 500, errorPayload(error));
+      json(
+        res,
+        code === "session_not_found" || code === "invalid_task_state" ? 409 : 500,
+        errorPayload(error),
+      );
     }
   });
 
