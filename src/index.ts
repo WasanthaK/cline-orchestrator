@@ -20,10 +20,21 @@ Environment:
   ORCH_MODEL=qwen38-27b-192k:latest
   ORCH_BASE_URL=http://localhost:11434
   ORCH_API_KEY=
+  ORCH_MAX_INPUT_TOKENS=180000
+  ORCH_MAX_OUTPUT_TOKENS=16000
+  ORCH_TIMEOUT_MS=0
+  ORCH_MAX_ITERATIONS=0
   ORCH_AUTO_APPROVE_COMMANDS=false
   ORCH_AUTO_APPROVE_EDITS=false
 `);
   process.exit(1);
+}
+
+function readInt(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function workerConfig(): WorkerConfig {
@@ -32,6 +43,10 @@ function workerConfig(): WorkerConfig {
     modelId: process.env.ORCH_MODEL ?? "qwen38-27b-192k:latest",
     apiKey: process.env.ORCH_API_KEY,
     baseUrl: process.env.ORCH_BASE_URL ?? "http://localhost:11434",
+    maxInputTokens: readInt("ORCH_MAX_INPUT_TOKENS", 180000),
+    maxOutputTokens: readInt("ORCH_MAX_OUTPUT_TOKENS", 16000),
+    timeoutMs: readInt("ORCH_TIMEOUT_MS", 0),
+    maxIterations: readInt("ORCH_MAX_ITERATIONS", 0),
     autoApproveCommands: process.env.ORCH_AUTO_APPROVE_COMMANDS === "true",
     autoApproveEdits: process.env.ORCH_AUTO_APPROVE_EDITS === "true",
   };
