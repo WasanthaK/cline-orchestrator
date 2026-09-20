@@ -46,6 +46,10 @@ export class ClineRunner {
       baseUrl: this.worker.baseUrl,
       cwd: this.workspace,
       workspaceRoot: this.workspace,
+      maxInputTokens: this.worker.maxInputTokens,
+      maxOutputTokens: this.worker.maxOutputTokens,
+      ...(this.worker.timeoutMs > 0 ? { timeoutMs: this.worker.timeoutMs } : {}),
+      ...(this.worker.maxIterations > 0 ? { maxIterations: this.worker.maxIterations } : {}),
       enableTools: true,
       enableSpawnAgent: false,
       enableAgentTeams: false,
@@ -59,14 +63,25 @@ export class ClineRunner {
     await this.store.save(task);
 
     try {
+      // Important: create the session WITHOUT the prompt. Cline's SDK start()
+      // initializes the session and should return immediately. The first user
+      // turn is sent separately so we can persist the session ID before any
+      // inference or tool work begins.
       const session = await cline.start({
-        prompt: task.goal,
         config: this.modelConfig(),
       });
 
       task.clineSessionId = session.sessionId;
-      task.finishReason = session.result?.finishReason;
-      task.status = session.result?.finishReason === "error" ? "failed" : "completed";
+      await this.store.save(task);
+      process.stdout.write(`[cline session: ${session.sessionId}]\n`);
+
+      const result = await cline.send(session.sessionId, {
+        type: "user_message",
+        text: task.goal,
+      });
+
+      task.finishReason = result?.finishReason;
+      task.status = result?.finishReason === "error" ? "failed" : "completed";
       await this.store.save(task);
       return task;
     } catch (error) {
@@ -81,7 +96,9 @@ export class ClineRunner {
 
   async resume(task: OrchestratorTask, prompt: string): Promise<OrchestratorTask> {
     if (!task.clineSessionId) {
-      throw new Error(`Task ${task.id} has no Cline session to resume.`);
+      throw new Error(
+        `Task ${task.id} has no Cline session ID. It was created by an older/broken run and cannot be resumed. Start a new task.`,
+      );
     }
 
     const cline = await this.createCore();
@@ -90,9 +107,9 @@ export class ClineRunner {
     await this.store.save(task);
 
     try {
-      const result = await cline.send({
-        sessionId: task.clineSessionId,
-        prompt,
+      const result = await cline.send(task.clineSessionId, {
+        type: "user_message",
+        text: prompt,
       });
 
       task.finishReason = result?.finishReason;
