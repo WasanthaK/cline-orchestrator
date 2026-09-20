@@ -2,8 +2,19 @@ import { ClineCore } from "@cline/sdk";
 import type { OrchestratorTask, WorkerConfig } from "./types.js";
 import { TaskStore } from "./state.js";
 
+const READ_TOOLS = new Set(["read_files", "search_codebase", "fetch_web_content"]);
+const COMMAND_TOOLS = new Set(["run_commands", "execute_command"]);
+const EDIT_TOOLS = new Set([
+  "editor",
+  "apply_patch",
+  "replace_in_file",
+  "write_to_file",
+  "delete_file",
+]);
+
 export class ClineRunner {
   private readonly store: TaskStore;
+  private lastActivityAt = Date.now();
 
   constructor(
     private readonly workspace: string,
@@ -16,20 +27,40 @@ export class ClineRunner {
     const cline = await ClineCore.create({
       clientName: "cline-orchestrator",
       backendMode: "local",
-      toolPolicies: {
-        read_files: { autoApprove: true },
-        search_codebase: { autoApprove: true },
-        fetch_web_content: { autoApprove: true },
-        run_commands: { autoApprove: this.worker.autoApproveCommands },
-        apply_patch: { autoApprove: this.worker.autoApproveEdits },
-        editor: { autoApprove: this.worker.autoApproveEdits },
-      },
     });
 
     cline.subscribe((event: any) => {
+      this.lastActivityAt = Date.now();
+
       if (event?.type === "chunk" && event?.payload?.type === "text") {
         process.stdout.write(event.payload.text);
+        return;
       }
+
+      if (event?.type === "status") {
+        process.stdout.write(`\n[cline status: ${event?.payload?.status ?? "unknown"}]\n`);
+        return;
+      }
+
+      if (event?.type === "agent_event") {
+        const type = event?.payload?.event?.type;
+        if (type === "iteration_start") {
+          process.stdout.write("\n[cline iteration started]\n");
+        } else if (type === "content_start") {
+          process.stdout.write("\n[cline content/tool activity]\n");
+        } else if (type === "usage") {
+          process.stdout.write("\n[cline usage updated]\n");
+        } else if (type === "error") {
+          process.stdout.write("\n[cline agent error]\n");
+        }
+        return;
+      }
+
+      if (event?.type === "hook") {
+        process.stdout.write("\n[cline tool hook]\n");
+        return;
+      }
+
       if (event?.type === "ended") {
         process.stdout.write(`\n[cline ended: ${event?.payload?.finishReason ?? "unknown"}]\n`);
       }
@@ -56,6 +87,66 @@ export class ClineRunner {
     };
   }
 
+  private toolPolicies() {
+    return {
+      "*": { autoApprove: false },
+      read_files: { enabled: true, autoApprove: true },
+      search_codebase: { enabled: true, autoApprove: true },
+      fetch_web_content: { enabled: true, autoApprove: true },
+      run_commands: {
+        enabled: this.worker.autoApproveCommands,
+        autoApprove: this.worker.autoApproveCommands,
+      },
+      execute_command: {
+        enabled: this.worker.autoApproveCommands,
+        autoApprove: this.worker.autoApproveCommands,
+      },
+      editor: {
+        enabled: this.worker.autoApproveEdits,
+        autoApprove: this.worker.autoApproveEdits,
+      },
+      apply_patch: {
+        enabled: this.worker.autoApproveEdits,
+        autoApprove: this.worker.autoApproveEdits,
+      },
+      replace_in_file: {
+        enabled: this.worker.autoApproveEdits,
+        autoApprove: this.worker.autoApproveEdits,
+      },
+      write_to_file: {
+        enabled: this.worker.autoApproveEdits,
+        autoApprove: this.worker.autoApproveEdits,
+      },
+      delete_file: {
+        enabled: this.worker.autoApproveEdits,
+        autoApprove: this.worker.autoApproveEdits,
+      },
+    };
+  }
+
+  private capabilities() {
+    return {
+      requestToolApproval: async (request: any) => {
+        const toolName = String(request?.toolName ?? "");
+        const approved =
+          READ_TOOLS.has(toolName) ||
+          (COMMAND_TOOLS.has(toolName) && this.worker.autoApproveCommands) ||
+          (EDIT_TOOLS.has(toolName) && this.worker.autoApproveEdits);
+
+        process.stdout.write(`\n[tool ${approved ? "approved" : "denied"}: ${toolName || "unknown"}]\n`);
+        return { approved };
+      },
+    };
+  }
+
+  private startHeartbeat() {
+    this.lastActivityAt = Date.now();
+    return setInterval(() => {
+      const silentForSeconds = Math.round((Date.now() - this.lastActivityAt) / 1000);
+      process.stdout.write(`\n[orchestrator heartbeat: waiting; last Cline event ${silentForSeconds}s ago]\n`);
+    }, 15000);
+  }
+
   async start(task: OrchestratorTask): Promise<OrchestratorTask> {
     const cline = await this.createCore();
     task.status = "running";
@@ -63,27 +154,32 @@ export class ClineRunner {
     await this.store.save(task);
 
     try {
-      // Cline's interactive-session contract: allocate the session first,
-      // without a prompt, then send the first turn using the returned ID.
       const session = await cline.start({
         config: this.modelConfig(),
         prompt: undefined,
         interactive: true,
+        toolPolicies: this.toolPolicies(),
+        capabilities: this.capabilities(),
       });
 
       task.clineSessionId = session.sessionId;
       await this.store.save(task);
       process.stdout.write(`[cline session: ${session.sessionId}]\n`);
 
-      const result = await cline.send({
-        sessionId: session.sessionId,
-        prompt: task.goal,
-      });
+      const heartbeat = this.startHeartbeat();
+      try {
+        const result = await cline.send({
+          sessionId: session.sessionId,
+          prompt: task.goal,
+        });
 
-      task.finishReason = result?.finishReason;
-      task.status = result?.finishReason === "error" ? "failed" : "completed";
-      await this.store.save(task);
-      return task;
+        task.finishReason = result?.finishReason;
+        task.status = result?.finishReason === "error" ? "failed" : "completed";
+        await this.store.save(task);
+        return task;
+      } finally {
+        clearInterval(heartbeat);
+      }
     } catch (error) {
       task.status = "failed";
       task.error = error instanceof Error ? error.message : String(error);
@@ -107,15 +203,20 @@ export class ClineRunner {
     await this.store.save(task);
 
     try {
-      const result = await cline.send({
-        sessionId: task.clineSessionId,
-        prompt,
-      });
+      const heartbeat = this.startHeartbeat();
+      try {
+        const result = await cline.send({
+          sessionId: task.clineSessionId,
+          prompt,
+        });
 
-      task.finishReason = result?.finishReason;
-      task.status = result?.finishReason === "error" ? "failed" : "completed";
-      await this.store.save(task);
-      return task;
+        task.finishReason = result?.finishReason;
+        task.status = result?.finishReason === "error" ? "failed" : "completed";
+        await this.store.save(task);
+        return task;
+      } finally {
+        clearInterval(heartbeat);
+      }
     } catch (error) {
       task.status = "failed";
       task.error = error instanceof Error ? error.message : String(error);
