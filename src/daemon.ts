@@ -89,6 +89,9 @@ export async function startDaemon(
             maxInputTokens: worker.maxInputTokens,
             maxTokensPerTurn: worker.maxTokensPerTurn,
             reasoningEffort: worker.reasoningEffort,
+            stallTimeoutMs: worker.stallTimeoutMs,
+            maxRetries: worker.maxRetries,
+            retryDelayMs: worker.retryDelayMs,
           },
         });
         return;
@@ -96,6 +99,13 @@ export async function startDaemon(
 
       if (req.method === "GET" && url.pathname === "/tasks") {
         json(res, 200, await store.list());
+        return;
+      }
+
+      const eventsMatch = url.pathname.match(/^\/tasks\/([^/]+)\/events$/);
+      if (req.method === "GET" && eventsMatch) {
+        const taskId = decodeURIComponent(eventsMatch[1]);
+        json(res, 200, await store.events(taskId));
         return;
       }
 
@@ -124,6 +134,11 @@ export async function startDaemon(
           lastPrompt: goal,
         };
         await store.save(task);
+        await store.appendEvent(task.id, "queued", {
+          status: task.status,
+          message: "Task queued for execution",
+          data: { goal },
+        });
         process.stdout.write(`\n[orchestrator task queued: ${task.id}]\n`);
 
         // Acknowledge immediately. Model/tool work continues inside the daemon;
@@ -153,6 +168,11 @@ export async function startDaemon(
         task.error = undefined;
         task.finishReason = undefined;
         await store.save(task);
+        await store.appendEvent(task.id, "resume_queued", {
+          status: task.status,
+          message: "Task queued for resume",
+          data: { prompt },
+        });
         process.stdout.write(`\n[orchestrator task queued for resume: ${task.id}]\n`);
 
         json(res, 202, task);
