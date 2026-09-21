@@ -267,7 +267,7 @@ Make project continuity independent of any particular model context or Cline ses
 - [x] Structured handoff artifact shared with context rotation/recovery.
 - [x] Selective retrieval so whole project memory is not dumped into every prompt.
 - [x] Memory updates are explicit/auditable.
-- [ ] Tests for serialization, update, and selection logic.
+- [x] Tests for serialization, update, and selection logic.
 
 ## Project Metadata and Storage Skeleton
 
@@ -341,6 +341,12 @@ Project memory now has a read-only audit verifier that walks all five durable me
 
 A clean audit returns the complete set of explicit update references with source paths and a passing result. Provenance corruption, duplicate update IDs, count drift, missing latest references, or latest-reference field mismatches produce explicit audit issues rather than being silently accepted. Focused tests exercise architecture, decision, code-map, convention, and known-issue update paths end-to-end and prove the verifier fails closed after deliberate durable-record or metadata tampering.
 
+## Final Serialization / Update / Selection Closure
+
+The final Milestone 4 integration matrix now proves the durable-memory lifecycle as one chain: write all five memory types, reload project metadata through a fresh store instance, append a later lifecycle update after reload, audit the serialized durable state, then run selective retrieval twice from disk and verify stable relevant update IDs while unrelated memory remains excluded.
+
+This complements the focused unit/integration coverage already present for project metadata, task summaries, handoffs, memory updates, audit verification, retrieval relevance, and bounded selection. The cross-cutting test ensures serialization, update, audit, and selection behavior remain compatible when composed rather than only when tested independently.
+
 ## Evidence
 
 - Project metadata/skeleton implementation: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198`, workflow `35579239935`, success.
@@ -353,16 +359,17 @@ A clean audit returns the complete set of explicit update references with source
 - Handoff/project-memory integration: commit `822125be3d7e0d81d44a20e503397b2b3a9014e1` (`feat: integrate durable memory into context handoffs`) plus compatibility tests in commit `7387489e360b851a726b42dcc6797ba48f29ed6a` (`test: cover durable memory handoff integration`); CI `#238`, workflow `35599286479`, success.
 - Selective retrieval implementation: commits `b0a4192058c9f541915220911903bd828f2515b0` (`feat: add selective project memory retrieval`) and `3ff385be69912f8a81f99a4a5ba4d2f976586240` (`feat: supply selective memory to context handoffs`), with focused tests `fa73ac07cb73a184cc3e1648758d0e7456d46d1e`, relevance tightening `148248103c4e153941240e2a9a83cafb63338463`, and corrected exclusion fixture `a8e34addbe3bacf56ce22cdf1d58e4ad166ca623`; CI `#250`, workflow `35602317107`, success. CI `#246` initially failed because generic terms admitted false-positive records and the prior handoff test assumed no selected content could appear; both issues were corrected before acceptance.
 - Explicit/auditable memory verification: implementation commit `43ca077d91ecf137b34db4d68b8d6a694c58cfe5` (`feat: add project memory audit verification`) plus focused tests in commit `f379272930f9fe9ffb71d70c6cc51f2eb4f1213e` (`test: cover project memory audit verification`); CI `#256`, workflow `35604217740`, success.
-- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, task-summary serialization/revision/bounding/schema/path safety, bounded handoff memory provenance, legacy handoff compatibility, selective relevance scoring, task-local provenance selection, global/per-document/excerpt caps, irrelevant-record exclusion from handoffs/prompts, five-document end-to-end provenance audit, duplicate-ID/count drift detection, latest-update metadata mismatch detection, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
+- Final serialization/update/selection closure: commit `8cdb3b9da1b0de97d5d654636fab12992f4176e8` (`test: close project memory serialization update selection matrix`); CI `#260`, workflow `35604869492`, success.
+- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, task-summary serialization/revision/bounding/schema/path safety, bounded handoff memory provenance, legacy handoff compatibility, selective relevance scoring, task-local provenance selection, global/per-document/excerpt caps, irrelevant-record exclusion from handoffs/prompts, five-document end-to-end provenance audit, duplicate-ID/count drift detection, latest-update metadata mismatch detection, project-wide cross-document update counting, invalid-input rejection, unsupported metadata schemas, and cross-store serialization/update/audit/selection composition.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
 
-**IN PROGRESS**
+**COMPLETE**
 
 ## Current Next Step
 
-Close the final Milestone 4 criterion: **verify and document complete serialization, update, and selection test coverage across durable project memory**, adding only focused coverage for any remaining gap. Do not begin Hub/RPC work.
+Begin Milestone 5 with the **Cline Hub / VS Code technical spike only**: document Hub discovery and local authentication/token behavior for the pinned Cline `0.0.83` surface before making any runtime-ownership changes.
 
 ---
 
@@ -392,7 +399,7 @@ The pinned Cline generation is `0.0.83`. Research shows Hub-related architecture
 
 ## Status
 
-**RESEARCH ONLY — implementation must wait for Milestones 3–4**
+**RESEARCH ONLY — technical spike is now unblocked; implementation remains pending**
 
 ---
 
@@ -475,8 +482,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Per-task structured summary | Implemented + cloud tested |
 | Handoff + bounded durable memory context | Implemented + cloud tested |
 | Selective project-memory retrieval | Implemented + cloud tested |
-| Project-memory audit verification | **Implemented + cloud tested** |
-| Durable project memory content/retrieval | In progress |
+| Project-memory audit verification | Implemented + cloud tested |
+| Durable project memory content/retrieval | **Complete / proven** |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
@@ -493,8 +500,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 6. **Validation commands are trusted configuration** — they execute outside the model and must remain explicit/bounded.
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
-9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Project memory remains partial** — durable content, task summaries, handoff integration, bounded selective retrieval, and end-to-end provenance auditing are implemented; the remaining Milestone 4 work is final serialization/update/selection test closure.
+9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction remains a future policy concern rather than a Milestone 4 blocker.
+10. **Project memory** — Milestone 4 durability, provenance, bounded selection, handoff integration, audit verification, and composed serialization/update/selection coverage are complete.
 
 ---
 
@@ -502,13 +509,14 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Close final serialization/update/selection test criterion**
-   - verify serialization/reload coverage for project metadata, task summaries, and handoffs;
-   - verify every update primitive and audit path is covered;
-   - verify retrieval relevance/bounding/selection behavior is covered;
-   - add only focused tests for any actual uncovered gap.
+1. **Perform Milestone 5 Hub/RPC technical spike**
+   - document Hub discovery and local authentication/token mechanism for pinned Cline `0.0.83`;
+   - confirm exact imports and direct-dependency needs;
+   - identify list/attach/send/abort/session-event APIs;
+   - determine workspace session identity and multi-client approval/tool-executor behavior;
+   - produce migration design before implementation.
 
-2. **Perform Milestone 5 Hub/RPC technical spike** only after Milestone 4 is complete.
+2. **Implement shared Hub runtime attachment** only after the technical spike is documented and reviewed.
 
 ---
 
@@ -663,6 +671,15 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Memory updates are explicit/auditable criterion complete**; Milestone 4 remains in progress with one acceptance criterion left.
 - Known limitation: the existing serialization/update/selection coverage must be reviewed once as a complete Milestone 4 matrix before closure.
 - Next action: close the final serialization/update/selection test criterion. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 durable project memory completed
+
+- Change: added one cross-cutting closure test that writes all five memory types, reloads project metadata through a fresh store instance, appends a later known-issue lifecycle update, audits the resulting durable state, and performs repeated selective retrieval from disk.
+- Tests: stable project identity and update count survive reload; the later update becomes `lastMemoryUpdate`; the audit sees all six durable updates with unique IDs; repeated retrieval returns stable relevant IDs while excluding unrelated finance memory.
+- Evidence: commit `8cdb3b9da1b0de97d5d654636fab12992f4176e8`; CI `#260` / `35604869492` passed.
+- Milestone impact: **Milestone 4 COMPLETE** — all durable project-memory acceptance criteria are now implemented and cloud-tested.
+- Known limitation: no Hub/RPC runtime ownership change has been attempted; that belongs to Milestone 5.
+- Next action: begin the Milestone 5 Hub/RPC technical spike with Hub discovery/authentication documentation for pinned Cline `0.0.83` only.
 
 ---
 
