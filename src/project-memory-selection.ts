@@ -12,15 +12,17 @@ export const PROJECT_MEMORY_SELECTION_MAX_ENTRIES = 6 as const;
 export const PROJECT_MEMORY_SELECTION_MAX_PER_DOCUMENT = 2 as const;
 export const PROJECT_MEMORY_SELECTION_MAX_EXCERPT_CHARS = 1_800 as const;
 export const PROJECT_MEMORY_SELECTION_MAX_QUERY_TERMS = 32 as const;
+export const PROJECT_MEMORY_SELECTION_MIN_TERM_MATCHES = 2 as const;
 
 const PROVENANCE_PREFIX = "<!-- orchestrator-memory-update ";
 const PROVENANCE_SUFFIX = " -->";
 const STOP_WORDS = new Set([
-  "about", "after", "again", "against", "also", "been", "before", "being", "between",
-  "could", "current", "does", "doing", "each", "from", "have", "into", "more", "most",
-  "only", "other", "over", "same", "should", "some", "such", "than", "that", "their",
-  "them", "then", "there", "these", "they", "this", "those", "through", "under", "using",
-  "very", "what", "when", "where", "which", "while", "with", "would", "your",
+  "about", "after", "again", "against", "also", "and", "been", "before", "being", "between",
+  "could", "current", "does", "doing", "durable", "each", "for", "from", "have", "into",
+  "memory", "more", "most", "only", "other", "over", "project", "same", "should", "some",
+  "src", "such", "task", "than", "that", "the", "their", "them", "then", "there", "these",
+  "they", "this", "those", "through", "under", "using", "very", "what", "when", "where",
+  "which", "while", "with", "would", "your", "continue",
 ]);
 
 export interface ProjectMemorySelectionInput {
@@ -161,10 +163,17 @@ export async function selectProjectMemory(
         parsed.provenance.taskId,
         document,
       ].join("\n");
-      let score = termScore(searchable, queryTerms);
-      if (input.taskId && parsed.provenance.taskId === input.taskId) score += 4;
-      if (preferred.has(document)) score += 1;
-      if (score <= 0) continue;
+      const termMatches = termScore(searchable, queryTerms);
+      const sameTask = Boolean(input.taskId && parsed.provenance.taskId === input.taskId);
+      const preferredDocument = preferred.has(document);
+      if (
+        termMatches < PROJECT_MEMORY_SELECTION_MIN_TERM_MATCHES &&
+        !sameTask &&
+        !preferredDocument
+      ) {
+        continue;
+      }
+      const score = termMatches + (sameTask ? 4 : 0) + (preferredDocument ? 1 : 0);
 
       const excerpt = boundedExcerpt(parsed.body);
       candidates.push({
