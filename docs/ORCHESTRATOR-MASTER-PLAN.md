@@ -110,10 +110,9 @@ Reliably control Cline across task start, continuation, recovery, cancellation, 
 - [x] Explicit abort CLI/API.
 - [x] Manual abort does not trigger retry.
 - [x] Graceful daemon shutdown aborts active tasks durably.
-- [x] Graceful daemon shutdown drains queued tasks without starting Cline.
-- [x] CLI falls back to persisted terminal state during listener shutdown race.
-- [x] Provider preflight rejects unavailable/missing configured model before task state changes.
-- [x] Provider preflight is metadata-only and non-destructive.
+- [x] Graceful queued-task shutdown without starting Cline.
+- [x] CLI persistence fallback during listener shutdown race.
+- [x] Metadata-only provider preflight rejects unavailable/missing configured model before task state changes.
 
 ## Status
 
@@ -131,61 +130,46 @@ Before unattended editing, every coding task must have auditable Git state, a re
 
 ### Git state and rollback
 
-- [x] Capture Git branch/HEAD/dirty state before run.
-- [x] Capture Git branch/HEAD/dirty state after run.
+- [x] Capture Git branch/HEAD/dirty state before and after run.
 - [x] Exclude `.orchestrator/` bookkeeping from workspace-change comparisons.
 - [x] Create restorable checkpoint before Cline changes the workspace.
 - [x] Preserve already-dirty worktree state in checkpoint design.
 - [x] Record checkpoint metadata/events.
-- [x] Explicit rollback service.
-- [x] Serialized rollback daemon endpoint.
-- [x] `rollback` CLI command.
-- [x] Automated rollback tests.
+- [x] Explicit rollback service, serialized daemon endpoint, CLI, and tests.
 
 ### Validation
 
-- [x] Task stores `acceptanceCriteria[]`.
-- [x] Task stores `validationCommands[]`.
+- [x] Task stores `acceptanceCriteria[]` and `validationCommands[]`.
 - [x] Model-reported completion transitions to `validating` when commands exist.
-- [x] Run validation outside the model.
-- [x] Persist validation stdout/stderr/exit/timeout information.
-- [x] Stop validation sequence on first failure.
-- [x] `validation_failed` terminal state.
-- [x] Bounded automatic validation-repair loop.
-- [x] Validation lifecycle events.
-- [x] Validation/unit tests in cloud CI.
+- [x] Run validation outside the model and persist command evidence.
+- [x] Stop sequence on first failure; `validation_failed` terminal state.
+- [x] Bounded automatic validation-repair loop and lifecycle events/tests.
 
 ### Diff safety policy
 
 - [x] Explicit final diff summary relative to the original pre-run checkpoint.
 - [x] Detect unexpected changed paths when expected scope patterns are configured.
-- [x] Protected-path hard-failure policy for `.env`, secrets/credentials, private-key material, and configurable patterns.
-- [x] Deployment-sensitive path warning policy with configurable patterns.
-- [x] Detect unexpected branch movement.
-- [x] Detect unexpected HEAD movement.
+- [x] Protected-path hard-failure policy and deployment-sensitive warning policy.
+- [x] Detect unexpected branch/HEAD movement.
 - [x] Configurable excessive-diff threshold.
 - [x] Distinguish warnings from hard policy failures.
-- [x] Persist policy result and lifecycle events.
-- [x] Unit/integration tests cover safety-policy decisions and completion gating.
-- [x] A coding task cannot persist `completed` until validation has passed (when configured) and the diff safety gate has passed.
+- [x] Persist policy result/events and automated decision tests.
+- [x] `completed` requires validation success (when configured) and diff safety success.
 
 ## Diff Safety Configuration
 
-Environment controls:
+- `ORCH_DIFF_MAX_CHANGED_FILES` — hard threshold; default `100`; `0` disables it.
+- `ORCH_DIFF_PROTECTED_PATTERNS` — comma-separated hard-failure glob patterns.
+- `ORCH_DIFF_WARNING_PATTERNS` — comma-separated warning glob patterns.
+- `ORCH_DIFF_EXPECTED_PATHS` — optional comma-separated allowed task-scope patterns.
+- Task `expectedChangedPaths[]` takes precedence over environment-level scope.
 
-- `ORCH_DIFF_MAX_CHANGED_FILES` — hard threshold; default `100`; `0` disables this threshold.
-- `ORCH_DIFF_PROTECTED_PATTERNS` — comma-separated hard-failure glob patterns; defaults include `.env`, secrets/credentials directories, and common private-key formats.
-- `ORCH_DIFF_WARNING_PATTERNS` — comma-separated warning glob patterns; defaults include GitHub Actions, Docker/deployment/infra/Terraform-sensitive files.
-- `ORCH_DIFF_EXPECTED_PATHS` — optional comma-separated allowed task-scope patterns. When omitted, scope enforcement is skipped and a durable warning is recorded.
-- Task state also supports `expectedChangedPaths[]`, which takes precedence over the environment-level expected scope.
-
-The safety comparison uses the original run checkpoint so validation-repair turns do not reset the baseline. Tracked dirty state present before the run is excluded by comparing against the checkpoint stash tree. Pre-existing untracked files are compared against checkpoint backups so task-created additions, modifications, and deletions can be distinguished from pre-run state.
+The comparison uses the original run checkpoint so validation-repair turns do not reset the baseline. Pre-run tracked/untracked dirty state is distinguished from task-created changes.
 
 ## Evidence
 
-- Implementation commit: `56cecab14bf5719601d6801b5635a5b2ef2d0336` (`feat: add diff safety gate`).
-- GitHub-hosted CI: run `#174`, workflow run `35574026345`, conclusion `success`.
-- Tests cover normal scoped edits, protected paths, unexpected paths, deployment warnings, branch movement, excessive diff, dirty pre-run tracked state, persisted policy evidence, and hard-policy prevention of `completed`.
+- Commit `56cecab14bf5719601d6801b5635a5b2ef2d0336` (`feat: add diff safety gate`).
+- GitHub-hosted CI run `#174`, workflow `35574026345`, success.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
@@ -213,6 +197,7 @@ Allow long-running work without allowing one Cline conversation to grow until qu
 - [x] Handoff includes original goal, current task state, relevant workspace evidence, and pending action.
 - [x] Persist durable handoff evidence before session replacement and retain a task reference/event that survives replacement.
 - [x] Bound and test multiple planned rotations in one long task.
+- [x] Test interaction with `session_not_found` recovery.
 
 ## Structured Handoff Design
 
@@ -222,42 +207,37 @@ Durable handoffs are stored under:
 .orchestrator/handoffs/<task-id>/<target-generation>-<handoff-id>.json
 ```
 
-Each version-1 handoff records:
+Each version-1 handoff records recovery/rotation reason, source/target generation, original goal, pending action, task lifecycle/configuration state, current Git snapshot, checkpoint identity, validation/diff-safety summaries, run metrics, and bounded supporting prose.
 
-- recovery/rotation reason and source/target session generation;
-- original task goal and pending action;
-- task lifecycle state, validation configuration, repair/rotation counters, and expected change scope;
-- current Git workspace snapshot excluding `.orchestrator/` bookkeeping;
-- rollback-checkpoint identity/fingerprints when present;
-- latest validation/diff-safety summary and run metrics when present;
-- bounded previous-prompt and recent-worker-output excerpts as supporting evidence only.
-
-The artifact is written **before** starting the replacement Cline session. The replacement prompt is rendered from the structured artifact rather than reconstructed primarily from prior prose. Task state stores `lastContextHandoff` plus `contextHandoffCount`, and a `context_handoff_created` event records durable provenance.
+The artifact is written **before** starting the replacement Cline session. The replacement prompt is rendered from structured durable data rather than reconstructed primarily from prior prose. Task state stores `lastContextHandoff` plus `contextHandoffCount`, and `context_handoff_created` events record provenance.
 
 ## Bounded Rotation Behavior
 
-`maxContextRotations` is enforced per orchestrator run. A rotation request crossing the threshold creates exactly one replacement generation and one durable handoff while budget remains. Once the run budget is exhausted, later threshold observations do not create more replacement sessions. Integration coverage proves two allowed rotations produce generations 1 -> 2 -> 3, two distinct handoffs, and no third replacement when the configured budget is two.
+`maxContextRotations` is enforced per run. Integration coverage proves two allowed rotations produce generations 1 -> 2 -> 3, two distinct handoffs, and no third replacement when the configured budget is two.
+
+## Session-Loss Behavior
+
+A `session_not_found` result is distinct from planned context rotation. Integration coverage proves one lost recorded session creates one handoff targeting the next generation, advances recovery/session-generation counters, resumes from the structured handoff, and does **not** increment planned-rotation counters.
 
 ## Remaining Acceptance Criteria
 
-- [ ] Test interaction with `session_not_found` recovery.
 - [ ] Test interaction with validation repair.
 - [ ] Ensure context metrics/events remain clear across multiple session generations.
 
 ## Evidence
 
-- Structured handoff implementation: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI run `#178`, workflow `35576669466`, success.
-- Bounded repeated-rotation integration test: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI run `#182`, workflow `35577093373`, success.
-- Tests cover durable serialization/loading, task/workspace/pending-action evidence, bounded supporting prose, structured replacement-prompt rendering, path containment, two planned rotations, rotation-budget exhaustion, distinct handoffs, and session-generation/event provenance.
+- Structured handoff: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI `#178`, workflow `35576669466`, success.
+- Repeated rotations: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI `#182`, workflow `35577093373`, success.
+- Session-not-found recovery: commit `26dbf0db896e83d160c1cf3f43f2ae7b0e813e2c`; CI `#186`, workflow `35577401081`, success.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
 
-**IN PROGRESS — structured handoff and bounded repeated rotations implemented; recovery/validation interaction coverage remains**
+**IN PROGRESS — validation-repair interaction and final cross-generation metrics/event clarity remain**
 
 ## Current Next Step
 
-Test the structured handoff interaction with **`session_not_found` recovery**, then record evidence before moving to validation-repair interaction. Do not begin Hub/RPC work.
+Test the structured handoff interaction with **validation repair**, preserving the original task/checkpoint baseline through a repair run and any replacement session. Do not begin Hub/RPC work.
 
 ---
 
@@ -312,17 +292,14 @@ Allow the orchestrator and the user's VS Code Cline UI to observe/control the sa
 
 ## Confirmed Research
 
-The pinned Cline generation is `0.0.83`. Current research shows Hub-related architecture through `@cline/core/hub`, including concepts such as `NodeHubClient`, `HubSessionClient`, `HubUIClient`, and `connectToHub`. This remains research only.
+The pinned Cline generation is `0.0.83`. Current research shows Hub-related architecture through `@cline/core/hub`, including `NodeHubClient`, `HubSessionClient`, `HubUIClient`, and `connectToHub`. This remains research only.
 
 ## Technical Spike Acceptance Criteria
 
-- [ ] Document Hub discovery mechanism.
-- [ ] Document local authentication/token mechanism.
-- [ ] Confirm exact imports available at `0.0.83`.
-- [ ] Determine whether `@cline/core` must be a direct dependency.
+- [ ] Document Hub discovery and local authentication/token mechanism.
+- [ ] Confirm exact imports available at `0.0.83` and direct-dependency needs.
 - [ ] Identify list/attach/send/abort/session-event APIs.
-- [ ] Determine how VS Code identifies workspace-owned sessions.
-- [ ] Determine approval/tool-executor behavior with multiple clients.
+- [ ] Determine workspace-owned session identity and multi-client approval/tool-executor behavior.
 - [ ] Produce migration design from owned `ClineCore` to Hub-backed attachment.
 
 ## Implementation Acceptance Criteria
@@ -341,18 +318,15 @@ The pinned Cline generation is `0.0.83`. Current research shows Hub-related arch
 
 ## Objective
 
-Add a separate supervisory intelligence layer that plans, defines evidence, sends bounded implementation work to local Cline, and reviews resulting evidence.
+Add a supervisory intelligence layer that plans, defines evidence, sends bounded implementation work to local Cline, and reviews resulting evidence.
 
 ## Acceptance Criteria
 
-- [ ] Supervisor task schema.
-- [ ] Planner produces bounded implementation instructions.
+- [ ] Supervisor task schema and bounded implementation instructions.
 - [ ] Planner produces acceptance criteria and validation commands.
-- [ ] Reviewer consumes diff + validation + task evidence.
-- [ ] Reviewer can request bounded repairs.
+- [ ] Reviewer consumes diff + validation + task evidence and can request bounded repairs.
 - [ ] Reviewer cannot bypass safety gates.
-- [ ] Durable supervisor decisions.
-- [ ] Human escalation state for ambiguous/high-risk decisions.
+- [ ] Durable supervisor decisions and human escalation state.
 
 ## Status
 
@@ -368,13 +342,10 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 ## Acceptance Criteria
 
-- [ ] Task queue / DAG and dependencies.
-- [ ] Automatic progression to next eligible task.
-- [ ] Time/token/request/repair budgets.
-- [ ] Checkpoint policy.
+- [ ] Task queue/DAG, dependencies, and automatic progression.
+- [ ] Time/token/request/repair budgets and checkpoint policy.
 - [ ] `waiting_for_human` state and escalation rules.
-- [ ] Final unattended-run report.
-- [ ] Safe resume after daemon/machine interruption.
+- [ ] Final unattended-run report and safe resume after interruption.
 
 ## Status
 
@@ -386,13 +357,10 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 ## Possible Scope
 
-- [ ] VS Code orchestration panel.
-- [ ] Web/dashboard view.
+- [ ] VS Code orchestration panel and web/dashboard view.
 - [ ] MCP server surface.
-- [ ] Sequential specialist roles.
-- [ ] Multiple workers when provider/hardware capacity permits.
-- [ ] Team-role handoffs.
-- [ ] Rich task/event/usage visualization.
+- [ ] Sequential specialist roles and multiple workers when capacity permits.
+- [ ] Team-role handoffs and rich task/event/usage visualization.
 
 ## Status
 
@@ -406,15 +374,15 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 |---|---|
 | Foundation lifecycle | Complete / proven |
 | Provider metadata preflight | Implemented + cloud tested |
-| Git before/after snapshots | Implemented |
-| Restorable checkpoint + rollback | Implemented + tested |
+| Git checkpoint + rollback | Implemented + tested |
 | Validation + bounded repair | Implemented + tested |
-| Diff safety gate | **Implemented + cloud tested** |
-| Completion requires validation + safety | **Implemented + tested** |
+| Diff safety gate | Implemented + cloud tested |
+| Completion requires validation + safety | Implemented + tested |
 | Per-turn context supervisor | Implemented + cloud tested |
-| Structured durable context handoff | **Implemented + cloud tested** |
-| Multiple planned rotation coverage | **Implemented + cloud tested** |
-| Session-not-found + handoff interaction | Next unfinished item |
+| Structured durable context handoff | Implemented + cloud tested |
+| Multiple planned rotation coverage | Implemented + cloud tested |
+| Session-not-found + handoff interaction | Implemented + cloud tested |
+| Validation-repair + handoff interaction | Next unfinished item |
 | Durable project memory | Not started |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -427,12 +395,12 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 1. **Shared Ollama runtime** — never mutate/kill it through automated tests without explicit authorization.
 2. **Context rotation** — never use cumulative token totals as the trigger.
 3. **Semantic recovery** — hidden model context cannot be restored after runtime loss; recovery must rely on durable workspace/project state.
-4. **Cline API evolution** — Hub work must use the exact pinned package/API surface, not newer docs by assumption.
+4. **Cline API evolution** — Hub work must use the exact pinned package/API surface.
 5. **Dirty worktrees** — safety/rollback must preserve pre-run changes and distinguish them from task changes.
 6. **Validation commands are trusted configuration** — they execute outside the model and must remain explicit/bounded.
-7. **Expected changed paths** — without task/environment scope patterns the safety gate records a warning but cannot classify unrelated ordinary source files as unexpected.
-8. **Event/state persistence** — currently lightweight JSON/JSONL; transactional storage can be considered later if justified.
-9. **Handoff retention** — per-generation handoff JSON is intentionally durable; retention/compaction belongs with later project-memory policy rather than this milestone.
+7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
+8. **Event/state persistence** — currently lightweight JSON/JSONL.
+9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with later project-memory policy.
 
 ---
 
@@ -440,20 +408,16 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Finish Milestone 3 session-loss interaction coverage**
-   - simulate `session_not_found` during a run;
-   - prove replacement uses a durable structured handoff;
-   - prove session-generation/recovery evidence remains coherent.
+1. **Finish Milestone 3 validation-repair interaction coverage**
+   - preserve original checkpoint through repair run;
+   - prove recovery/rotation handoff contains repair-state validation evidence and pending repair action;
+   - confirm resulting lifecycle remains in validation until validation actually passes.
 
-2. **Finish Milestone 3 validation-repair interaction coverage**
-   - prove repair turns and planned/recovery handoffs preserve the correct original task/checkpoint context;
-   - confirm metrics/events remain understandable across generations.
+2. **Finish Milestone 3 cross-generation metrics/event evidence** and close the milestone if CI is green.
 
-3. **Close Milestone 3** once all acceptance criteria and cloud CI are green.
+3. **Build Milestone 4: durable project memory**.
 
-4. **Build Milestone 4: durable project memory**.
-
-5. **Perform Milestone 5 Hub/RPC technical spike** only after Milestones 3–4 are complete.
+4. **Perform Milestone 5 Hub/RPC technical spike** only after Milestones 3–4 are complete.
 
 ---
 
@@ -461,45 +425,39 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 
 ## 2026-09-21 — Plan baseline established
 
-- Consolidated the project into eight ordered milestones.
-- Marked Foundation complete.
-- Marked Safety nearly complete with diff policy as the remaining item.
-- Recorded validation, rollback, checkpoint, context-supervisor, and Hub research state.
-- Established the shared Ollama non-destructive testing rule.
+- Consolidated eight ordered milestones and protected the shared Ollama runtime.
 - Next action was the Milestone 2 diff safety gate.
 
 ## 2026-09-21 — Milestone 2 diff safety gate completed
 
-- Change: added final diff evaluation relative to the original rollback checkpoint, including tracked dirty-state exclusion and pre-existing untracked-file comparison.
-- Change: added protected hard-failure patterns, deployment-sensitive warning patterns, expected-path scope enforcement, branch/HEAD movement checks, and configurable changed-file threshold.
-- Change: persisted `lastDiffSafety` evidence and diff-safety lifecycle events; hard failures transition to `failed` with `finishReason=diff_safety_failed` instead of `completed`.
-- Change: completion is now centrally gated in `TaskStore.save`, so model completion and post-validation completion cannot bypass the safety policy.
-- Tests: added unit/integration coverage for scoped edits, protected/unexpected paths, warnings, branch movement, excessive diffs, dirty pre-run state, event persistence, and completion blocking.
-- Evidence: commit `56cecab14bf5719601d6801b5635a5b2ef2d0336`; GitHub Actions CI run `35574026345` / run `#174` passed.
-- Milestone impact: **Milestone 2 is COMPLETE**.
-- Known limitation: unexpected ordinary source-path detection requires `expectedChangedPaths[]` or `ORCH_DIFF_EXPECTED_PATHS`; otherwise a warning records that scope enforcement was not configured.
-- Next action: implement the Milestone 3 structured durable context handoff. Hub/RPC remains deferred.
+- Change: implemented checkpoint-relative diff policy, protected/warning paths, scope enforcement, branch/HEAD checks, excessive-diff threshold, durable evidence, and central completion gating.
+- Tests: safety decisions, dirty pre-run state, persistence, and completion blocking.
+- Evidence: commit `56cecab14bf5719601d6801b5635a5b2ef2d0336`; CI `#174` / `35574026345` passed.
+- Milestone impact: **Milestone 2 COMPLETE**.
+- Next action: structured durable context handoff.
 
 ## 2026-09-21 — Milestone 3 structured durable handoff implemented
 
-- Change: added versioned JSON context handoffs under `.orchestrator/handoffs/<task-id>/` and task-level handoff references/counters.
-- Change: each handoff records original goal, pending action, task lifecycle/configuration state, current Git evidence, checkpoint identity, latest validation/diff-safety summaries, run metrics, and bounded supporting prose.
-- Change: recovery now writes the handoff before replacement-session creation and renders the replacement prompt from the structured handoff for planned rotation, missing-session, session-not-found, and watchdog recovery paths.
-- Change: added durable `context_handoff_created` events with source/target generation and artifact path.
-- Tests: durable artifact serialization/loading, workspace/task evidence, bounded prior-output excerpts, structured prompt rendering, and path containment.
-- Evidence: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; GitHub Actions CI run `35576669466` / run `#178` passed typecheck and tests.
-- Milestone impact: structured handoff acceptance criteria are complete; Milestone 3 remains **IN PROGRESS** for bounded repeated rotations and recovery/validation interaction coverage.
-- Known limitation: repeated-rotation/session-not-found/validation-repair interactions had not yet been exercised together by automated tests.
-- Next action: bound and test multiple planned rotations in one run with distinct durable handoff/session-generation evidence.
+- Change: versioned `.orchestrator/handoffs/` artifacts, task references/counters, structured recovery prompts, and durable handoff events.
+- Tests: serialization/loading, task/workspace/pending-action evidence, bounded supporting prose, prompt rendering, and path containment.
+- Evidence: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI `#178` / `35576669466` passed.
+- Milestone impact: structured handoff criteria complete; Milestone 3 remains in progress.
+- Next action: bounded repeated rotations.
 
 ## 2026-09-21 — Milestone 3 bounded repeated rotations proven
 
-- Change: added an integration test using a mocked Cline runtime that drives three model sends with the context threshold crossed on every send while `maxContextRotations=2`.
-- Tests: proved exactly two planned rotations occur, three session generations are created, the first two sessions are aborted for rotation, two distinct durable handoffs target generations 2 and 3, and the third threshold crossing completes without another replacement.
-- Evidence: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; GitHub Actions CI run `35577093373` / run `#182` passed typecheck and tests.
-- Milestone impact: bounded repeated-rotation acceptance criterion is complete; Milestone 3 remains **IN PROGRESS**.
-- Known limitation: explicit `session_not_found` and validation-repair interaction tests remain.
-- Next action: test `session_not_found` recovery with durable structured handoff evidence.
+- Tests: three threshold-crossing sends with `maxContextRotations=2` prove exactly two replacements, generations 1->2->3, two distinct handoffs, and budget exhaustion without a third replacement.
+- Evidence: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI `#182` / `35577093373` passed.
+- Milestone impact: bounded repeated-rotation criterion complete.
+- Next action: `session_not_found` interaction.
+
+## 2026-09-21 — Milestone 3 session-not-found recovery proven
+
+- Tests: mocked runtime rejects the first send with `session_not_found`; orchestrator creates one durable structured handoff, starts generation 2, resumes with that handoff, and completes without consuming planned-rotation budget.
+- Evidence: commit `26dbf0db896e83d160c1cf3f43f2ae7b0e813e2c`; CI `#186` / `35577401081` passed.
+- Milestone impact: session-not-found interaction criterion complete; validation-repair interaction remains.
+- Known limitation: repair-path handoff evidence and final cross-generation metrics/event clarity are still unproven.
+- Next action: test validation-repair interaction while preserving original checkpoint context.
 
 ---
 
