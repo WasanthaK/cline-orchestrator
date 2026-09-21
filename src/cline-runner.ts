@@ -1,4 +1,8 @@
 import { ClineCore } from "@cline/sdk";
+import {
+  ContextSupervisor,
+  type ContextRotationDecision,
+} from "./context-supervisor.js";
 import type {
   OrchestratorTask,
   RunIterationMetrics,
@@ -31,6 +35,21 @@ class WatchdogStallError extends Error {
   }
 }
 
+class ContextRotationError extends Error {
+  readonly code = "context_threshold";
+
+  constructor(
+    readonly sessionId: string,
+    readonly inputTokens: number,
+    readonly threshold: number,
+  ) {
+    super(
+      `Cline request reached ${inputTokens} input tokens (rotation threshold ${threshold}); rotating session ${sessionId}`,
+    );
+    this.name = "ContextRotationError";
+  }
+}
+
 class TaskStateError extends Error {
   readonly code = "invalid_task_state";
 
@@ -46,6 +65,7 @@ function sleep(ms: number): Promise<void> {
 
 export class ClineRunner {
   private readonly store: TaskStore;
+  private readonly contextSupervisor: ContextSupervisor;
   private lastActivityAt = Date.now();
   private streamedText = "";
   private cline: any | undefined;
@@ -55,12 +75,18 @@ export class ClineRunner {
   private runStartedAtMs = 0;
   private activeTask: OrchestratorTask | undefined;
   private readonly abortRequestedTaskIds = new Set<string>();
+  private requestContextRotation: ((decision: ContextRotationDecision) => void) | undefined;
+  private contextRotationsUsedThisRun = 0;
+  private contextRotationLimitNotified = false;
 
   constructor(
     private readonly workspace: string,
     private readonly worker: WorkerConfig,
   ) {
     this.store = new TaskStore(workspace);
+    this.contextSupervisor = new ContextSupervisor(
+      worker.maxContextRotations > 0 ? worker.contextRotateAtTokens : 0,
+    );
   }
 
   private getTurn(iteration: number): RunIterationMetrics | undefined {
@@ -109,6 +135,9 @@ export class ClineRunner {
     this.streamedText = "";
     this.currentIteration = 0;
     this.currentAttempt = 0;
+    this.contextSupervisor.reset();
+    this.contextRotationsUsedThisRun = 0;
+    this.contextRotationLimitNotified = false;
     this.runStartedAtMs = Date.now();
     this.currentRunMetrics = {
       startedAt: new Date(this.runStartedAtMs).toISOString(),
@@ -194,6 +223,20 @@ export class ClineRunner {
           process.stdout.write(
             `\n[cline iteration ended: ${agentEvent?.iteration ?? "?"}; tools=${agentEvent?.toolCallCount ?? "?"}; attempt=${this.currentAttempt || 1}]\n`,
           );
+
+          const rotation = this.contextSupervisor.consumeAfterIteration(toolCalls);
+          if (rotation && this.requestContextRotation) {
+            if (this.contextRotationsUsedThisRun < this.worker.maxContextRotations) {
+              const requestRotation = this.requestContextRotation;
+              this.requestContextRotation = undefined;
+              requestRotation(rotation);
+            } else if (!this.contextRotationLimitNotified) {
+              this.contextRotationLimitNotified = true;
+              process.stdout.write(
+                `\n[orchestrator context rotation limit reached: ${this.worker.maxContextRotations}; continuing current session]\n`,
+              );
+            }
+          }
         } else if (type === "content_start") {
           const contentType = agentEvent?.contentType ?? "activity";
           const toolName = agentEvent?.toolName;
@@ -230,6 +273,11 @@ export class ClineRunner {
             turn.inputTokens += Number.isFinite(inputTokens) ? inputTokens : 0;
             turn.outputTokens += Number.isFinite(outputTokens) ? outputTokens : 0;
             this.refreshMetricTotals();
+            if (this.contextSupervisor.observeTurnInput(turn.inputTokens)) {
+              process.stdout.write(
+                `\n[orchestrator context threshold observed: input=${turn.inputTokens}; threshold=${this.worker.contextRotateAtTokens}]\n`,
+              );
+            }
           }
           process.stdout.write(
             `\n[cline usage: input=${agentEvent?.inputTokens ?? "?"}, output=${agentEvent?.outputTokens ?? "?"}, totalIn=${agentEvent?.totalInputTokens ?? "?"}, totalOut=${agentEvent?.totalOutputTokens ?? "?"}]\n`,
@@ -447,6 +495,10 @@ export class ClineRunner {
     return error instanceof WatchdogStallError || (error as any)?.code === "watchdog_stall";
   }
 
+  private isContextRotation(error: unknown): error is ContextRotationError {
+    return error instanceof ContextRotationError || (error as any)?.code === "context_threshold";
+  }
+
   private clipped(value: string | undefined, maxChars: number): string {
     if (!value) return "(none)";
     if (value.length <= maxChars) return value;
@@ -463,7 +515,9 @@ export class ClineRunner {
     const reasonText =
       reason === "watchdog_stall"
         ? "The previous Cline turn stopped producing activity and was aborted by the orchestrator watchdog."
-        : "The previous Cline runtime session became unavailable.";
+        : reason === "context_threshold"
+          ? `The previous Cline session reached the orchestrator context-rotation threshold after a request of about ${task.lastContextRotationInputTokens ?? "unknown"} input tokens. The session was intentionally rotated before another tool-driven model iteration.`
+          : "The previous Cline runtime session became unavailable.";
 
     return `You are continuing an orchestrated coding task after a runtime interruption.
 
@@ -519,6 +573,29 @@ Continue from the durable state above. Preserve existing work, verify assumption
     };
   }
 
+  private async recordContextRotation(task: OrchestratorTask, error: ContextRotationError) {
+    this.contextRotationsUsedThisRun += 1;
+    task.contextRotationCount = (task.contextRotationCount ?? 0) + 1;
+    task.lastContextRotationAt = new Date().toISOString();
+    task.lastContextRotationInputTokens = error.inputTokens;
+    task.lastContextRotationThreshold = error.threshold;
+    await this.store.save(task);
+    await this.store.appendEvent(task.id, "context_rotating", {
+      status: task.status,
+      message: `Rotating Cline session after ${error.inputTokens} input tokens crossed threshold ${error.threshold}`,
+      data: {
+        inputTokens: error.inputTokens,
+        threshold: error.threshold,
+        rotationCount: task.contextRotationCount,
+        runRotationCount: this.contextRotationsUsedThisRun,
+        previousSessionId: error.sessionId,
+      },
+    });
+    process.stdout.write(
+      `\n[orchestrator context rotation: input=${error.inputTokens}; threshold=${error.threshold}; runRotation=${this.contextRotationsUsedThisRun}/${this.worker.maxContextRotations}]\n`,
+    );
+  }
+
   private async recordStall(task: OrchestratorTask, silenceMs: number) {
     task.status = "stalled";
     task.stallCount = (task.stallCount ?? 0) + 1;
@@ -569,8 +646,26 @@ Continue from the durable state above. Preserve existing work, verify assumption
 
     this.lastActivityAt = Date.now();
     const sendPromise: Promise<any> = cline.send({ sessionId, prompt });
+
+    let rejectRotation: (error: ContextRotationError) => void = () => undefined;
+    const rotationPromise = new Promise<never>((_, reject) => {
+      rejectRotation = reject;
+    });
+    const requestRotation = (decision: ContextRotationDecision) => {
+      rejectRotation(
+        new ContextRotationError(sessionId, decision.inputTokens, decision.threshold),
+      );
+    };
+    this.requestContextRotation = requestRotation;
+
     if (this.worker.stallTimeoutMs <= 0) {
-      return sendPromise;
+      try {
+        return await Promise.race([sendPromise, rotationPromise]);
+      } finally {
+        if (this.requestContextRotation === requestRotation) {
+          this.requestContextRotation = undefined;
+        }
+      }
     }
 
     let triggered = false;
@@ -601,9 +696,12 @@ Continue from the durable state above. Preserve existing work, verify assumption
     }, checkEveryMs);
 
     try {
-      return await Promise.race([sendPromise, watchdogPromise]);
+      return await Promise.race([sendPromise, rotationPromise, watchdogPromise]);
     } finally {
       clearInterval(watchdog);
+      if (this.requestContextRotation === requestRotation) {
+        this.requestContextRotation = undefined;
+      }
     }
   }
 
@@ -640,6 +738,41 @@ Continue from the durable state above. Preserve existing work, verify assumption
         return await this.sendWithWatchdog(cline, task, currentSessionId, currentPrompt);
       } catch (error) {
         if (this.abortRequestedTaskIds.has(task.id)) throw error;
+
+        if (this.isContextRotation(error)) {
+          await this.recordContextRotation(task, error);
+          try {
+            await cline.abort(
+              currentSessionId,
+              new Error(
+                `orchestrator context rotation after ${error.inputTokens} input tokens`,
+              ),
+            );
+          } catch (abortError) {
+            if (!this.isSessionNotFound(abortError)) {
+              process.stdout.write(
+                `\n[orchestrator context abort warning: ${abortError instanceof Error ? abortError.message : String(abortError)}]\n`,
+              );
+            }
+          }
+
+          const partialOutput = this.streamedText.trim();
+          const recoveryOutput = partialOutput
+            ? `${previousOutput ?? ""}\n\nWorker output before context rotation:\n${partialOutput}`
+            : previousOutput;
+          const recovered = await this.recoverSession(
+            cline,
+            task,
+            prompt,
+            previousPrompt,
+            recoveryOutput,
+            currentSessionId,
+            "context_threshold",
+          );
+          currentSessionId = recovered.sessionId;
+          currentPrompt = recovered.prompt;
+          continue;
+        }
 
         if (this.isSessionNotFound(error)) {
           if (sessionNotFoundRecoveries >= 1) throw error;
