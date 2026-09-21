@@ -258,7 +258,7 @@ Make project continuity independent of any particular model context or Cline ses
 
 - [x] Durable project metadata.
 - [x] Architecture memory.
-- [ ] Decision log with rationale and date/task provenance.
+- [x] Decision log with rationale and date/task provenance.
 - [ ] Code map containing important modules/components only.
 - [ ] Conventions memory.
 - [ ] Known-issues memory.
@@ -292,12 +292,18 @@ Architecture memory now has an explicit append-only update primitive. Each durab
 
 Updates preserve existing architecture content rather than replacing the document. Required provenance/content fields are validated, timestamps must be valid, and multiple updates remain independently attributable and ordered.
 
+## Decision Memory
+
+Decision memory now uses the same append-only audit model. Each decision entry records a unique update ID, timestamp, originating task ID, title, explicit decision statement, and rationale. Machine-readable provenance is embedded beside the human-readable decision entry.
+
+Existing decision history is preserved. Project-level `memoryUpdateCount` spans architecture and decision updates together, and `lastMemoryUpdate` identifies the latest update regardless of document, keeping audit provenance coherent across memory types.
+
 ## Evidence
 
 - Project metadata/skeleton implementation: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198`, workflow `35579239935`, success.
-- Architecture memory implementation: commit `0344c16cc843428af4dbe4247b9156a222e2bdb9` (`feat: add auditable architecture memory updates`).
-- GitHub-hosted CI for architecture memory: run `#202`, workflow `35585222049`, success.
-- Tests cover first bootstrap, JSON serialization/reload, stable project identity, latest-task metadata updates, automatic `TaskStore` integration, non-overwrite behavior, architecture provenance, append ordering, metadata audit references, invalid-input rejection, and unsupported metadata schemas.
+- Architecture memory implementation: commit `0344c16cc843428af4dbe4247b9156a222e2bdb9` (`feat: add auditable architecture memory updates`); CI `#202`, workflow `35585222049`, success.
+- Decision memory implementation: commit `3a43401c80e6ebe3df6dc33c337d307cbeb38cee` (`feat: add auditable decision memory updates`); CI `#206`, workflow `35586243241`, success.
+- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
@@ -306,7 +312,7 @@ Updates preserve existing architecture content rather than replacing the documen
 
 ## Current Next Step
 
-Implement the next Milestone 4 unit: **decision log entries with rationale and explicit date/task provenance**, reusing the auditable memory-update model where appropriate. Do not begin Hub/RPC work.
+Implement the next Milestone 4 unit: **selective code-map memory containing important modules/components only**, with explicit/auditable provenance and focused tests. Do not begin Hub/RPC work.
 
 ---
 
@@ -411,7 +417,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Validation-repair + handoff interaction | Implemented + cloud tested |
 | Cross-generation metrics/event evidence | Implemented + cloud tested |
 | Durable project metadata + memory skeleton | Implemented + cloud tested |
-| Architecture memory + provenance | **Implemented + cloud tested** |
+| Architecture memory + provenance | Implemented + cloud tested |
+| Decision log + provenance | **Implemented + cloud tested** |
 | Durable project memory content/retrieval | In progress |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -430,7 +437,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Project memory remains partial** — architecture updates are now durable/auditable, but decisions, code map, conventions, known issues, task summaries, and selective retrieval remain unfinished.
+10. **Project memory remains partial** — architecture and decisions are durable/auditable, but code map, conventions, known issues, task summaries, and selective retrieval remain unfinished.
 
 ---
 
@@ -438,14 +445,13 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Implement decision log entries**
-   - explicit decision statement and rationale;
-   - date/task provenance;
-   - append-only audit behavior;
-   - focused update tests.
+1. **Implement selective code-map memory**
+   - record important modules/components only;
+   - explicit purpose/responsibility plus task/date provenance;
+   - append-only auditable updates;
+   - focused tests that discourage indiscriminate file cataloguing.
 
 2. **Extend the memory model selectively**
-   - code map;
    - conventions;
    - known issues;
    - selective retrieval without dumping all memory into every prompt.
@@ -525,6 +531,16 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Architecture memory criterion complete**; Milestone 4 remains in progress.
 - Known limitation: the general memory update/retrieval system is not complete until the remaining memory types and selective retrieval are implemented.
 - Next action: implement decision-log entries with rationale and date/task provenance. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 decision log implemented
+
+- Change: added append-only decision entries with explicit decision text, unique update IDs, validated timestamp/task/rationale provenance, and machine-readable audit markers.
+- Change: project-level memory update counting now remains coherent across architecture and decision documents, with `lastMemoryUpdate` identifying the latest cross-document update.
+- Tests: existing decision-history preservation, explicit decision/rationale/date/task provenance, cross-document audit counting, and rejection of missing decision/provenance or invalid timestamps.
+- Evidence: commit `3a43401c80e6ebe3df6dc33c337d307cbeb38cee`; CI `#206` / `35586243241` passed.
+- Milestone impact: **Decision log criterion complete**; Milestone 4 remains in progress.
+- Known limitation: code map, conventions, known issues, task summaries, and selective retrieval remain unfinished.
+- Next action: implement selective code-map memory containing important modules/components only. Hub/RPC remains deferred.
 
 ---
 
