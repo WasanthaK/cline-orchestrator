@@ -94,25 +94,13 @@ Reliably control Cline across task start, continuation, recovery, cancellation, 
 
 ## Acceptance Criteria
 
-- [x] Start a task with workspace + goal.
-- [x] Run Cline through `ClineCore`.
-- [x] Persist task state under `.orchestrator/tasks/`.
-- [x] Persist Cline session ID.
-- [x] Stream worker output.
-- [x] Resume the same orchestration task.
-- [x] Keep the Cline runtime alive inside a persistent daemon.
-- [x] Preserve same-daemon Cline conversation continuity.
-- [x] Recover semantically after daemon restart / lost Cline session.
-- [x] Record run-local token/tool/iteration metrics.
-- [x] Watchdog stalled Cline turns.
-- [x] Bounded retry after watchdog stalls.
-- [x] Durable event timeline.
-- [x] Explicit abort CLI/API.
-- [x] Manual abort does not trigger retry.
-- [x] Graceful daemon shutdown aborts active tasks durably.
-- [x] Graceful queued-task shutdown without starting Cline.
+- [x] Start/resume tasks with durable task state and Cline session IDs.
+- [x] Persistent daemon with same-daemon continuity and semantic recovery after session/runtime loss.
+- [x] Run-local token/tool/iteration metrics.
+- [x] Watchdog stall detection with bounded retry/recovery.
+- [x] Durable event timeline, explicit abort, and graceful shutdown/drain semantics.
 - [x] CLI persistence fallback during listener shutdown race.
-- [x] Metadata-only provider preflight rejects unavailable/missing configured model before task state changes.
+- [x] Metadata-only provider preflight before task state changes.
 
 ## Status
 
@@ -131,40 +119,39 @@ Before unattended editing, every coding task must have auditable Git state, a re
 ### Git state and rollback
 
 - [x] Capture Git branch/HEAD/dirty state before and after run.
-- [x] Exclude `.orchestrator/` bookkeeping from workspace-change comparisons.
+- [x] Exclude `.orchestrator/` bookkeeping from workspace comparisons.
 - [x] Create restorable checkpoint before Cline changes the workspace.
-- [x] Preserve already-dirty worktree state in checkpoint design.
-- [x] Record checkpoint metadata/events.
+- [x] Preserve already-dirty tracked/untracked state.
+- [x] Persist checkpoint metadata/events.
 - [x] Explicit rollback service, serialized daemon endpoint, CLI, and tests.
 
 ### Validation
 
 - [x] Task stores `acceptanceCriteria[]` and `validationCommands[]`.
-- [x] Model-reported completion transitions to `validating` when commands exist.
-- [x] Run validation outside the model and persist command evidence.
-- [x] Stop sequence on first failure; `validation_failed` terminal state.
-- [x] Bounded automatic validation-repair loop and lifecycle events/tests.
+- [x] Model completion enters `validating` when commands exist.
+- [x] Validation runs outside the model with persisted command evidence.
+- [x] Stop on first failure; terminal `validation_failed` state.
+- [x] Bounded automatic validation repair with lifecycle events/tests.
 
 ### Diff safety policy
 
 - [x] Explicit final diff summary relative to the original pre-run checkpoint.
-- [x] Detect unexpected changed paths when expected scope patterns are configured.
-- [x] Protected-path hard-failure policy and deployment-sensitive warning policy.
-- [x] Detect unexpected branch/HEAD movement.
+- [x] Expected-path scope detection when configured.
+- [x] Protected-path hard failures and deployment-sensitive warnings.
+- [x] Unexpected branch/HEAD movement detection.
 - [x] Configurable excessive-diff threshold.
-- [x] Distinguish warnings from hard policy failures.
-- [x] Persist policy result/events and automated decision tests.
-- [x] `completed` requires validation success (when configured) and diff safety success.
+- [x] Persist warnings/failures/results and policy events.
+- [x] `completed` requires validation success (when configured) and diff-safety success.
 
 ## Diff Safety Configuration
 
 - `ORCH_DIFF_MAX_CHANGED_FILES` — hard threshold; default `100`; `0` disables it.
 - `ORCH_DIFF_PROTECTED_PATTERNS` — comma-separated hard-failure glob patterns.
 - `ORCH_DIFF_WARNING_PATTERNS` — comma-separated warning glob patterns.
-- `ORCH_DIFF_EXPECTED_PATHS` — optional comma-separated allowed task-scope patterns.
-- Task `expectedChangedPaths[]` takes precedence over environment-level scope.
+- `ORCH_DIFF_EXPECTED_PATHS` — optional allowed task-scope patterns.
+- Task `expectedChangedPaths[]` takes precedence over environment scope.
 
-The comparison uses the original run checkpoint so validation-repair turns do not reset the baseline. Pre-run tracked/untracked dirty state is distinguished from task-created changes.
+The comparison uses the original run checkpoint, so validation repair does not reset the baseline and pre-run dirty state is distinguishable from task-created changes.
 
 ## Evidence
 
@@ -195,9 +182,10 @@ Allow long-running work without allowing one Cline conversation to grow until qu
 - [x] Cloud tests cover threshold calculations.
 - [x] Replace primarily prose/previous-output recovery with a versioned structured durable handoff artifact.
 - [x] Handoff includes original goal, current task state, relevant workspace evidence, and pending action.
-- [x] Persist durable handoff evidence before session replacement and retain a task reference/event that survives replacement.
+- [x] Persist durable handoff evidence before session replacement and retain task/event provenance.
 - [x] Bound and test multiple planned rotations in one long task.
 - [x] Test interaction with `session_not_found` recovery.
+- [x] Test interaction with validation repair while preserving the original checkpoint baseline.
 
 ## Structured Handoff Design
 
@@ -207,7 +195,7 @@ Durable handoffs are stored under:
 .orchestrator/handoffs/<task-id>/<target-generation>-<handoff-id>.json
 ```
 
-Each version-1 handoff records recovery/rotation reason, source/target generation, original goal, pending action, task lifecycle/configuration state, current Git snapshot, checkpoint identity, validation/diff-safety summaries, run metrics, and bounded supporting prose.
+Each version-1 handoff records recovery/rotation reason, source/target generation, original goal, pending action, task lifecycle/configuration state, current Git snapshot, checkpoint identity/fingerprints, validation/diff-safety summaries, run metrics, and bounded supporting prose.
 
 The artifact is written **before** starting the replacement Cline session. The replacement prompt is rendered from structured durable data rather than reconstructed primarily from prior prose. Task state stores `lastContextHandoff` plus `contextHandoffCount`, and `context_handoff_created` events record provenance.
 
@@ -217,11 +205,14 @@ The artifact is written **before** starting the replacement Cline session. The r
 
 ## Session-Loss Behavior
 
-A `session_not_found` result is distinct from planned context rotation. Integration coverage proves one lost recorded session creates one handoff targeting the next generation, advances recovery/session-generation counters, resumes from the structured handoff, and does **not** increment planned-rotation counters.
+A `session_not_found` result is distinct from planned rotation. Integration coverage proves one lost recorded session creates one handoff targeting the next generation, advances recovery/session-generation counters, resumes from the structured handoff, and does not increment planned-rotation counters.
+
+## Validation-Repair Behavior
+
+A validation-repair model turn reuses the original task checkpoint. If that repair turn loses its Cline session, the durable handoff captures the failed validation evidence, repair instruction, and original checkpoint identity/fingerprint. After the replacement model reports completion, the task returns to `validating`; it cannot persist `completed` until external validation actually passes.
 
 ## Remaining Acceptance Criteria
 
-- [ ] Test interaction with validation repair.
 - [ ] Ensure context metrics/events remain clear across multiple session generations.
 
 ## Evidence
@@ -229,15 +220,16 @@ A `session_not_found` result is distinct from planned context rotation. Integrat
 - Structured handoff: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI `#178`, workflow `35576669466`, success.
 - Repeated rotations: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI `#182`, workflow `35577093373`, success.
 - Session-not-found recovery: commit `26dbf0db896e83d160c1cf3f43f2ae7b0e813e2c`; CI `#186`, workflow `35577401081`, success.
+- Validation-repair recovery: commit `af9db66835c5dfc7a657e1c0291cdaef24668a2d`; CI `#190`, workflow `35577839253`, success.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
 
-**IN PROGRESS — validation-repair interaction and final cross-generation metrics/event clarity remain**
+**IN PROGRESS — final cross-generation metrics/event clarity remains**
 
 ## Current Next Step
 
-Test the structured handoff interaction with **validation repair**, preserving the original task/checkpoint baseline through a repair run and any replacement session. Do not begin Hub/RPC work.
+Add explicit integration assertions for **run metrics and event provenance across multiple session generations**. If cloud CI remains green, close Milestone 3. Do not begin Milestone 4 or Hub/RPC until that evidence is recorded.
 
 ---
 
@@ -292,14 +284,14 @@ Allow the orchestrator and the user's VS Code Cline UI to observe/control the sa
 
 ## Confirmed Research
 
-The pinned Cline generation is `0.0.83`. Current research shows Hub-related architecture through `@cline/core/hub`, including `NodeHubClient`, `HubSessionClient`, `HubUIClient`, and `connectToHub`. This remains research only.
+The pinned Cline generation is `0.0.83`. Research shows Hub-related architecture through `@cline/core/hub`, including `NodeHubClient`, `HubSessionClient`, `HubUIClient`, and `connectToHub`. This remains research only.
 
 ## Technical Spike Acceptance Criteria
 
 - [ ] Document Hub discovery and local authentication/token mechanism.
-- [ ] Confirm exact imports available at `0.0.83` and direct-dependency needs.
+- [ ] Confirm exact imports at `0.0.83` and direct-dependency needs.
 - [ ] Identify list/attach/send/abort/session-event APIs.
-- [ ] Determine workspace-owned session identity and multi-client approval/tool-executor behavior.
+- [ ] Determine workspace session identity and multi-client approval/tool-executor behavior.
 - [ ] Produce migration design from owned `ClineCore` to Hub-backed attachment.
 
 ## Implementation Acceptance Criteria
@@ -382,7 +374,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Structured durable context handoff | Implemented + cloud tested |
 | Multiple planned rotation coverage | Implemented + cloud tested |
 | Session-not-found + handoff interaction | Implemented + cloud tested |
-| Validation-repair + handoff interaction | Next unfinished item |
+| Validation-repair + handoff interaction | Implemented + cloud tested |
+| Cross-generation metrics/event evidence | Next unfinished item |
 | Durable project memory | Not started |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -408,12 +401,12 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Finish Milestone 3 validation-repair interaction coverage**
-   - preserve original checkpoint through repair run;
-   - prove recovery/rotation handoff contains repair-state validation evidence and pending repair action;
-   - confirm resulting lifecycle remains in validation until validation actually passes.
+1. **Finish Milestone 3 cross-generation evidence**
+   - assert attempts/turn metrics remain attributable across session generations;
+   - planned rotations remain separate from retry/stall counters;
+   - handoff/recovery events preserve target generation and reason clearly.
 
-2. **Finish Milestone 3 cross-generation metrics/event evidence** and close the milestone if CI is green.
+2. **Close Milestone 3** after green cloud CI and update this plan.
 
 3. **Build Milestone 4: durable project memory**.
 
@@ -441,23 +434,28 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Change: versioned `.orchestrator/handoffs/` artifacts, task references/counters, structured recovery prompts, and durable handoff events.
 - Tests: serialization/loading, task/workspace/pending-action evidence, bounded supporting prose, prompt rendering, and path containment.
 - Evidence: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI `#178` / `35576669466` passed.
-- Milestone impact: structured handoff criteria complete; Milestone 3 remains in progress.
 - Next action: bounded repeated rotations.
 
 ## 2026-09-21 — Milestone 3 bounded repeated rotations proven
 
 - Tests: three threshold-crossing sends with `maxContextRotations=2` prove exactly two replacements, generations 1->2->3, two distinct handoffs, and budget exhaustion without a third replacement.
 - Evidence: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI `#182` / `35577093373` passed.
-- Milestone impact: bounded repeated-rotation criterion complete.
 - Next action: `session_not_found` interaction.
 
 ## 2026-09-21 — Milestone 3 session-not-found recovery proven
 
-- Tests: mocked runtime rejects the first send with `session_not_found`; orchestrator creates one durable structured handoff, starts generation 2, resumes with that handoff, and completes without consuming planned-rotation budget.
+- Tests: first send returns `session_not_found`; orchestrator creates one durable handoff, starts generation 2, resumes from it, and completes without consuming planned-rotation budget.
 - Evidence: commit `26dbf0db896e83d160c1cf3f43f2ae7b0e813e2c`; CI `#186` / `35577401081` passed.
-- Milestone impact: session-not-found interaction criterion complete; validation-repair interaction remains.
-- Known limitation: repair-path handoff evidence and final cross-generation metrics/event clarity are still unproven.
-- Next action: test validation-repair interaction while preserving original checkpoint context.
+- Next action: validation-repair interaction.
+
+## 2026-09-21 — Milestone 3 validation-repair recovery proven
+
+- Tests: a repair task with a real pre-repair checkpoint and failed validation loses its Cline session; recovery writes a durable handoff containing the repair instruction, failed-validation summary, and original checkpoint fingerprint.
+- Tests: the repair run does not replace the original checkpoint; after the replacement model reports completion, task state returns to `validating` and no `completed` event is emitted.
+- Evidence: commit `af9db66835c5dfc7a657e1c0291cdaef24668a2d`; CI `#190` / `35577839253` passed.
+- Milestone impact: validation-repair interaction criterion complete; one Milestone 3 evidence item remains.
+- Known limitation: explicit cross-generation run-metric attribution has not yet been asserted even though generation/handoff events are already covered.
+- Next action: add cross-generation metrics/event assertions and close Milestone 3 if CI stays green.
 
 ---
 
