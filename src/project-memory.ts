@@ -6,6 +6,7 @@ import type { OrchestratorTask, TaskStatus } from "./types.js";
 export const PROJECT_MEMORY_SCHEMA_VERSION = 1 as const;
 export const PROJECT_MEMORY_UPDATE_SCHEMA_VERSION = 1 as const;
 export const CODE_MAP_MAX_PATHS = 12 as const;
+export const KNOWN_ISSUE_STATUSES = ["open", "mitigated", "resolved", "accepted"] as const;
 
 export const PROJECT_MEMORY_DOCUMENTS = {
   architecture: "architecture.md",
@@ -16,6 +17,7 @@ export const PROJECT_MEMORY_DOCUMENTS = {
 } as const;
 
 export type ProjectMemoryDocumentName = keyof typeof PROJECT_MEMORY_DOCUMENTS;
+export type KnownIssueStatus = (typeof KNOWN_ISSUE_STATUSES)[number];
 
 export interface ProjectTaskPointer {
   id: string;
@@ -124,6 +126,29 @@ export interface ConventionMemoryUpdate {
   rationale: string;
 }
 
+export interface KnownIssueMemoryUpdateInput {
+  taskId: string;
+  title: string;
+  status: KnownIssueStatus;
+  impact: string;
+  description: string;
+  rationale: string;
+  recordedAt?: string;
+}
+
+export interface KnownIssueMemoryUpdate {
+  schemaVersion: typeof PROJECT_MEMORY_UPDATE_SCHEMA_VERSION;
+  id: string;
+  document: "knownIssues";
+  recordedAt: string;
+  taskId: string;
+  title: string;
+  status: KnownIssueStatus;
+  impact: string;
+  description: string;
+  rationale: string;
+}
+
 const MEMORY_TEMPLATES: Record<ProjectMemoryDocumentName, string> = {
   architecture: `# Architecture\n\nDurable project architecture memory. Record stable components, boundaries, and important data/control flows only.\n`,
   decisions: `# Decisions\n\nDurable decision log. Record decisions with rationale plus date/task provenance; do not use this file as transient scratch space.\n`,
@@ -191,6 +216,14 @@ function selectivePaths(paths: string[]): string[] {
     throw new Error("paths must not contain duplicates");
   }
   return normalized;
+}
+
+function knownIssueStatus(value: string): KnownIssueStatus {
+  const normalized = singleLine("status", value);
+  if (!KNOWN_ISSUE_STATUSES.includes(normalized as KnownIssueStatus)) {
+    throw new Error(`status must be one of: ${KNOWN_ISSUE_STATUSES.join(", ")}`);
+  }
+  return normalized as KnownIssueStatus;
 }
 
 function formatArchitectureUpdate(update: ArchitectureMemoryUpdate): string {
@@ -303,6 +336,40 @@ function formatConventionUpdate(update: ConventionMemoryUpdate): string {
     "### Convention",
     "",
     update.convention,
+    "",
+  ].join("\n");
+}
+
+function formatKnownIssueUpdate(update: KnownIssueMemoryUpdate): string {
+  const provenance = JSON.stringify({
+    schemaVersion: update.schemaVersion,
+    id: update.id,
+    document: update.document,
+    recordedAt: update.recordedAt,
+    taskId: update.taskId,
+    status: update.status,
+    impact: update.impact,
+    rationale: update.rationale,
+  });
+
+  return [
+    "",
+    `<!-- orchestrator-memory-update ${provenance} -->`,
+    `## ${update.title}`,
+    "",
+    `- Update ID: \`${update.id}\``,
+    `- Recorded at: ${update.recordedAt}`,
+    `- Task: \`${update.taskId}\``,
+    `- Status: ${update.status}`,
+    `- Rationale: ${update.rationale}`,
+    "",
+    "### Impact",
+    "",
+    update.impact,
+    "",
+    "### Description",
+    "",
+    update.description,
     "",
   ].join("\n");
 }
@@ -529,6 +596,33 @@ export class ProjectMemoryStore {
     };
 
     await appendFile(this.memoryPath("conventions"), formatConventionUpdate(update), "utf8");
+    await this.recordMemoryUpdate(current, {
+      id: update.id,
+      document: update.document,
+      recordedAt: update.recordedAt,
+      taskId: update.taskId,
+      rationale: update.rationale,
+    });
+    return update;
+  }
+
+  async appendKnownIssueUpdate(input: KnownIssueMemoryUpdateInput): Promise<KnownIssueMemoryUpdate> {
+    const current = await this.ensure();
+    const recordedAt = validateRecordedAt(input.recordedAt ?? new Date().toISOString());
+    const update: KnownIssueMemoryUpdate = {
+      schemaVersion: PROJECT_MEMORY_UPDATE_SCHEMA_VERSION,
+      id: crypto.randomUUID(),
+      document: "knownIssues",
+      recordedAt,
+      taskId: singleLine("taskId", input.taskId),
+      title: singleLine("title", input.title),
+      status: knownIssueStatus(input.status),
+      impact: requiredText("impact", input.impact),
+      description: requiredText("description", input.description),
+      rationale: singleLine("rationale", input.rationale),
+    };
+
+    await appendFile(this.memoryPath("knownIssues"), formatKnownIssueUpdate(update), "utf8");
     await this.recordMemoryUpdate(current, {
       id: update.id,
       document: update.document,
