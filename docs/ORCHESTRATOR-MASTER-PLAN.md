@@ -212,6 +212,7 @@ Allow long-running work without allowing one Cline conversation to grow until qu
 - [x] Replace primarily prose/previous-output recovery with a versioned structured durable handoff artifact.
 - [x] Handoff includes original goal, current task state, relevant workspace evidence, and pending action.
 - [x] Persist durable handoff evidence before session replacement and retain a task reference/event that survives replacement.
+- [x] Bound and test multiple planned rotations in one long task.
 
 ## Structured Handoff Design
 
@@ -233,27 +234,30 @@ Each version-1 handoff records:
 
 The artifact is written **before** starting the replacement Cline session. The replacement prompt is rendered from the structured artifact rather than reconstructed primarily from prior prose. Task state stores `lastContextHandoff` plus `contextHandoffCount`, and a `context_handoff_created` event records durable provenance.
 
+## Bounded Rotation Behavior
+
+`maxContextRotations` is enforced per orchestrator run. A rotation request crossing the threshold creates exactly one replacement generation and one durable handoff while budget remains. Once the run budget is exhausted, later threshold observations do not create more replacement sessions. Integration coverage proves two allowed rotations produce generations 1 -> 2 -> 3, two distinct handoffs, and no third replacement when the configured budget is two.
+
 ## Remaining Acceptance Criteria
 
-- [ ] Bound and test multiple planned rotations in one long task.
 - [ ] Test interaction with `session_not_found` recovery.
 - [ ] Test interaction with validation repair.
 - [ ] Ensure context metrics/events remain clear across multiple session generations.
 
 ## Evidence
 
-- Implementation commit: `15adf9f9dd87a45544d2a6fc3985dc278be9284d` (`feat: add durable context handoff`).
-- GitHub-hosted CI: run `#178`, workflow run `35576669466`, typecheck and full test suite passed.
-- Tests cover durable serialization/loading, task/workspace/pending-action evidence, bounded supporting prose, structured replacement-prompt rendering, and handoff path containment.
+- Structured handoff implementation: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI run `#178`, workflow `35576669466`, success.
+- Bounded repeated-rotation integration test: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI run `#182`, workflow `35577093373`, success.
+- Tests cover durable serialization/loading, task/workspace/pending-action evidence, bounded supporting prose, structured replacement-prompt rendering, path containment, two planned rotations, rotation-budget exhaustion, distinct handoffs, and session-generation/event provenance.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
 
-**IN PROGRESS — structured handoff implemented; interaction/bounded-rotation coverage remains**
+**IN PROGRESS — structured handoff and bounded repeated rotations implemented; recovery/validation interaction coverage remains**
 
 ## Current Next Step
 
-Bound and test **multiple planned context rotations in one run**, preserving distinct durable handoff/session-generation evidence. Do not begin Hub/RPC work.
+Test the structured handoff interaction with **`session_not_found` recovery**, then record evidence before moving to validation-repair interaction. Do not begin Hub/RPC work.
 
 ---
 
@@ -409,7 +413,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Completion requires validation + safety | **Implemented + tested** |
 | Per-turn context supervisor | Implemented + cloud tested |
 | Structured durable context handoff | **Implemented + cloud tested** |
-| Multiple planned rotation coverage | Next unfinished item |
+| Multiple planned rotation coverage | **Implemented + cloud tested** |
+| Session-not-found + handoff interaction | Next unfinished item |
 | Durable project memory | Not started |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -435,19 +440,20 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Finish Milestone 3 bounded rotation behavior**
-   - multiple planned rotations in one run remain bounded by `maxContextRotations`;
-   - every actual replacement gets a distinct durable handoff and target generation;
-   - metrics/events remain understandable across generations.
+1. **Finish Milestone 3 session-loss interaction coverage**
+   - simulate `session_not_found` during a run;
+   - prove replacement uses a durable structured handoff;
+   - prove session-generation/recovery evidence remains coherent.
 
-2. **Finish Milestone 3 recovery/validation interaction coverage**
-   - `session_not_found` interaction;
-   - validation-repair interaction;
-   - confirm durable context evidence through both paths.
+2. **Finish Milestone 3 validation-repair interaction coverage**
+   - prove repair turns and planned/recovery handoffs preserve the correct original task/checkpoint context;
+   - confirm metrics/events remain understandable across generations.
 
-3. **Build Milestone 4: durable project memory**.
+3. **Close Milestone 3** once all acceptance criteria and cloud CI are green.
 
-4. **Perform Milestone 5 Hub/RPC technical spike** only after Milestones 3–4 are complete.
+4. **Build Milestone 4: durable project memory**.
+
+5. **Perform Milestone 5 Hub/RPC technical spike** only after Milestones 3–4 are complete.
 
 ---
 
@@ -483,8 +489,17 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Tests: durable artifact serialization/loading, workspace/task evidence, bounded prior-output excerpts, structured prompt rendering, and path containment.
 - Evidence: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; GitHub Actions CI run `35576669466` / run `#178` passed typecheck and tests.
 - Milestone impact: structured handoff acceptance criteria are complete; Milestone 3 remains **IN PROGRESS** for bounded repeated rotations and recovery/validation interaction coverage.
-- Known limitation: repeated-rotation/session-not-found/validation-repair interactions have not yet been exercised together by automated tests.
+- Known limitation: repeated-rotation/session-not-found/validation-repair interactions had not yet been exercised together by automated tests.
 - Next action: bound and test multiple planned rotations in one run with distinct durable handoff/session-generation evidence.
+
+## 2026-09-21 — Milestone 3 bounded repeated rotations proven
+
+- Change: added an integration test using a mocked Cline runtime that drives three model sends with the context threshold crossed on every send while `maxContextRotations=2`.
+- Tests: proved exactly two planned rotations occur, three session generations are created, the first two sessions are aborted for rotation, two distinct durable handoffs target generations 2 and 3, and the third threshold crossing completes without another replacement.
+- Evidence: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; GitHub Actions CI run `35577093373` / run `#182` passed typecheck and tests.
+- Milestone impact: bounded repeated-rotation acceptance criterion is complete; Milestone 3 remains **IN PROGRESS**.
+- Known limitation: explicit `session_not_found` and validation-repair interaction tests remain.
+- Next action: test `session_not_found` recovery with durable structured handoff evidence.
 
 ---
 
