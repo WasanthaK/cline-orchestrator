@@ -257,7 +257,7 @@ Make project continuity independent of any particular model context or Cline ses
 ## Acceptance Criteria
 
 - [x] Durable project metadata.
-- [ ] Architecture memory.
+- [x] Architecture memory.
 - [ ] Decision log with rationale and date/task provenance.
 - [ ] Code map containing important modules/components only.
 - [ ] Conventions memory.
@@ -286,11 +286,18 @@ The storage skeleton creates these files once and never overwrites existing cont
 
 Unknown/future `project.json` schema versions are rejected instead of silently rewritten. Existing human-authored memory-file content is preserved when the skeleton is re-ensured.
 
+## Architecture Memory
+
+Architecture memory now has an explicit append-only update primitive. Each durable entry carries a unique update ID, timestamp, originating task ID, rationale, title, and architecture content. A machine-readable provenance marker is written beside the human-readable entry, while `.orchestrator/project.json` records `memoryUpdateCount` and `lastMemoryUpdate` for fast audit/reference.
+
+Updates preserve existing architecture content rather than replacing the document. Required provenance/content fields are validated, timestamps must be valid, and multiple updates remain independently attributable and ordered.
+
 ## Evidence
 
-- Implementation commit: `32014431b54256d51f76626641350b08315afda9` (`feat: bootstrap durable project memory`).
-- GitHub-hosted CI: run `#198`, workflow `35579239935`, success.
-- Tests cover first bootstrap, JSON serialization/reload, stable project identity, latest-task metadata updates, automatic `TaskStore` integration, non-overwrite behavior, and rejection of unsupported metadata schemas.
+- Project metadata/skeleton implementation: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198`, workflow `35579239935`, success.
+- Architecture memory implementation: commit `0344c16cc843428af4dbe4247b9156a222e2bdb9` (`feat: add auditable architecture memory updates`).
+- GitHub-hosted CI for architecture memory: run `#202`, workflow `35585222049`, success.
+- Tests cover first bootstrap, JSON serialization/reload, stable project identity, latest-task metadata updates, automatic `TaskStore` integration, non-overwrite behavior, architecture provenance, append ordering, metadata audit references, invalid-input rejection, and unsupported metadata schemas.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
@@ -299,7 +306,7 @@ Unknown/future `project.json` schema versions are rejected instead of silently r
 
 ## Current Next Step
 
-Implement the next Milestone 4 unit: **architecture memory with an explicit/auditable update primitive and provenance**, then add focused tests. Do not begin Hub/RPC work.
+Implement the next Milestone 4 unit: **decision log entries with rationale and explicit date/task provenance**, reusing the auditable memory-update model where appropriate. Do not begin Hub/RPC work.
 
 ---
 
@@ -403,7 +410,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Session-not-found + handoff interaction | Implemented + cloud tested |
 | Validation-repair + handoff interaction | Implemented + cloud tested |
 | Cross-generation metrics/event evidence | Implemented + cloud tested |
-| Durable project metadata + memory skeleton | **Implemented + cloud tested** |
+| Durable project metadata + memory skeleton | Implemented + cloud tested |
+| Architecture memory + provenance | **Implemented + cloud tested** |
 | Durable project memory content/retrieval | In progress |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -422,7 +430,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Memory skeleton is not yet semantic memory** — files now exist durably, but selective updates/retrieval and provenance rules remain to be implemented.
+10. **Project memory remains partial** — architecture updates are now durable/auditable, but decisions, code map, conventions, known issues, task summaries, and selective retrieval remain unfinished.
 
 ---
 
@@ -430,14 +438,13 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Implement architecture memory + auditable update primitive**
-   - explicit structured update input;
-   - task/date provenance;
-   - preservation of unrelated memory content;
-   - focused serialization/update tests.
+1. **Implement decision log entries**
+   - explicit decision statement and rationale;
+   - date/task provenance;
+   - append-only audit behavior;
+   - focused update tests.
 
-2. **Extend the same memory model selectively**
-   - decisions;
+2. **Extend the memory model selectively**
    - code map;
    - conventions;
    - known issues;
@@ -508,6 +515,16 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: durable project metadata criterion complete; Milestone 4 remains in progress.
 - Known limitation: the five documents are storage skeletons only; semantic update/retrieval/provenance behavior is not implemented yet.
 - Next action: implement architecture memory with an explicit/auditable update primitive and provenance. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 architecture memory implemented
+
+- Change: added append-only architecture-memory updates with unique update IDs, validated timestamp/task/rationale provenance, machine-readable provenance markers, and human-readable architecture entries.
+- Change: project metadata now records memory-update count and the latest memory-update reference without replacing existing architecture content.
+- Tests: existing content preservation, explicit provenance, metadata audit references, multiple-update ordering/uniqueness, and invalid provenance/content/timestamp rejection.
+- Evidence: commit `0344c16cc843428af4dbe4247b9156a222e2bdb9`; CI `#202` / `35585222049` passed.
+- Milestone impact: **Architecture memory criterion complete**; Milestone 4 remains in progress.
+- Known limitation: the general memory update/retrieval system is not complete until the remaining memory types and selective retrieval are implemented.
+- Next action: implement decision-log entries with rationale and date/task provenance. Hub/RPC remains deferred.
 
 ---
 
