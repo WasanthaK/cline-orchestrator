@@ -1,5 +1,9 @@
 import { ClineCore } from "@cline/sdk";
 import {
+  buildContextHandoffPrompt,
+  createContextHandoff,
+} from "./context-handoff.js";
+import {
   ContextSupervisor,
   type ContextRotationDecision,
 } from "./context-supervisor.js";
@@ -499,50 +503,6 @@ export class ClineRunner {
     return error instanceof ContextRotationError || (error as any)?.code === "context_threshold";
   }
 
-  private clipped(value: string | undefined, maxChars: number): string {
-    if (!value) return "(none)";
-    if (value.length <= maxChars) return value;
-    return `${value.slice(0, maxChars)}\n...[truncated by orchestrator]`;
-  }
-
-  private buildRecoveryPrompt(
-    task: OrchestratorTask,
-    continuation: string,
-    previousPrompt: string | undefined,
-    previousOutput: string | undefined,
-    reason: SessionRecoveryReason,
-  ): string {
-    const reasonText =
-      reason === "watchdog_stall"
-        ? "The previous Cline turn stopped producing activity and was aborted by the orchestrator watchdog."
-        : reason === "context_threshold"
-          ? `The previous Cline session reached the orchestrator context-rotation threshold after a request of about ${task.lastContextRotationInputTokens ?? "unknown"} input tokens. The session was intentionally rotated before another tool-driven model iteration.`
-          : "The previous Cline runtime session became unavailable.";
-
-    return `You are continuing an orchestrated coding task after a runtime interruption.
-
-${reasonText}
-
-This is a recovery handoff, not the original conversation. Do not assume you remember hidden context. Treat the current workspace as the source of truth and re-inspect files when needed.
-
-Workspace:
-${task.workspace}
-
-Original task goal:
-${this.clipped(task.goal, 6000)}
-
-Previous user prompt:
-${this.clipped(previousPrompt, 6000)}
-
-Previous worker output / partial interrupted output:
-${this.clipped(previousOutput, 12000)}
-
-Continuation request:
-${this.clipped(continuation, 6000)}
-
-Continue from the durable state above. Preserve existing work, verify assumptions against the current workspace, and answer or act on the continuation request.`;
-  }
-
   private async recoverSession(
     cline: any,
     task: OrchestratorTask,
@@ -552,24 +512,49 @@ Continue from the durable state above. Preserve existing work, verify assumption
     previousSessionId: string | undefined,
     reason: SessionRecoveryReason,
   ): Promise<{ sessionId: string; prompt: string }> {
-    const session = await this.startInteractiveSession(cline);
     const previousGeneration = task.sessionGeneration ?? (previousSessionId ? 1 : 0);
+    const targetGeneration = previousGeneration + 1;
+    const handoff = await createContextHandoff(this.workspace, task, {
+      reason,
+      pendingAction: continuation,
+      previousPrompt,
+      recentWorkerOutput: previousOutput,
+      sourceSessionId: previousSessionId,
+      targetGeneration,
+    });
 
+    task.contextHandoffCount = (task.contextHandoffCount ?? 0) + 1;
+    task.lastContextHandoff = handoff.reference;
+    await this.store.save(task);
+    await this.store.appendEvent(task.id, "context_handoff_created", {
+      status: task.status,
+      message: `Created durable context handoff for session generation ${targetGeneration}`,
+      data: {
+        handoffId: handoff.reference.id,
+        path: handoff.reference.relativePath,
+        reason,
+        sourceSessionId: previousSessionId,
+        sourceGeneration: handoff.reference.sourceGeneration,
+        targetGeneration,
+      },
+    });
+
+    const session = await this.startInteractiveSession(cline);
     task.lastRecoveredFromSessionId = previousSessionId;
     task.clineSessionId = session.sessionId;
-    task.sessionGeneration = previousGeneration + 1;
+    task.sessionGeneration = targetGeneration;
     task.recoveryCount = (task.recoveryCount ?? 0) + 1;
     task.lastRecoveryAt = new Date().toISOString();
     task.lastRecoveryReason = reason;
     await this.store.save(task);
 
     process.stdout.write(
-      `\n[cline session recovered: ${previousSessionId ?? "none"} -> ${session.sessionId}; generation=${task.sessionGeneration}; reason=${reason}]\n`,
+      `\n[cline session recovered: ${previousSessionId ?? "none"} -> ${session.sessionId}; generation=${task.sessionGeneration}; reason=${reason}; handoff=${handoff.reference.relativePath}]\n`,
     );
 
     return {
       sessionId: session.sessionId,
-      prompt: this.buildRecoveryPrompt(task, continuation, previousPrompt, previousOutput, reason),
+      prompt: buildContextHandoffPrompt(handoff.artifact, handoff.reference),
     };
   }
 

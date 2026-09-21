@@ -205,6 +205,91 @@ export type SessionRecoveryReason =
   | "watchdog_stall"
   | "context_threshold";
 
+export interface ContextHandoffCheckpointEvidence {
+  createdAt: string;
+  available: boolean;
+  runCount: number;
+  branch?: string;
+  head?: string;
+  beforeFingerprintDigest?: string;
+  afterFingerprintDigest?: string;
+  error?: string;
+}
+
+export interface ContextHandoffValidationEvidence {
+  completedAt: string;
+  passed: boolean;
+  commandsRequested: number;
+  commandsRun: number;
+}
+
+export interface ContextHandoffDiffSafetyEvidence {
+  checkedAt: string;
+  passed: boolean;
+  finalDiffSummary: string;
+}
+
+export interface ContextHandoffRunMetricsEvidence {
+  startedAt: string;
+  iterations: number;
+  toolCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  attempts?: number;
+  retries?: number;
+  stalls?: number;
+}
+
+export interface ContextHandoffArtifact {
+  schemaVersion: 1;
+  id: string;
+  createdAt: string;
+  taskId: string;
+  reason: SessionRecoveryReason;
+  reasonDescription: string;
+  sourceSessionId?: string;
+  sourceGeneration: number;
+  targetGeneration: number;
+  workspace: string;
+  originalGoal: string;
+  pendingAction: string;
+  taskState: {
+    status: TaskStatus;
+    runCount: number;
+    sessionGeneration: number;
+    recoveryCount: number;
+    contextRotationCount: number;
+    validationRunCount: number;
+    validationRepairCount: number;
+    acceptanceCriteria: string[];
+    validationCommands: string[];
+    expectedChangedPaths: string[];
+    finishReason?: string;
+    error?: string;
+  };
+  workspaceEvidence: {
+    git: GitSnapshot;
+    checkpoint?: ContextHandoffCheckpointEvidence;
+    lastValidation?: ContextHandoffValidationEvidence;
+    lastDiffSafety?: ContextHandoffDiffSafetyEvidence;
+    runMetrics?: ContextHandoffRunMetricsEvidence;
+  };
+  supportingContext: {
+    previousPrompt?: string;
+    recentWorkerOutput?: string;
+  };
+}
+
+export interface ContextHandoffReference {
+  id: string;
+  createdAt: string;
+  relativePath: string;
+  reason: SessionRecoveryReason;
+  sourceSessionId?: string;
+  sourceGeneration: number;
+  targetGeneration: number;
+}
+
 export type RetryReason = "watchdog_stall";
 
 export type TaskEventType =
@@ -216,6 +301,7 @@ export type TaskEventType =
   | "run_started"
   | "session_started"
   | "session_recovered"
+  | "context_handoff_created"
   | "context_rotating"
   | "stalled"
   | "retrying"
@@ -263,6 +349,8 @@ export interface OrchestratorTask {
   lastContextRotationAt?: string;
   lastContextRotationInputTokens?: number;
   lastContextRotationThreshold?: number;
+  contextHandoffCount?: number;
+  lastContextHandoff?: ContextHandoffReference;
   clineSessionId?: string;
   sessionGeneration?: number;
   recoveryCount?: number;
