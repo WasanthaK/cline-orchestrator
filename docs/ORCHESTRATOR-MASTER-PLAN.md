@@ -264,7 +264,7 @@ Make project continuity independent of any particular model context or Cline ses
 - [x] Conventions memory.
 - [x] Known-issues memory.
 - [x] Per-task structured summary.
-- [ ] Structured handoff artifact shared with context rotation/recovery.
+- [x] Structured handoff artifact shared with context rotation/recovery.
 - [ ] Selective retrieval so whole project memory is not dumped into every prompt.
 - [ ] Memory updates are explicit/auditable.
 - [ ] Tests for serialization, update, and selection logic.
@@ -323,6 +323,12 @@ Each task can now produce a versioned latest-summary artifact at `.orchestrator/
 
 Summary text is bounded to 2,000 characters per retained text field. Verbose/transient payloads such as worker prompts/output, validation stdout/stderr, Git status lines, full diff path lists, and per-turn metric arrays are deliberately excluded. Re-recording a task preserves the original summary creation timestamp while incrementing the revision and recording the latest source-task timestamp. Unsupported summary schemas and path-escaping task IDs are rejected.
 
+## Handoff / Project-Memory Integration
+
+New structured handoffs now carry an optional bounded `durableMemory` block while retaining schema version 1 for backward compatibility. That block contains the current bounded per-task summary plus a compact project-memory index: project ID/schema, canonical memory-file paths, project memory update count, and latest auditable memory-update reference.
+
+The handoff prompt includes that bounded block for replacement Cline sessions, so planned context rotation and recovery can continue from durable task/project provenance rather than reconstructed prose alone. Full architecture/decision/code-map/conventions/known-issues document bodies are deliberately not embedded; focused tests prove a sentinel stored in an architecture document does not appear in either the handoff artifact or generated recovery prompt. Legacy version-1 handoffs without `durableMemory` continue to load and render normally.
+
 ## Evidence
 
 - Project metadata/skeleton implementation: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198`, workflow `35579239935`, success.
@@ -332,7 +338,8 @@ Summary text is bounded to 2,000 characters per retained text field. Verbose/tra
 - Conventions memory implementation: commit `3efecb809b9679505f007d75bfd273d815fa2e55` (`feat: add auditable conventions memory`); CI `#220`, workflow `35593035452`, success.
 - Known-issues memory implementation: commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c` (`feat: add auditable known issues memory`); CI `#226`, workflow `35595083980`, success.
 - Per-task summary implementation: commit `d74f63618898291f42363bdd846459814820b4cd` (`feat: add durable per-task structured summaries`) plus focused tests in commit `0e8c2e57cfe382b792a4178de40ccbb453c1c080` (`test: cover durable task summaries`); CI `#232`, workflow `35597817935`, success.
-- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, task-summary serialization/revision/bounding/schema/path safety, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
+- Handoff/project-memory integration: commit `822125be3d7e0d81d44a20e503397b2b3a9014e1` (`feat: integrate durable memory into context handoffs`) plus compatibility tests in commit `7387489e360b851a726b42dcc6797ba48f29ed6a` (`test: cover durable memory handoff integration`); CI `#238`, workflow `35599286479`, success.
+- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, task-summary serialization/revision/bounding/schema/path safety, bounded handoff memory provenance, no full-memory dump into handoffs/prompts, legacy handoff compatibility, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
@@ -341,7 +348,7 @@ Summary text is bounded to 2,000 characters per retained text field. Verbose/tra
 
 ## Current Next Step
 
-Implement the next Milestone 4 unit: **share the bounded per-task/project-memory context with the existing structured handoff artifact used by context rotation/recovery**, with focused compatibility tests. Do not begin Hub/RPC work.
+Implement the next Milestone 4 unit: **selective project-memory retrieval so only relevant bounded memory is supplied to a task/handoff instead of dumping all durable memory documents**, with focused selection/bounding tests. Do not begin Hub/RPC work.
 
 ---
 
@@ -451,7 +458,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Selective code map + provenance | Implemented + cloud tested |
 | Conventions memory + provenance | Implemented + cloud tested |
 | Known issues memory + provenance | Implemented + cloud tested |
-| Per-task structured summary | **Implemented + cloud tested** |
+| Per-task structured summary | Implemented + cloud tested |
+| Handoff + bounded durable memory context | **Implemented + cloud tested** |
 | Durable project memory content/retrieval | In progress |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -470,7 +478,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Project memory remains partial** — the five core memory documents and per-task summaries are durable/auditable, but handoff/project-memory integration and selective retrieval remain unfinished.
+10. **Project memory remains partial** — core memory documents, task summaries, and handoff provenance are durable/auditable, but selective retrieval of relevant memory content remains unfinished.
 
 ---
 
@@ -478,16 +486,14 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Share project-memory/task-summary context with structured handoff rotation/recovery**
-   - consume bounded durable task summary/project-memory references rather than reconstructing context independently;
-   - preserve existing recovery reasons/generation/checkpoint semantics;
-   - add focused compatibility/integration tests.
+1. **Implement selective project-memory retrieval**
+   - choose relevant memory documents/entries for the current task rather than loading everything;
+   - bound returned memory content and preserve source/provenance references;
+   - add focused selection/bounding tests.
 
-2. **Implement selective retrieval** without dumping all project memory into every prompt.
+2. **Close the remaining explicit/auditable update and selection-test acceptance criteria** once retrieval behavior is proven.
 
-3. **Close the remaining explicit/auditable update and selection-test acceptance criteria** once retrieval behavior is proven.
-
-4. **Perform Milestone 5 Hub/RPC technical spike** only after Milestone 4 is complete.
+3. **Perform Milestone 5 Hub/RPC technical spike** only after Milestone 4 is complete.
 
 ---
 
@@ -611,6 +617,16 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Per-task structured summary criterion complete**; Milestone 4 remains in progress.
 - Known limitation: the summary artifact is not yet consumed by context rotation/recovery, and selective project-memory retrieval remains unfinished.
 - Next action: integrate bounded task-summary/project-memory context into the existing structured handoff artifact used by rotation/recovery. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 handoff/project-memory integration implemented
+
+- Change: context-handoff creation now records the bounded per-task summary plus a compact project-memory index (`projectId`, schemas, canonical memory-file paths, update count, latest auditable update reference) in an optional `durableMemory` block.
+- Change: replacement-session prompts carry that bounded durable-memory block while full memory-document bodies remain out of the prompt; the existing version-1 handoff shape remains backward compatible.
+- Tests: task-summary/project metadata presence, source/provenance references, architecture sentinel exclusion from artifact/prompt, and load/render compatibility for legacy schema-v1 artifacts without `durableMemory`.
+- Evidence: implementation commit `822125be3d7e0d81d44a20e503397b2b3a9014e1`; compatibility-test commit `7387489e360b851a726b42dcc6797ba48f29ed6a`; CI `#238` / `35599286479` passed.
+- Milestone impact: **Structured handoff/project-memory integration criterion complete**; Milestone 4 remains in progress.
+- Known limitation: relevant project-memory document content is still not selectively retrieved into task/handoff context.
+- Next action: implement selective project-memory retrieval with explicit selection, provenance, and bounded-content tests. Hub/RPC remains deferred.
 
 ---
 
