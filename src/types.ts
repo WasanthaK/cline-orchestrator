@@ -8,7 +8,8 @@ export type TaskStatus =
   | "completed"
   | "validation_failed"
   | "failed"
-  | "aborted";
+  | "aborted"
+  | "rolled_back";
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
@@ -56,6 +57,41 @@ export interface GitSnapshot {
 export interface RunGitState {
   before?: GitSnapshot;
   after?: GitSnapshot;
+}
+
+export interface WorkspaceFingerprint {
+  capturedAt: string;
+  available: boolean;
+  digest?: string;
+  root?: string;
+  branch?: string;
+  head?: string;
+  stagedHash?: string;
+  unstagedHash?: string;
+  untrackedHash?: string;
+  untrackedFiles?: number;
+  untrackedBytes?: number;
+  error?: string;
+}
+
+export interface GitRollbackCheckpoint {
+  createdAt: string;
+  available: boolean;
+  taskId: string;
+  runCount: number;
+  root?: string;
+  branch?: string;
+  head?: string;
+  stashRef?: string;
+  privateRef?: string;
+  backupDir?: string;
+  manifestPath?: string;
+  untrackedFiles?: number;
+  untrackedBytes?: number;
+  beforeFingerprint?: WorkspaceFingerprint;
+  afterFingerprint?: WorkspaceFingerprint;
+  restoredAt?: string;
+  error?: string;
 }
 
 export type ProviderPreflightCode =
@@ -113,6 +149,8 @@ export type TaskEventType =
   | "queued"
   | "resume_queued"
   | "git_snapshot"
+  | "checkpoint_created"
+  | "checkpoint_unavailable"
   | "run_started"
   | "session_started"
   | "session_recovered"
@@ -123,6 +161,9 @@ export type TaskEventType =
   | "validation_failed"
   | "validation_repairing"
   | "abort_requested"
+  | "rollback_requested"
+  | "rollback_completed"
+  | "rollback_failed"
   | "completed"
   | "failed"
   | "aborted";
@@ -170,6 +211,7 @@ export interface OrchestratorTask {
   runCount?: number;
   lastRunMetrics?: RunMetrics;
   lastRunGit?: RunGitState;
+  lastRunCheckpoint?: GitRollbackCheckpoint;
 }
 
 export interface WorkerConfig {
@@ -186,6 +228,8 @@ export interface WorkerConfig {
   validationTimeoutMs: number;
   maxValidationOutputChars: number;
   maxValidationRepairs: number;
+  checkpointMaxUntrackedFiles: number;
+  checkpointMaxUntrackedBytes: number;
   maxIterations: number;
   stallTimeoutMs: number;
   maxRetries: number;
