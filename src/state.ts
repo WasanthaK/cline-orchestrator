@@ -6,6 +6,7 @@ import { diffSafetyPolicyFromEnvironment } from "./diff-safety-config.js";
 import { evaluateDiffSafety } from "./diff-safety.js";
 import { createGitRollbackCheckpoint, finalizeGitRollbackCheckpoint } from "./git-checkpoint.js";
 import { captureGitSnapshot } from "./git-state.js";
+import { ProjectMemoryStore } from "./project-memory.js";
 import type { GitSnapshot, OrchestratorTask, TaskEvent, TaskEventType, TaskStatus } from "./types.js";
 
 function isTerminalStatus(status: TaskStatus): boolean {
@@ -33,7 +34,12 @@ export class TaskNotFoundError extends Error {
 }
 
 export class TaskStore {
-  constructor(private readonly rootDir: string) {}
+  private readonly projectMemory: ProjectMemoryStore;
+
+  constructor(private readonly rootDir: string) {
+    this.projectMemory = new ProjectMemoryStore(rootDir);
+  }
+
   private tasksDir() { return path.join(this.rootDir, ".orchestrator", "tasks"); }
   private eventsDir() { return path.join(this.rootDir, ".orchestrator", "events"); }
   private taskPath(id: string) { return path.join(this.tasksDir(), `${id}.json`); }
@@ -99,6 +105,7 @@ export class TaskStore {
   }
 
   async save(task: OrchestratorTask): Promise<void> {
+    await this.projectMemory.ensure();
     await mkdir(this.tasksDir(), { recursive: true });
     const previous = await this.previousTask(task.id);
 
@@ -133,6 +140,7 @@ export class TaskStore {
     task.updatedAt = new Date().toISOString();
     await writeFile(this.taskPath(task.id), JSON.stringify(task, null, 2) + "\n", "utf8");
     await this.inferEvents(previous, task);
+    await this.projectMemory.recordTask(task);
   }
 
   async appendEvent(taskId: string, type: TaskEventType, options: { status?: TaskStatus; message?: string; data?: Record<string, unknown> } = {}): Promise<TaskEvent> {
