@@ -17,6 +17,8 @@ function worker(overrides: Partial<WorkerConfig> = {}): WorkerConfig {
     validationTimeoutMs: 600000,
     maxValidationOutputChars: 20000,
     maxValidationRepairs: 1,
+    checkpointMaxUntrackedFiles: 10000,
+    checkpointMaxUntrackedBytes: 268435456,
     maxIterations: 0,
     stallTimeoutMs: 300000,
     maxRetries: 2,
