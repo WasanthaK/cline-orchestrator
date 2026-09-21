@@ -180,7 +180,7 @@ export class TaskStore {
             validationRunCount: task.validationRunCount ?? 0,
           },
         });
-      } else if (task.status === "running" && !retryIncreased) {
+      } else if (task.status === "running" && !retryIncreased && previous.status !== "repairing") {
         await this.appendEvent(task.id, "run_started", {
           status: task.status,
           message: `Run ${task.runCount ?? 1} started`,
@@ -215,10 +215,6 @@ export class TaskStore {
     await mkdir(this.tasksDir(), { recursive: true });
     const previous = await this.previousTask(task.id);
 
-    // Cline owns the model result and may report "completed" before the
-    // orchestrator's explicit validation commands have run. Convert that
-    // transition atomically so polling clients never observe a false terminal
-    // success while validation is still pending.
     if (
       task.status === "completed" &&
       (task.validationCommands?.length ?? 0) > 0 &&
@@ -234,6 +230,7 @@ export class TaskStore {
       const runStarted =
         task.status === "running" &&
         previous.status !== "running" &&
+        previous.status !== "repairing" &&
         (task.runCount ?? 0) > (previous.runCount ?? 0);
       if (runStarted) {
         task.lastRunGit = {
