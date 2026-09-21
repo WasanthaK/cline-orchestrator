@@ -62,6 +62,25 @@ export interface ArchitectureMemoryUpdate {
   rationale: string;
 }
 
+export interface DecisionMemoryUpdateInput {
+  taskId: string;
+  title: string;
+  decision: string;
+  rationale: string;
+  recordedAt?: string;
+}
+
+export interface DecisionMemoryUpdate {
+  schemaVersion: typeof PROJECT_MEMORY_UPDATE_SCHEMA_VERSION;
+  id: string;
+  document: "decisions";
+  recordedAt: string;
+  taskId: string;
+  title: string;
+  decision: string;
+  rationale: string;
+}
+
 const MEMORY_TEMPLATES: Record<ProjectMemoryDocumentName, string> = {
   architecture: `# Architecture\n\nDurable project architecture memory. Record stable components, boundaries, and important data/control flows only.\n`,
   decisions: `# Decisions\n\nDurable decision log. Record decisions with rationale plus date/task provenance; do not use this file as transient scratch space.\n`,
@@ -142,6 +161,33 @@ function formatArchitectureUpdate(update: ArchitectureMemoryUpdate): string {
   ].join("\n");
 }
 
+function formatDecisionUpdate(update: DecisionMemoryUpdate): string {
+  const provenance = JSON.stringify({
+    schemaVersion: update.schemaVersion,
+    id: update.id,
+    document: update.document,
+    recordedAt: update.recordedAt,
+    taskId: update.taskId,
+    rationale: update.rationale,
+  });
+
+  return [
+    "",
+    `<!-- orchestrator-memory-update ${provenance} -->`,
+    `## ${update.title}`,
+    "",
+    `- Update ID: \`${update.id}\``,
+    `- Recorded at: ${update.recordedAt}`,
+    `- Task: \`${update.taskId}\``,
+    `- Rationale: ${update.rationale}`,
+    "",
+    "### Decision",
+    "",
+    update.decision,
+    "",
+  ].join("\n");
+}
+
 export class ProjectMemoryStore {
   constructor(private readonly rootDir: string) {}
 
@@ -184,6 +230,19 @@ export class ProjectMemoryStore {
         if (!isAlreadyExists(error)) throw error;
       }
     }
+  }
+
+  private async recordMemoryUpdate(
+    current: ProjectMetadata,
+    reference: ProjectMemoryUpdateReference,
+  ): Promise<void> {
+    const next: ProjectMetadata = {
+      ...current,
+      updatedAt: new Date().toISOString(),
+      memoryUpdateCount: (current.memoryUpdateCount ?? 0) + 1,
+      lastMemoryUpdate: reference,
+    };
+    await writeFile(this.projectPath(), serialize(next), "utf8");
   }
 
   async load(): Promise<ProjectMetadata> {
@@ -274,21 +333,38 @@ export class ProjectMemoryStore {
     };
 
     await appendFile(this.memoryPath("architecture"), formatArchitectureUpdate(update), "utf8");
-
-    const reference: ProjectMemoryUpdateReference = {
+    await this.recordMemoryUpdate(current, {
       id: update.id,
       document: update.document,
       recordedAt: update.recordedAt,
       taskId: update.taskId,
       rationale: update.rationale,
+    });
+    return update;
+  }
+
+  async appendDecisionUpdate(input: DecisionMemoryUpdateInput): Promise<DecisionMemoryUpdate> {
+    const current = await this.ensure();
+    const recordedAt = validateRecordedAt(input.recordedAt ?? new Date().toISOString());
+    const update: DecisionMemoryUpdate = {
+      schemaVersion: PROJECT_MEMORY_UPDATE_SCHEMA_VERSION,
+      id: crypto.randomUUID(),
+      document: "decisions",
+      recordedAt,
+      taskId: singleLine("taskId", input.taskId),
+      title: singleLine("title", input.title),
+      decision: requiredText("decision", input.decision),
+      rationale: singleLine("rationale", input.rationale),
     };
-    const next: ProjectMetadata = {
-      ...current,
-      updatedAt: new Date().toISOString(),
-      memoryUpdateCount: (current.memoryUpdateCount ?? 0) + 1,
-      lastMemoryUpdate: reference,
-    };
-    await writeFile(this.projectPath(), serialize(next), "utf8");
+
+    await appendFile(this.memoryPath("decisions"), formatDecisionUpdate(update), "utf8");
+    await this.recordMemoryUpdate(current, {
+      id: update.id,
+      document: update.document,
+      recordedAt: update.recordedAt,
+      taskId: update.taskId,
+      rationale: update.rationale,
+    });
     return update;
   }
 }

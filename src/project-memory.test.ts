@@ -216,6 +216,121 @@ test("architecture update primitive rejects missing provenance or content", asyn
   });
 });
 
+test("decision log entries are append-only and carry explicit decision, rationale, date, and task provenance", async () => {
+  await withWorkspace(async (dir) => {
+    const store = new ProjectMemoryStore(dir);
+    await store.ensure();
+    const decisionsPath = path.join(dir, ".orchestrator", "memory", "decisions.md");
+    await writeFile(decisionsPath, "# Decisions\n\nHuman-authored historical decision.\n", "utf8");
+
+    const update = await store.appendDecisionUpdate({
+      taskId: "task-decision-1",
+      title: "Keep project memory append-only",
+      decision: "Durable project-memory changes are appended with provenance rather than silently replacing prior entries.",
+      rationale: "Future sessions need an audit trail that explains both the current rule and how it was introduced.",
+      recordedAt: "2026-09-21T10:00:00.000Z",
+    });
+
+    assert.equal(update.schemaVersion, 1);
+    assert.equal(update.document, "decisions");
+    assert.equal(update.taskId, "task-decision-1");
+    assert.equal(update.recordedAt, "2026-09-21T10:00:00.000Z");
+    assert.ok(update.id);
+
+    const content = await readFile(decisionsPath, "utf8");
+    assert.match(content, /^# Decisions\n\nHuman-authored historical decision\./);
+    assert.match(content, /<!-- orchestrator-memory-update \{/);
+    assert.match(content, /"document":"decisions"/);
+    assert.match(content, /## Keep project memory append-only/);
+    assert.match(content, /Task: `task-decision-1`/);
+    assert.match(content, /Recorded at: 2026-09-21T10:00:00\.000Z/);
+    assert.match(content, /Rationale: Future sessions need an audit trail/);
+    assert.match(content, /### Decision/);
+    assert.match(content, /Durable project-memory changes are appended with provenance/);
+    assert.match(content, new RegExp(update.id));
+
+    const metadata = await store.load();
+    assert.equal(metadata.memoryUpdateCount, 1);
+    assert.deepEqual(metadata.lastMemoryUpdate, {
+      id: update.id,
+      document: "decisions",
+      recordedAt: "2026-09-21T10:00:00.000Z",
+      taskId: "task-decision-1",
+      rationale: "Future sessions need an audit trail that explains both the current rule and how it was introduced.",
+    });
+  });
+});
+
+test("memory audit count remains coherent across architecture and decision updates", async () => {
+  await withWorkspace(async (dir) => {
+    const store = new ProjectMemoryStore(dir);
+    const architecture = await store.appendArchitectureUpdate({
+      taskId: "task-architecture",
+      title: "State boundary",
+      content: "Durable state belongs to the orchestrator.",
+      rationale: "Preserve the responsibility boundary.",
+      recordedAt: "2026-09-21T10:01:00.000Z",
+    });
+    const decision = await store.appendDecisionUpdate({
+      taskId: "task-decision",
+      title: "Do not overwrite memory history",
+      decision: "Memory documents use append-only durable entries.",
+      rationale: "Preserve historical provenance.",
+      recordedAt: "2026-09-21T10:02:00.000Z",
+    });
+
+    assert.notEqual(architecture.id, decision.id);
+    const metadata = await store.load();
+    assert.equal(metadata.memoryUpdateCount, 2);
+    assert.equal(metadata.lastMemoryUpdate?.id, decision.id);
+    assert.equal(metadata.lastMemoryUpdate?.document, "decisions");
+    assert.equal(metadata.lastMemoryUpdate?.taskId, "task-decision");
+  });
+});
+
+test("decision update primitive rejects missing decision provenance or invalid timestamp", async () => {
+  await withWorkspace(async (dir) => {
+    const store = new ProjectMemoryStore(dir);
+    await assert.rejects(
+      store.appendDecisionUpdate({
+        taskId: "",
+        title: "Decision",
+        decision: "Use durable memory.",
+        rationale: "reason",
+      }),
+      /taskId is required/,
+    );
+    await assert.rejects(
+      store.appendDecisionUpdate({
+        taskId: "task-1",
+        title: "Decision",
+        decision: " ",
+        rationale: "reason",
+      }),
+      /decision is required/,
+    );
+    await assert.rejects(
+      store.appendDecisionUpdate({
+        taskId: "task-1",
+        title: "Decision",
+        decision: "Use durable memory.",
+        rationale: " ",
+      }),
+      /rationale is required/,
+    );
+    await assert.rejects(
+      store.appendDecisionUpdate({
+        taskId: "task-1",
+        title: "Decision",
+        decision: "Use durable memory.",
+        rationale: "reason",
+        recordedAt: "not-a-date",
+      }),
+      /recordedAt is not a valid timestamp/,
+    );
+  });
+});
+
 test("unsupported project metadata schema is rejected instead of silently rewritten", async () => {
   await withWorkspace(async (dir) => {
     const orchestratorDir = path.join(dir, ".orchestrator");
