@@ -11,7 +11,7 @@ import type {
 } from "./types.js";
 
 function isTerminalStatus(status: TaskStatus): boolean {
-  return status === "completed" || status === "failed" || status === "aborted";
+  return status === "completed" || status === "validation_failed" || status === "failed" || status === "aborted";
 }
 
 function gitSnapshotMessage(phase: "before" | "after", snapshot: GitSnapshot): string {
@@ -67,6 +67,9 @@ export class TaskStore {
     const retryIncreased = (task.retryCount ?? 0) > (previous.retryCount ?? 0);
     const recoveryIncreased = (task.recoveryCount ?? 0) > (previous.recoveryCount ?? 0);
     const generationIncreased = (task.sessionGeneration ?? 0) > (previous.sessionGeneration ?? 0);
+    const validationChanged =
+      task.lastValidation !== undefined &&
+      task.lastValidation.completedAt !== previous.lastValidation?.completedAt;
     const beforeSnapshot = task.lastRunGit?.before;
     const afterSnapshot = task.lastRunGit?.after;
     const beforeChanged =
@@ -138,6 +141,33 @@ export class TaskStore {
         message: gitSnapshotMessage("after", afterSnapshot),
         data: { phase: "after", snapshot: afterSnapshot },
       });
+    }
+
+    if (task.status !== previous.status && task.status === "validating") {
+      await this.appendEvent(task.id, "validation_started", {
+        status: task.status,
+        message: `Running ${task.validationCommands?.length ?? 0} validation command(s)`,
+        data: {
+          validationRunCount: task.validationRunCount ?? 0,
+          commands: task.validationCommands ?? [],
+        },
+      });
+    }
+
+    if (validationChanged && task.lastValidation) {
+      if (task.lastValidation.passed) {
+        await this.appendEvent(task.id, "validation_passed", {
+          status: task.status,
+          message: `Validation passed (${task.lastValidation.commandsRun}/${task.lastValidation.commandsRequested} commands)`,
+          data: { validation: task.lastValidation },
+        });
+      } else {
+        await this.appendEvent(task.id, "validation_failed", {
+          status: task.status,
+          message: `Validation failed after ${task.lastValidation.commandsRun}/${task.lastValidation.commandsRequested} commands`,
+          data: { validation: task.lastValidation },
+        });
+      }
     }
 
     if (task.status !== previous.status) {
@@ -232,8 +262,6 @@ export class TaskStore {
         .map((line) => JSON.parse(line) as TaskEvent);
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
-        // Older tasks created before event logging legitimately have no event file.
-        // Confirm the task itself exists before returning an empty timeline.
         await this.load(taskId);
         return [];
       }
