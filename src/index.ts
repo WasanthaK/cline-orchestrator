@@ -21,6 +21,7 @@ Usage:
   npm run dev -- events <workspace> <task-id>
   npm run dev -- resume <workspace> <task-id> <prompt...>
   npm run dev -- abort <workspace> <task-id> [reason...]
+  npm run dev -- rollback <workspace> <task-id>
 
 Environment:
   ORCH_PROVIDER=ollama-openai   # recommended for local Ollama
@@ -54,7 +55,7 @@ Provider notes:
 
 Architecture:
   daemon owns the long-lived ClineCore session runtime.
-  run/resume/abort are thin localhost clients and require the daemon to be running.
+  run/resume/abort/rollback are thin localhost clients and require the daemon to be running.
 `);
   process.exit(1);
 }
@@ -346,6 +347,20 @@ async function main() {
     );
     console.log(`[orchestrator task: ${task.id}; status=${task.status}]`);
     console.log(`[abort reason: ${task.abortReason ?? reason}]`);
+    return;
+  }
+
+  if (command === "rollback") {
+    const [taskId] = rest;
+    if (!taskId) usage();
+    const task = await daemonRequest<OrchestratorTask>(
+      `/tasks/${encodeURIComponent(taskId)}/rollback`,
+      {},
+    );
+    console.log(`[orchestrator task: ${task.id}; status=${task.status}]`);
+    console.log(
+      `[rollback restored: ${task.lastRunCheckpoint?.restoredAt ?? "unknown"}; run=${task.lastRunCheckpoint?.runCount ?? "unknown"}]`,
+    );
     return;
   }
 
