@@ -141,12 +141,13 @@ The pinned Hub index publicly re-exports the client, connection, session-client,
 - `HubSessionClient` and `HubSessionClientOptions`;
 - `HubSessionRow`, `HubStreamEvent`, and related session-client types;
 - `HubUIClient` and `HubUIClientOptions`;
+- `HubRuntimeHost` and `HubRuntimeHostOptions`;
 - `connectToHub`, `resolveHubUrl`, `probeHubConnection`, and `sendHubCommand`;
 - `readHubDiscovery`, `probeHubServer`, and Hub discovery record/types;
 - `resolveProductionHubOwnerContext()` and `resolveSharedHubOwnerContext()`;
 - Hub endpoint/default helpers re-exported by the Hub index.
 
-`HubSessionClient` is itself built on `NodeHubClient` and is the higher-level session-oriented client. `HubUIClient` is a lighter UI/notification/client-tracking facade. The exact session-control method mapping is intentionally left to the next spike unit.
+`HubSessionClient` is itself built on `NodeHubClient` and is the higher-level session-oriented client. `HubUIClient` is a lighter UI/notification/client-tracking facade. `HubRuntimeHost` implements Cline's `RuntimeHost` interface over the Hub transport.
 
 ### Recommended import style for this repository
 
@@ -154,6 +155,7 @@ For Milestone 5 attach-only work, prefer the already-declared SDK facade:
 
 ```ts
 import {
+  HubRuntimeHost,
   HubSessionClient,
   NodeHubClient,
   readHubDiscovery,
@@ -212,18 +214,196 @@ The initial research note assumed that because `@cline/sdk` exposes only its roo
 4. If Core is added, pin both packages to exactly `0.0.83` during this milestone.
 5. Do not use daemon/server ownership imports during the first attach-only proof.
 
-### Pinned upstream evidence
+## 3. Session-control API map
+
+Status: **verified from the pinned 0.0.83 client, protocol, handler, and VS Code example sources**.
+
+### Control layers available at 0.0.83
+
+There are four useful public layers, with different tradeoffs:
+
+1. **`NodeHubClient`** — authoritative command/reply plus raw Hub event-stream primitive. It is the only public client facade that exposes arbitrary Hub commands such as `session.attach` while keeping the same registered client identity for commands and subscriptions.
+2. **`HubSessionClient`** — convenience wrapper over a private `NodeHubClient`. It covers create/send/get/list/search/messages/abort/detach and a normalized runtime-event stream, but it does **not** expose `session.attach`.
+3. **`HubUIClient`** — useful for `client.list`, full `session.list` rows, session search, and session/client lifecycle notifications; it is not the run-control facade.
+4. **`HubRuntimeHost`** — implements Cline's `RuntimeHost` contract over a private `NodeHubClient`, including normalized list/get/run/abort/detach and `CoreSessionEvent` translation. It is a valuable compatibility/reference implementation, but its private Hub client means callers cannot issue `session.attach` using that same registered client identity.
+
+For the orchestrator's first shared-session adapter, the safest control primitive is therefore **one authenticated `NodeHubClient` owned by the adapter**, with a small orchestrator-side normalization layer. `HubRuntimeHost` should be treated as the reference for event and `RuntimeHost` behavior unless a later design proves that a second client identity is acceptable.
+
+### List and inspect sessions
+
+Raw protocol:
+
+```ts
+await client.command("session.list", { limit: 200 });
+await client.command("session.get", { includeSnapshot: true }, sessionId);
+```
+
+`session.list` can also receive `rootOnly: true`. The server returns canonical Hub session records. `session.get` returns `session_not_found` for an unknown ID and can include the runtime snapshot when requested.
+
+Convenience surfaces:
+
+- `HubSessionClient.listSessions({ limit })` returns simplified `HubSessionRow` values (`sessionId`, parent/status/metadata/messages path). It does not preserve the full Hub `SessionRecord` workspace/participant shape.
+- `HubSessionClient.getSession(sessionId)` returns the same simplified row and converts `session_not_found` into `undefined`.
+- `HubUIClient.listSessions(limit)` returns full Hub `SessionRecord[]`, including `workspaceRoot`, status, creator, participants, runtime options, and usage.
+- `HubRuntimeHost.listSessions(limit, { rootOnly })` and `getSession(sessionId)` normalize Hub records/snapshots to Cline Core `SessionRecord` values, including workspace root/cwd/status/model/source metadata.
+
+**Do not select a session merely because it is the newest row.** The exact workspace/session identity rule is the next spike unit.
+
+### Attach to an existing authoritative session
+
+The protocol exposes:
+
+```ts
+await client.command(
+  "session.attach",
+  {
+    sessionId,
+    role: "participant",
+    metadata: { source: "cline-orchestrator" },
+  },
+  sessionId,
+);
+```
+
+`HubSessionAttachInput` declares `sessionId`, optional metadata, and optional participant role. In the pinned 0.0.83 server handler, however, `session.attach` currently registers the calling `clientId` as a **`participant`** and does not consume the optional role/metadata fields when creating the participant record. The handler then publishes `session.attached` and returns the updated session record.
+
+This is a genuine attach operation, distinct from `session.get` or subscribing to events.
+
+The pinned VS Code example follows the important ordering:
+
+1. establish the event stream for the selected session;
+2. issue `session.attach` for that session.
+
+That ordering avoids missing lifecycle/run events that can arrive immediately around attachment.
+
+`HubSessionClient` and `HubRuntimeHost` do not expose a public `attachSession()` method. Using a separate temporary `NodeHubClient` only for attach would create a **different Hub client identity**, so the first orchestrator adapter should not do that. If attachment is required, the same adapter-owned `NodeHubClient` should perform attach and subsequent commands/subscriptions.
+
+### Send work to the attached/existing session
+
+Two protocol command names reach the same Hub input handler:
+
+```text
+run.start
+session.send_input
+```
+
+The server resolves the target by `sessionId`, verifies that the session exists, publishes `run.started`, executes the runtime turn, publishes terminal run evidence, and returns the result/snapshot. The pinned handler requires a nonblank prompt string.
+
+Convenience surfaces:
+
+- `HubSessionClient.sendRuntimeSession(sessionId, request)` uses `session.send_input` and supports prompt, mode, attachments, delivery, and timeout settings.
+- `HubRuntimeHost.runTurn(input)` uses `run.start`, ensures a session-specific event subscription, and waits for the result.
+- `NodeHubClient.command("session.send_input", payload, sessionId, { timeoutMs })` is the direct path.
+
+For `run.start` and `session.send_input`, Cline's default Hub **command timeout is `null`**; long model turns are not failed by the normal 30-second command timeout. Runtime-level timeout settings remain separate.
+
+The server does not require the calling client to be recorded as a session participant before accepting the send command. Even so, the orchestrator should explicitly attach for shared-session semantics and visible participant provenance rather than relying on that permissive behavior.
+
+### Abort versus detach
+
+These operations must remain separate in the orchestrator design.
+
+**Abort the active run:**
+
+```ts
+await client.command("run.abort", { sessionId, reason }, sessionId);
+```
+
+Convenience equivalents:
+
+- `HubSessionClient.abortRuntimeSession(sessionId)`;
+- `HubRuntimeHost.abort(sessionId, reason)`.
+
+`run.abort` cancels pending approvals/capability requests for the session and asks the runtime host to abort the active work. The handler returns `{ applied: true }`.
+
+**Detach this client from the session:**
+
+```ts
+await client.command("session.detach", { sessionId }, sessionId);
+```
+
+Convenience equivalents:
+
+- `HubSessionClient.stopRuntimeSession(sessionId)`;
+- `HubRuntimeHost.stopSession(sessionId)`.
+
+`session.detach` removes the calling Hub client from the session participant set and cancels pending capability requests targeted to that client. It does **not** mean "abort the run" and it does not delete the session.
+
+This distinction maps well to the orchestrator: user/task abort should call `run.abort`; orchestrator shutdown or intentional release of observation/control should detach.
+
+### Session and run event streams
+
+`NodeHubClient.subscribe(listener, { sessionId? })` is the complete client-side event primitive.
+
+When a subscription becomes active it sends a `stream.subscribe` frame. Session-specific subscriptions filter by `sessionId`; a global subscription receives all Hub events. The client tracks the highest durable Hub event `sequence` per subscription key and supplies `sinceSequence` when re-subscribing after reconnect, allowing durable event-log replay where the Hub supports it.
+
+Relevant raw event families include:
+
+- lifecycle: `session.created`, `session.updated`, `session.attached`, `session.detached`;
+- runs: `run.started`, `run.heartbeat`, `run.aborted`, `run.completed`, `run.failed`, `run.interrupted`;
+- model loop: `iteration.started`, `iteration.finished`;
+- output: `assistant.delta`, `assistant.media`, `assistant.finished`, reasoning events and notices;
+- usage: `usage.updated`;
+- tools: `tool.started`, `tool.updated`, `tool.finished`;
+- human/capability flow: `approval.requested`, `approval.resolved`, `capability.requested`, `capability.resolved`.
+
+`HubSessionClient.streamEvents()` deliberately maps only a subset into its `HubStreamEvent` vocabulary: iteration start/end, assistant text/media, usage, notices, tool start/update/end, approval requested, and run aborted/failed/completed (plus schedule terminal events). It does **not** expose session lifecycle events, `run.started`, or `run.heartbeat` through that normalized stream.
+
+`HubUIClient.subscribeUI()` covers client registration/disconnection and session created/updated/detached lifecycle events, but not the complete runtime stream.
+
+`HubRuntimeHost` subscribes per session and translates raw Hub events into the Core `RuntimeHost` / `CoreSessionEvent` model used by higher-level Cline code. This is useful reference behavior for preserving our existing watchdog, metrics, and streaming semantics.
+
+### Recommended first adapter boundary
+
+The current `ClineRunner` consumes a small effective subset of `ClineCore`: create/start an interactive session, send input by session ID, abort by session ID, receive streamed Core-style events, and dispose.
+
+The pinned Hub source suggests the least risky migration path is:
+
+```text
+ClineRunner
+    |
+    v
+Orchestrator Hub adapter
+    |
+    +-- one authenticated NodeHubClient
+    |      - list/get
+    |      - stream.subscribe
+    |      - session.attach
+    |      - session.send_input
+    |      - run.abort
+    |      - session.detach
+    |
+    +-- event normalization modeled on HubRuntimeHost
+```
+
+Do **not** create one `HubRuntimeHost` plus a separate `NodeHubClient` merely to gain `session.attach`; that would register two different Hub client identities and make participant/capability ownership harder to reason about.
+
+The first proof should keep one native Hub client identity, subscribe before attach, attach explicitly, then control and observe the same session ID that VS Code sees. The adapter can normalize raw Hub events into the event shape already consumed by `ClineRunner`, using `HubRuntimeHost` as the pinned reference implementation.
+
+### Session-control conclusions
+
+1. `NodeHubClient` is the only public facade we need for a **single-identity attach/control/event** proof.
+2. `session.attach` is explicit and should be used; `get` or `subscribe` alone is not attachment.
+3. Subscribe before attach, following Cline's own VS Code example.
+4. `session.send_input` / `run.start` target the existing session by ID and are long-running commands with no default command timeout.
+5. `run.abort` and `session.detach` have different meanings and must never be conflated.
+6. Raw `NodeHubClient.subscribe()` is required if we need complete lifecycle + run/watchdog evidence; `HubSessionClient.streamEvents()` alone is incomplete for orchestration supervision.
+7. `HubRuntimeHost` is an important compatibility/reference implementation for event normalization and the RuntimeHost contract, but the first attach-only proof should avoid a second Hub client identity.
+8. Session selection remains unresolved until workspace/session identity is analyzed in the next spike unit.
+
+### Pinned upstream evidence for session control
 
 Inspected at `cline/cline` tag `sdk/sdk/v0.0.83`:
 
-- `sdk/packages/sdk/package.json`
-- `sdk/packages/sdk/src/index.ts`
-- `sdk/packages/core/package.json`
-- `sdk/packages/core/src/index.ts`
-- `sdk/packages/core/src/hub/index.ts`
+- `sdk/packages/shared/src/hub.ts`
 - `sdk/packages/core/src/hub/client/index.ts`
 - `sdk/packages/core/src/hub/client/session-client.ts`
 - `sdk/packages/core/src/hub/client/ui-client.ts`
+- `sdk/packages/core/src/hub/runtime-host/hub-runtime-host.ts`
+- `sdk/packages/core/src/hub/server/handlers/session-handlers.ts`
+- `sdk/packages/core/src/hub/server/handlers/run-handlers.ts`
+- `apps/examples/vscode/src/extension.ts`
+- current orchestrator `src/cline-runner.ts`
 
 ## Pinned upstream evidence for discovery/authentication
 
@@ -243,6 +423,5 @@ Inspected at `cline/cline` tag `sdk/sdk/v0.0.83`:
 
 These remain deliberately unresolved until their own plan units:
 
-- session list/attach/send/abort/event APIs;
 - workspace/session identity and multi-client approval/tool-executor behavior;
 - migration design from the orchestrator-owned `ClineCore` runtime to shared Hub attachment.
