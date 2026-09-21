@@ -256,7 +256,7 @@ Make project continuity independent of any particular model context or Cline ses
 
 ## Acceptance Criteria
 
-- [ ] Durable project metadata.
+- [x] Durable project metadata.
 - [ ] Architecture memory.
 - [ ] Decision log with rationale and date/task provenance.
 - [ ] Code map containing important modules/components only.
@@ -268,13 +268,38 @@ Make project continuity independent of any particular model context or Cline ses
 - [ ] Memory updates are explicit/auditable.
 - [ ] Tests for serialization, update, and selection logic.
 
+## Project Metadata and Storage Skeleton
+
+The orchestrator now bootstraps project memory automatically on the first task-state save.
+
+`.orchestrator/project.json` is schema-versioned and persists a stable `projectId`, creation/update timestamps, current workspace root, memory-schema version, canonical relative paths for the five memory documents, and a latest-task pointer. Re-opening the project preserves project identity and creation time while task-state saves refresh the latest-task pointer.
+
+The storage skeleton creates these files once and never overwrites existing content:
+
+```text
+.orchestrator/memory/architecture.md
+.orchestrator/memory/decisions.md
+.orchestrator/memory/code-map.md
+.orchestrator/memory/conventions.md
+.orchestrator/memory/known-issues.md
+```
+
+Unknown/future `project.json` schema versions are rejected instead of silently rewritten. Existing human-authored memory-file content is preserved when the skeleton is re-ensured.
+
+## Evidence
+
+- Implementation commit: `32014431b54256d51f76626641350b08315afda9` (`feat: bootstrap durable project memory`).
+- GitHub-hosted CI: run `#198`, workflow `35579239935`, success.
+- Tests cover first bootstrap, JSON serialization/reload, stable project identity, latest-task metadata updates, automatic `TaskStore` integration, non-overwrite behavior, and rejection of unsupported metadata schemas.
+- No self-hosted/Ollama runtime mutation was performed.
+
 ## Status
 
-**NOT STARTED — NEXT MILESTONE**
+**IN PROGRESS**
 
 ## Current Next Step
 
-Design and implement the first Milestone 4 unit: **durable project metadata and the `.orchestrator/memory/` storage skeleton**, with explicit serialization/update tests. Reuse the Milestone 3 handoff format where appropriate; do not begin Hub/RPC work.
+Implement the next Milestone 4 unit: **architecture memory with an explicit/auditable update primitive and provenance**, then add focused tests. Do not begin Hub/RPC work.
 
 ---
 
@@ -378,7 +403,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Session-not-found + handoff interaction | Implemented + cloud tested |
 | Validation-repair + handoff interaction | Implemented + cloud tested |
 | Cross-generation metrics/event evidence | Implemented + cloud tested |
-| Durable project memory | **Next milestone** |
+| Durable project metadata + memory skeleton | **Implemented + cloud tested** |
+| Durable project memory content/retrieval | In progress |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
@@ -396,6 +422,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
+10. **Memory skeleton is not yet semantic memory** — files now exist durably, but selective updates/retrieval and provenance rules remain to be implemented.
 
 ---
 
@@ -403,15 +430,18 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Start Milestone 4: durable project metadata + memory storage skeleton**
-   - `.orchestrator/project.json`;
-   - `.orchestrator/memory/` files/directories;
-   - explicit serialization/update tests.
+1. **Implement architecture memory + auditable update primitive**
+   - explicit structured update input;
+   - task/date provenance;
+   - preservation of unrelated memory content;
+   - focused serialization/update tests.
 
-2. **Build selective durable project memory**
-   - architecture, decisions, code map, conventions, known issues;
-   - explicit/auditable updates;
-   - selective retrieval.
+2. **Extend the same memory model selectively**
+   - decisions;
+   - code map;
+   - conventions;
+   - known issues;
+   - selective retrieval without dumping all memory into every prompt.
 
 3. **Integrate per-task structured summaries/handoffs with project memory**.
 
@@ -467,6 +497,17 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Milestone 3 COMPLETE**.
 - Known limitation: durable handoff retention/compaction is deliberately deferred to Milestone 4 project-memory policy.
 - Next action: begin Milestone 4 with durable project metadata and the `.orchestrator/memory/` storage skeleton. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 project metadata and memory skeleton implemented
+
+- Change: added schema-versioned `.orchestrator/project.json` with stable project identity, workspace root, memory-file map, timestamps, and latest-task pointer.
+- Change: task-state saves now automatically bootstrap project memory and refresh the latest-task pointer.
+- Change: added one-time creation of `architecture.md`, `decisions.md`, `code-map.md`, `conventions.md`, and `known-issues.md` without overwriting existing memory content.
+- Tests: bootstrap/serialization/reload, stable identity, task-pointer updates, `TaskStore` integration, non-overwrite behavior, and unsupported-schema rejection.
+- Evidence: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198` / `35579239935` passed.
+- Milestone impact: durable project metadata criterion complete; Milestone 4 remains in progress.
+- Known limitation: the five documents are storage skeletons only; semantic update/retrieval/provenance behavior is not implemented yet.
+- Next action: implement architecture memory with an explicit/auditable update primitive and provenance. Hub/RPC remains deferred.
 
 ---
 
