@@ -369,7 +369,7 @@ This complements the focused unit/integration coverage already present for proje
 
 ## Current Next Step
 
-Continue Milestone 5 technical research with the **exact Hub session-control API map for list, attach/get, send, abort/detach, and session events at Cline `0.0.83`**. Do not change runtime ownership yet.
+Continue Milestone 5 technical research with **workspace/session identity and multi-client approval/tool-executor behavior at Cline `0.0.83`**. Do not change runtime ownership yet.
 
 ---
 
@@ -383,13 +383,15 @@ Allow the orchestrator and the user's VS Code Cline UI to observe/control the sa
 
 The pinned Cline generation is `0.0.83`. Discovery/authentication behavior for the pinned release is documented in `docs/MILESTONE-5-HUB-SPIKE.md`: managed discovery records carry a random local auth token; native WebSocket clients use the `cline-hub-auth.<token>` subprotocol; authenticated HTTP control endpoints use Bearer auth; the orchestrator must consume Cline's managed discovery credential rather than persist a second token.
 
-The package/import boundary is also confirmed for `0.0.83`: `@cline/sdk` is the user-facing alias for `@cline/core`; the SDK root re-exports the Core root, and the Core root re-exports `./hub`. Therefore the orchestrator can import `NodeHubClient`, `HubSessionClient`, `HubUIClient`, discovery helpers, and related Hub types from the existing `@cline/sdk` root. A direct `@cline/core` dependency is **not required for the attach-only path** and should be added only if a future implementation deliberately imports a Core-only subpath such as `@cline/core/hub` or `@cline/core/hub/daemon-entry`.
+The package/import boundary is also confirmed for `0.0.83`: `@cline/sdk` is the user-facing alias for `@cline/core`; the SDK root re-exports the Core root, and the Core root re-exports `./hub`. Therefore the orchestrator can import `NodeHubClient`, `HubSessionClient`, `HubUIClient`, `HubRuntimeHost`, discovery helpers, and related Hub types from the existing `@cline/sdk` root. A direct `@cline/core` dependency is **not required for the attach-only path** and should be added only if a future implementation deliberately imports a Core-only subpath such as `@cline/core/hub` or `@cline/core/hub/daemon-entry`.
+
+The session-control surface is now mapped. For a single-identity attach-only proof, one authenticated `NodeHubClient` should own `session.list`/`session.get`, raw `stream.subscribe`, explicit `session.attach`, `session.send_input`, `run.abort`, and `session.detach`. Cline's VS Code example subscribes before attaching. `run.abort` and `session.detach` are separate operations. `HubSessionClient` covers most convenience operations but does not expose `session.attach` and normalizes only a subset of events; `HubRuntimeHost` implements the higher-level `RuntimeHost` semantics and is the pinned reference for Core-style event normalization, but its private client means combining it with a second client only for attach would create two Hub identities.
 
 ## Technical Spike Acceptance Criteria
 
 - [x] Document Hub discovery and local authentication/token mechanism.
 - [x] Confirm exact imports at `0.0.83` and direct-dependency needs.
-- [ ] Identify list/attach/send/abort/session-event APIs.
+- [x] Identify list/attach/send/abort/session-event APIs.
 - [ ] Determine workspace session identity and multi-client approval/tool-executor behavior.
 - [ ] Produce migration design from owned `ClineCore` to Hub-backed attachment.
 
@@ -397,6 +399,7 @@ The package/import boundary is also confirmed for `0.0.83`: `@cline/sdk` is the 
 
 - Hub discovery/authentication spike: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264`, workflow `35607213364`, success.
 - Hub import/dependency boundary: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268`, workflow `35609556979`, success. The corrected decision is to keep `package.json` unchanged with only `@cline/sdk: 0.0.83` for the attach-only path; do not rely on undeclared `@cline/core` subpath imports.
+- Hub session-control API map: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272`, workflow `35611491671`, success. The first adapter should keep one authenticated `NodeHubClient` identity for subscribe/attach/control and use `HubRuntimeHost` as the reference for normalization semantics rather than creating a second Hub client identity.
 - Static upstream evidence was inspected at `cline/cline` tag `sdk/sdk/v0.0.83`; no Hub process, VS Code runtime, or shared Ollama runtime was mutated.
 
 ## Status
@@ -488,6 +491,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Durable project memory content/retrieval | **Complete / proven** |
 | Hub discovery/authentication research | **Documented + cloud tested** |
 | Hub import/dependency boundary | **Documented + cloud tested** |
+| Hub session-control API research | **Documented + cloud tested** |
 | Shared VS Code/Hub session | Research in progress |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
@@ -507,6 +511,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction remains a future policy concern rather than a Milestone 4 blocker.
 10. **Hub authentication credential** — Cline's local discovery token is a runtime credential and must not be copied into orchestrator task state, project memory, handoffs, logs, or Git.
 11. **Hub package boundary** — use the public `@cline/sdk` root for the attach-only Hub adapter; if a Core-only subpath is intentionally adopted later, declare and version-pin `@cline/core` directly rather than relying on its transitive installation.
+12. **Hub client identity** — the first attach-only proof should use one authenticated `NodeHubClient` identity for event subscription, `session.attach`, send, abort, and detach. Avoid a second Hub client merely to bridge a convenience-wrapper gap until multi-client capability ownership is understood.
 
 ---
 
@@ -514,13 +519,14 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Identify Hub session-control APIs** for list/attach/get/send/abort/detach/events at Cline `0.0.83`.
+1. **Determine workspace/session identity and multi-client approval/tool-executor behavior at Cline `0.0.83`.**
+   - define how an orchestrator workspace selects the correct existing Hub session without relying on "newest session" heuristics;
+   - determine participant/creator semantics when VS Code and orchestrator are attached simultaneously;
+   - trace approval routing and client-owned tool/capability executor behavior so an observer/controller cannot accidentally steal runtime capabilities.
 
-2. **Determine workspace/session identity and multi-client approval/tool-executor behavior.**
+2. **Produce migration design** from owned `ClineCore` to Hub-backed attachment.
 
-3. **Produce migration design** from owned `ClineCore` to Hub-backed attachment.
-
-4. **Implement shared Hub runtime attachment** only after the full technical spike is documented and reviewed.
+3. **Implement an attach-only shared Hub proof** only after the full technical spike is documented and reviewed.
 
 ---
 
@@ -703,6 +709,16 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: second Milestone 5 technical-spike criterion complete; runtime implementation remains pending.
 - Known limitation: exact session-control APIs, multi-client approval/tool-executor semantics, workspace/session identity, and migration design remain unresolved.
 - Next action: map list/attach/get/send/abort/detach/session-event APIs for pinned Cline `0.0.83`.
+
+## 2026-09-21 — Milestone 5 Hub session-control API map documented
+
+- Change: expanded `docs/MILESTONE-5-HUB-SPIKE.md` with the pinned list/get, explicit attach, send, abort, detach, and event-stream contracts plus the current orchestrator integration surface.
+- Research: verified explicit `session.attach`; Cline's VS Code example subscribes before attach; `session.send_input`/`run.start` target an existing session; `run.abort` is distinct from `session.detach`; raw `NodeHubClient.subscribe()` provides complete Hub lifecycle/run events and sequence-based replay where supported.
+- Decision: the first attach-only adapter should own one authenticated `NodeHubClient` identity for subscription, attach, send, abort, and detach. Use `HubRuntimeHost` as the pinned reference for Core-style event normalization, but do not combine it with a second client solely to gain `session.attach` before multi-client ownership semantics are understood.
+- Evidence: commit `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272` / `35611491671` passed.
+- Milestone impact: third Milestone 5 technical-spike criterion complete; runtime implementation remains pending.
+- Known limitation: workspace/session selection, participant/creator semantics, approval routing, client-owned tool/capability executors, and final migration design remain unresolved.
+- Next action: determine workspace/session identity and multi-client approval/tool-executor behavior for pinned Cline `0.0.83`.
 
 ---
 
