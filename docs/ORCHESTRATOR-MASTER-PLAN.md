@@ -369,7 +369,7 @@ This complements the focused unit/integration coverage already present for proje
 
 ## Current Next Step
 
-Continue Milestone 5 technical research with the **exact supported Hub imports at Cline `0.0.83` and whether `@cline/core` must be declared as a direct dependency**. Do not change runtime ownership yet.
+Continue Milestone 5 technical research with the **exact Hub session-control API map for list, attach/get, send, abort/detach, and session events at Cline `0.0.83`**. Do not change runtime ownership yet.
 
 ---
 
@@ -381,12 +381,14 @@ Allow the orchestrator and the user's VS Code Cline UI to observe/control the sa
 
 ## Confirmed Research
 
-The pinned Cline generation is `0.0.83`. Research shows Hub-related architecture through `@cline/core/hub`, including `NodeHubClient`, `HubSessionClient`, `HubUIClient`, and `connectToHub`. Discovery/authentication behavior for the pinned release is documented in `docs/MILESTONE-5-HUB-SPIKE.md`: managed discovery records carry a random local auth token; native WebSocket clients use the `cline-hub-auth.<token>` subprotocol; authenticated HTTP control endpoints use Bearer auth; the orchestrator must consume Cline's managed discovery credential rather than persist a second token.
+The pinned Cline generation is `0.0.83`. Discovery/authentication behavior for the pinned release is documented in `docs/MILESTONE-5-HUB-SPIKE.md`: managed discovery records carry a random local auth token; native WebSocket clients use the `cline-hub-auth.<token>` subprotocol; authenticated HTTP control endpoints use Bearer auth; the orchestrator must consume Cline's managed discovery credential rather than persist a second token.
+
+The package/import boundary is also confirmed for `0.0.83`: `@cline/sdk` is the user-facing alias for `@cline/core`; the SDK root re-exports the Core root, and the Core root re-exports `./hub`. Therefore the orchestrator can import `NodeHubClient`, `HubSessionClient`, `HubUIClient`, discovery helpers, and related Hub types from the existing `@cline/sdk` root. A direct `@cline/core` dependency is **not required for the attach-only path** and should be added only if a future implementation deliberately imports a Core-only subpath such as `@cline/core/hub` or `@cline/core/hub/daemon-entry`.
 
 ## Technical Spike Acceptance Criteria
 
 - [x] Document Hub discovery and local authentication/token mechanism.
-- [ ] Confirm exact imports at `0.0.83` and direct-dependency needs.
+- [x] Confirm exact imports at `0.0.83` and direct-dependency needs.
 - [ ] Identify list/attach/send/abort/session-event APIs.
 - [ ] Determine workspace session identity and multi-client approval/tool-executor behavior.
 - [ ] Produce migration design from owned `ClineCore` to Hub-backed attachment.
@@ -394,6 +396,7 @@ The pinned Cline generation is `0.0.83`. Research shows Hub-related architecture
 ## Evidence
 
 - Hub discovery/authentication spike: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264`, workflow `35607213364`, success.
+- Hub import/dependency boundary: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268`, workflow `35609556979`, success. The corrected decision is to keep `package.json` unchanged with only `@cline/sdk: 0.0.83` for the attach-only path; do not rely on undeclared `@cline/core` subpath imports.
 - Static upstream evidence was inspected at `cline/cline` tag `sdk/sdk/v0.0.83`; no Hub process, VS Code runtime, or shared Ollama runtime was mutated.
 
 ## Status
@@ -484,6 +487,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Project-memory audit verification | Implemented + cloud tested |
 | Durable project memory content/retrieval | **Complete / proven** |
 | Hub discovery/authentication research | **Documented + cloud tested** |
+| Hub import/dependency boundary | **Documented + cloud tested** |
 | Shared VS Code/Hub session | Research in progress |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
@@ -502,6 +506,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction remains a future policy concern rather than a Milestone 4 blocker.
 10. **Hub authentication credential** — Cline's local discovery token is a runtime credential and must not be copied into orchestrator task state, project memory, handoffs, logs, or Git.
+11. **Hub package boundary** — use the public `@cline/sdk` root for the attach-only Hub adapter; if a Core-only subpath is intentionally adopted later, declare and version-pin `@cline/core` directly rather than relying on its transitive installation.
 
 ---
 
@@ -509,18 +514,13 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Confirm exact Hub imports and direct-dependency requirements at Cline `0.0.83`**
-   - identify which Hub types/helpers are exported only from `@cline/core/hub` versus the `@cline/sdk` root alias;
-   - determine whether `@cline/core` must be a declared direct dependency rather than relying on `@cline/sdk`'s transitive dependency;
-   - document the supported import surface without changing runtime ownership.
+1. **Identify Hub session-control APIs** for list/attach/get/send/abort/detach/events at Cline `0.0.83`.
 
-2. **Identify Hub session-control APIs** for list/attach/send/abort/events.
+2. **Determine workspace/session identity and multi-client approval/tool-executor behavior.**
 
-3. **Determine workspace/session identity and multi-client approval/tool-executor behavior.**
+3. **Produce migration design** from owned `ClineCore` to Hub-backed attachment.
 
-4. **Produce migration design** from owned `ClineCore` to Hub-backed attachment.
-
-5. **Implement shared Hub runtime attachment** only after the full technical spike is documented and reviewed.
+4. **Implement shared Hub runtime attachment** only after the full technical spike is documented and reviewed.
 
 ---
 
@@ -693,6 +693,16 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: first Milestone 5 technical-spike criterion complete; runtime implementation has not started.
 - Known limitation: exact imports/direct-dependency requirements, session-control APIs, multi-client ownership semantics, and migration design remain unresolved.
 - Next action: confirm exact Hub imports and direct-dependency requirements for Cline `0.0.83`.
+
+## 2026-09-21 — Milestone 5 Hub import/dependency boundary confirmed
+
+- Change: expanded `docs/MILESTONE-5-HUB-SPIKE.md` with the pinned package export chain and supported attach-only Hub import boundary.
+- Research: verified that `@cline/sdk` re-exports the `@cline/core` root and that Core's root re-exports `./hub`, so `NodeHubClient`, `HubSessionClient`, `HubUIClient`, discovery helpers, and Hub types are available from the existing `@cline/sdk` root at `0.0.83`.
+- Decision: keep `package.json` unchanged with only `@cline/sdk: 0.0.83` for the attach-only path. If a future implementation intentionally imports `@cline/core/hub` or `@cline/core/hub/daemon-entry`, add `@cline/core` as a direct dependency pinned to exactly `0.0.83`; never rely on its transitive installation.
+- Evidence: commit `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268` / `35609556979` passed.
+- Milestone impact: second Milestone 5 technical-spike criterion complete; runtime implementation remains pending.
+- Known limitation: exact session-control APIs, multi-client approval/tool-executor semantics, workspace/session identity, and migration design remain unresolved.
+- Next action: map list/attach/get/send/abort/detach/session-event APIs for pinned Cline `0.0.83`.
 
 ---
 
