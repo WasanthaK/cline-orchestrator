@@ -243,6 +243,7 @@ Make project continuity independent of any particular model context or Cline ses
 .orchestrator/
   project.json
   tasks/
+  task-summaries/
   events/
   checkpoints/
   memory/
@@ -262,7 +263,7 @@ Make project continuity independent of any particular model context or Cline ses
 - [x] Code map containing important modules/components only.
 - [x] Conventions memory.
 - [x] Known-issues memory.
-- [ ] Per-task structured summary.
+- [x] Per-task structured summary.
 - [ ] Structured handoff artifact shared with context rotation/recovery.
 - [ ] Selective retrieval so whole project memory is not dumped into every prompt.
 - [ ] Memory updates are explicit/auditable.
@@ -316,6 +317,12 @@ Known-issues memory now records durable risks/constraints as append-only lifecyc
 
 Existing issue history is preserved instead of being rewritten when status changes. Invalid statuses and missing status/impact/description/provenance fields are rejected, while project-level `memoryUpdateCount` and `lastMemoryUpdate` remain coherent when issue updates follow other memory types.
 
+## Per-task Structured Summary
+
+Each task can now produce a versioned latest-summary artifact at `.orchestrator/task-summaries/<task-id>.json`. The summary records revision and source-task timestamp provenance, task goal/status, lifecycle/configuration counts, selected validation/diff-safety/Git/handoff/run-metric evidence, and terminal outcome fields.
+
+Summary text is bounded to 2,000 characters per retained text field. Verbose/transient payloads such as worker prompts/output, validation stdout/stderr, Git status lines, full diff path lists, and per-turn metric arrays are deliberately excluded. Re-recording a task preserves the original summary creation timestamp while incrementing the revision and recording the latest source-task timestamp. Unsupported summary schemas and path-escaping task IDs are rejected.
+
 ## Evidence
 
 - Project metadata/skeleton implementation: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198`, workflow `35579239935`, success.
@@ -324,7 +331,8 @@ Existing issue history is preserved instead of being rewritten when status chang
 - Code-map memory implementation: commit `3e064115c187783ec9fb86a3a732fca136e02140` (`feat: add selective code map memory`); CI `#212`, workflow `35590998279`, success.
 - Conventions memory implementation: commit `3efecb809b9679505f007d75bfd273d815fa2e55` (`feat: add auditable conventions memory`); CI `#220`, workflow `35593035452`, success.
 - Known-issues memory implementation: commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c` (`feat: add auditable known issues memory`); CI `#226`, workflow `35595083980`, success.
-- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
+- Per-task summary implementation: commit `d74f63618898291f42363bdd846459814820b4cd` (`feat: add durable per-task structured summaries`) plus focused tests in commit `0e8c2e57cfe382b792a4178de40ccbb453c1c080` (`test: cover durable task summaries`); CI `#232`, workflow `35597817935`, success.
+- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, task-summary serialization/revision/bounding/schema/path safety, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
@@ -333,7 +341,7 @@ Existing issue history is preserved instead of being rewritten when status chang
 
 ## Current Next Step
 
-Implement the next Milestone 4 unit: **per-task structured summary with durable provenance and focused tests**. Do not begin Hub/RPC work.
+Implement the next Milestone 4 unit: **share the bounded per-task/project-memory context with the existing structured handoff artifact used by context rotation/recovery**, with focused compatibility tests. Do not begin Hub/RPC work.
 
 ---
 
@@ -442,7 +450,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Decision log + provenance | Implemented + cloud tested |
 | Selective code map + provenance | Implemented + cloud tested |
 | Conventions memory + provenance | Implemented + cloud tested |
-| Known issues memory + provenance | **Implemented + cloud tested** |
+| Known issues memory + provenance | Implemented + cloud tested |
+| Per-task structured summary | **Implemented + cloud tested** |
 | Durable project memory content/retrieval | In progress |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -461,7 +470,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Project memory remains partial** — the five core memory documents are durable/auditable, but per-task summaries, handoff/project-memory integration, and selective retrieval remain unfinished.
+10. **Project memory remains partial** — the five core memory documents and per-task summaries are durable/auditable, but handoff/project-memory integration and selective retrieval remain unfinished.
 
 ---
 
@@ -469,14 +478,14 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Implement per-task structured summary**
-   - durable structured task outcome/progress summary;
-   - task/date provenance;
-   - focused serialization/update tests.
+1. **Share project-memory/task-summary context with structured handoff rotation/recovery**
+   - consume bounded durable task summary/project-memory references rather than reconstructing context independently;
+   - preserve existing recovery reasons/generation/checkpoint semantics;
+   - add focused compatibility/integration tests.
 
-2. **Share project-memory context with structured handoff rotation/recovery**.
+2. **Implement selective retrieval** without dumping all project memory into every prompt.
 
-3. **Implement selective retrieval** without dumping all project memory into every prompt.
+3. **Close the remaining explicit/auditable update and selection-test acceptance criteria** once retrieval behavior is proven.
 
 4. **Perform Milestone 5 Hub/RPC technical spike** only after Milestone 4 is complete.
 
@@ -592,6 +601,16 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Repository-history note: commit `41ce7e3c0ece9a84da7c1d837c5012e32d368572` temporarily replaced the master-plan content with a connector placeholder; commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c` immediately restored the exact prior plan while adding the implementation and tests.
 - Known limitation: per-task summaries, handoff/project-memory integration, and selective retrieval remain unfinished.
 - Next action: implement a per-task structured summary with durable provenance and focused tests. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 per-task structured summary implemented
+
+- Change: added versioned `.orchestrator/task-summaries/<task-id>.json` artifacts containing bounded task goal/status, lifecycle/configuration counts, selected validation/diff/Git/handoff/metrics evidence, terminal outcome, revision, and source-task timestamp provenance.
+- Change: summary text is bounded to 2,000 characters; verbose worker prompts/output, validation stdout/stderr, Git status lines, changed-path details, and per-turn metric arrays are deliberately excluded.
+- Tests: summary serialization/evidence selection, bounded-text behavior, exclusion of transient/verbose payloads, revision/creation provenance, reload, unsafe task-ID rejection, and unsupported-schema rejection.
+- Evidence: implementation commit `d74f63618898291f42363bdd846459814820b4cd`; focused-test commit `0e8c2e57cfe382b792a4178de40ccbb453c1c080`; CI `#232` / `35597817935` passed.
+- Milestone impact: **Per-task structured summary criterion complete**; Milestone 4 remains in progress.
+- Known limitation: the summary artifact is not yet consumed by context rotation/recovery, and selective project-memory retrieval remains unfinished.
+- Next action: integrate bounded task-summary/project-memory context into the existing structured handoff artifact used by rotation/recovery. Hub/RPC remains deferred.
 
 ---
 
