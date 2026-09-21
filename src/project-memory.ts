@@ -103,6 +103,27 @@ export interface CodeMapMemoryUpdate {
   rationale: string;
 }
 
+export interface ConventionMemoryUpdateInput {
+  taskId: string;
+  title: string;
+  scope: string;
+  convention: string;
+  rationale: string;
+  recordedAt?: string;
+}
+
+export interface ConventionMemoryUpdate {
+  schemaVersion: typeof PROJECT_MEMORY_UPDATE_SCHEMA_VERSION;
+  id: string;
+  document: "conventions";
+  recordedAt: string;
+  taskId: string;
+  title: string;
+  scope: string;
+  convention: string;
+  rationale: string;
+}
+
 const MEMORY_TEMPLATES: Record<ProjectMemoryDocumentName, string> = {
   architecture: `# Architecture\n\nDurable project architecture memory. Record stable components, boundaries, and important data/control flows only.\n`,
   decisions: `# Decisions\n\nDurable decision log. Record decisions with rationale plus date/task provenance; do not use this file as transient scratch space.\n`,
@@ -253,6 +274,35 @@ function formatCodeMapUpdate(update: CodeMapMemoryUpdate): string {
     "### Responsibility",
     "",
     update.responsibility,
+    "",
+  ].join("\n");
+}
+
+function formatConventionUpdate(update: ConventionMemoryUpdate): string {
+  const provenance = JSON.stringify({
+    schemaVersion: update.schemaVersion,
+    id: update.id,
+    document: update.document,
+    recordedAt: update.recordedAt,
+    taskId: update.taskId,
+    scope: update.scope,
+    rationale: update.rationale,
+  });
+
+  return [
+    "",
+    `<!-- orchestrator-memory-update ${provenance} -->`,
+    `## ${update.title}`,
+    "",
+    `- Update ID: \`${update.id}\``,
+    `- Recorded at: ${update.recordedAt}`,
+    `- Task: \`${update.taskId}\``,
+    `- Scope: ${update.scope}`,
+    `- Rationale: ${update.rationale}`,
+    "",
+    "### Convention",
+    "",
+    update.convention,
     "",
   ].join("\n");
 }
@@ -453,6 +503,32 @@ export class ProjectMemoryStore {
     };
 
     await appendFile(this.memoryPath("codeMap"), formatCodeMapUpdate(update), "utf8");
+    await this.recordMemoryUpdate(current, {
+      id: update.id,
+      document: update.document,
+      recordedAt: update.recordedAt,
+      taskId: update.taskId,
+      rationale: update.rationale,
+    });
+    return update;
+  }
+
+  async appendConventionUpdate(input: ConventionMemoryUpdateInput): Promise<ConventionMemoryUpdate> {
+    const current = await this.ensure();
+    const recordedAt = validateRecordedAt(input.recordedAt ?? new Date().toISOString());
+    const update: ConventionMemoryUpdate = {
+      schemaVersion: PROJECT_MEMORY_UPDATE_SCHEMA_VERSION,
+      id: crypto.randomUUID(),
+      document: "conventions",
+      recordedAt,
+      taskId: singleLine("taskId", input.taskId),
+      title: singleLine("title", input.title),
+      scope: singleLine("scope", input.scope),
+      convention: requiredText("convention", input.convention),
+      rationale: singleLine("rationale", input.rationale),
+    };
+
+    await appendFile(this.memoryPath("conventions"), formatConventionUpdate(update), "utf8");
     await this.recordMemoryUpdate(current, {
       id: update.id,
       document: update.document,
