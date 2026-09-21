@@ -200,7 +200,7 @@ The safety comparison uses the original run checkpoint so validation-repair turn
 
 Allow long-running work without allowing one Cline conversation to grow until quality degrades or the provider context ceiling is reached.
 
-## Already Implemented
+## Implemented
 
 - [x] Track per-turn input usage separately from cumulative usage.
 - [x] Configurable context-rotation threshold.
@@ -209,24 +209,51 @@ Allow long-running work without allowing one Cline conversation to grow until qu
 - [x] Planned rotation does not increment watchdog stall/retry counters.
 - [x] Rotation is requested after an iteration boundary rather than during an active tool call.
 - [x] Cloud tests cover threshold calculations.
+- [x] Replace primarily prose/previous-output recovery with a versioned structured durable handoff artifact.
+- [x] Handoff includes original goal, current task state, relevant workspace evidence, and pending action.
+- [x] Persist durable handoff evidence before session replacement and retain a task reference/event that survives replacement.
+
+## Structured Handoff Design
+
+Durable handoffs are stored under:
+
+```text
+.orchestrator/handoffs/<task-id>/<target-generation>-<handoff-id>.json
+```
+
+Each version-1 handoff records:
+
+- recovery/rotation reason and source/target session generation;
+- original task goal and pending action;
+- task lifecycle state, validation configuration, repair/rotation counters, and expected change scope;
+- current Git workspace snapshot excluding `.orchestrator/` bookkeeping;
+- rollback-checkpoint identity/fingerprints when present;
+- latest validation/diff-safety summary and run metrics when present;
+- bounded previous-prompt and recent-worker-output excerpts as supporting evidence only.
+
+The artifact is written **before** starting the replacement Cline session. The replacement prompt is rendered from the structured artifact rather than reconstructed primarily from prior prose. Task state stores `lastContextHandoff` plus `contextHandoffCount`, and a `context_handoff_created` event records durable provenance.
 
 ## Remaining Acceptance Criteria
 
-- [ ] Replace primarily prose/previous-output recovery with a structured durable handoff artifact.
-- [ ] Handoff includes original goal, current task state, relevant workspace evidence, and pending action.
-- [ ] Persist durable context-rotation evidence that survives session replacement.
 - [ ] Bound and test multiple planned rotations in one long task.
 - [ ] Test interaction with `session_not_found` recovery.
 - [ ] Test interaction with validation repair.
 - [ ] Ensure context metrics/events remain clear across multiple session generations.
 
+## Evidence
+
+- Implementation commit: `15adf9f9dd87a45544d2a6fc3985dc278be9284d` (`feat: add durable context handoff`).
+- GitHub-hosted CI: run `#178`, workflow run `35576669466`, typecheck and full test suite passed.
+- Tests cover durable serialization/loading, task/workspace/pending-action evidence, bounded supporting prose, structured replacement-prompt rendering, and handoff path containment.
+- No self-hosted/Ollama runtime mutation was performed.
+
 ## Status
 
-**IN PROGRESS — ACTIVE NEXT MILESTONE**
+**IN PROGRESS — structured handoff implemented; interaction/bounded-rotation coverage remains**
 
 ## Current Next Step
 
-Design and implement the **structured durable context handoff** used by planned rotation/recovery. Do not begin Hub/RPC work.
+Bound and test **multiple planned context rotations in one run**, preserving distinct durable handoff/session-generation evidence. Do not begin Hub/RPC work.
 
 ---
 
@@ -381,7 +408,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Diff safety gate | **Implemented + cloud tested** |
 | Completion requires validation + safety | **Implemented + tested** |
 | Per-turn context supervisor | Implemented + cloud tested |
-| Structured durable context handoff | Next unfinished item |
+| Structured durable context handoff | **Implemented + cloud tested** |
+| Multiple planned rotation coverage | Next unfinished item |
 | Durable project memory | Not started |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -399,6 +427,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 6. **Validation commands are trusted configuration** — they execute outside the model and must remain explicit/bounded.
 7. **Expected changed paths** — without task/environment scope patterns the safety gate records a warning but cannot classify unrelated ordinary source files as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL; transactional storage can be considered later if justified.
+9. **Handoff retention** — per-generation handoff JSON is intentionally durable; retention/compaction belongs with later project-memory policy rather than this milestone.
 
 ---
 
@@ -406,16 +435,15 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Finish Milestone 3: structured durable context handoff**
-   - durable handoff schema/artifact;
-   - original goal + task state + workspace evidence + pending action;
-   - use it for planned rotation/recovery.
+1. **Finish Milestone 3 bounded rotation behavior**
+   - multiple planned rotations in one run remain bounded by `maxContextRotations`;
+   - every actual replacement gets a distinct durable handoff and target generation;
+   - metrics/events remain understandable across generations.
 
-2. **Finish Milestone 3 interaction coverage**
-   - bounded repeated rotations;
-   - session-not-found interaction;
+2. **Finish Milestone 3 recovery/validation interaction coverage**
+   - `session_not_found` interaction;
    - validation-repair interaction;
-   - durable context evidence.
+   - confirm durable context evidence through both paths.
 
 3. **Build Milestone 4: durable project memory**.
 
@@ -445,6 +473,18 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Milestone 2 is COMPLETE**.
 - Known limitation: unexpected ordinary source-path detection requires `expectedChangedPaths[]` or `ORCH_DIFF_EXPECTED_PATHS`; otherwise a warning records that scope enforcement was not configured.
 - Next action: implement the Milestone 3 structured durable context handoff. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 3 structured durable handoff implemented
+
+- Change: added versioned JSON context handoffs under `.orchestrator/handoffs/<task-id>/` and task-level handoff references/counters.
+- Change: each handoff records original goal, pending action, task lifecycle/configuration state, current Git evidence, checkpoint identity, latest validation/diff-safety summaries, run metrics, and bounded supporting prose.
+- Change: recovery now writes the handoff before replacement-session creation and renders the replacement prompt from the structured handoff for planned rotation, missing-session, session-not-found, and watchdog recovery paths.
+- Change: added durable `context_handoff_created` events with source/target generation and artifact path.
+- Tests: durable artifact serialization/loading, workspace/task evidence, bounded prior-output excerpts, structured prompt rendering, and path containment.
+- Evidence: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; GitHub Actions CI run `35576669466` / run `#178` passed typecheck and tests.
+- Milestone impact: structured handoff acceptance criteria are complete; Milestone 3 remains **IN PROGRESS** for bounded repeated rotations and recovery/validation interaction coverage.
+- Known limitation: repeated-rotation/session-not-found/validation-repair interactions have not yet been exercised together by automated tests.
+- Next action: bound and test multiple planned rotations in one run with distinct durable handoff/session-generation evidence.
 
 ---
 
