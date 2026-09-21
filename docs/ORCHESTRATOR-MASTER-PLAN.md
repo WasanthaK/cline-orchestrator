@@ -171,7 +171,7 @@ The comparison uses the original run checkpoint, so validation repair does not r
 
 Allow long-running work without allowing one Cline conversation to grow until quality degrades or the provider context ceiling is reached.
 
-## Implemented
+## Acceptance Criteria
 
 - [x] Track per-turn input usage separately from cumulative usage.
 - [x] Configurable context-rotation threshold.
@@ -186,6 +186,7 @@ Allow long-running work without allowing one Cline conversation to grow until qu
 - [x] Bound and test multiple planned rotations in one long task.
 - [x] Test interaction with `session_not_found` recovery.
 - [x] Test interaction with validation repair while preserving the original checkpoint baseline.
+- [x] Keep run metrics and lifecycle events attributable across multiple session generations.
 
 ## Structured Handoff Design
 
@@ -211,9 +212,9 @@ A `session_not_found` result is distinct from planned rotation. Integration cove
 
 A validation-repair model turn reuses the original task checkpoint. If that repair turn loses its Cline session, the durable handoff captures the failed validation evidence, repair instruction, and original checkpoint identity/fingerprint. After the replacement model reports completion, the task returns to `validating`; it cannot persist `completed` until external validation actually passes.
 
-## Remaining Acceptance Criteria
+## Cross-Generation Evidence
 
-- [ ] Ensure context metrics/events remain clear across multiple session generations.
+Repeated-rotation integration coverage proves run metrics remain coherent across replacement sessions: attempts and per-turn input/output/tool counts remain distinct and cumulative totals remain correct. Planned rotations do not increment watchdog retry/stall counters. `context_rotating`, `context_handoff_created`, and `session_recovered` events retain run-rotation count, reason, source generation, target generation, and distinct handoff IDs.
 
 ## Evidence
 
@@ -221,15 +222,12 @@ A validation-repair model turn reuses the original task checkpoint. If that repa
 - Repeated rotations: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI `#182`, workflow `35577093373`, success.
 - Session-not-found recovery: commit `26dbf0db896e83d160c1cf3f43f2ae7b0e813e2c`; CI `#186`, workflow `35577401081`, success.
 - Validation-repair recovery: commit `af9db66835c5dfc7a657e1c0291cdaef24668a2d`; CI `#190`, workflow `35577839253`, success.
+- Cross-generation metrics/event assertions: commit `7fa6abebbc00b801349d321a98efd626795e2d1f`; CI `#194`, workflow `35578149506`, success.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
 
-**IN PROGRESS — final cross-generation metrics/event clarity remains**
-
-## Current Next Step
-
-Add explicit integration assertions for **run metrics and event provenance across multiple session generations**. If cloud CI remains green, close Milestone 3. Do not begin Milestone 4 or Hub/RPC until that evidence is recorded.
+**COMPLETE**
 
 ---
 
@@ -272,7 +270,11 @@ Make project continuity independent of any particular model context or Cline ses
 
 ## Status
 
-**NOT STARTED**
+**NOT STARTED — NEXT MILESTONE**
+
+## Current Next Step
+
+Design and implement the first Milestone 4 unit: **durable project metadata and the `.orchestrator/memory/` storage skeleton**, with explicit serialization/update tests. Reuse the Milestone 3 handoff format where appropriate; do not begin Hub/RPC work.
 
 ---
 
@@ -375,8 +377,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Multiple planned rotation coverage | Implemented + cloud tested |
 | Session-not-found + handoff interaction | Implemented + cloud tested |
 | Validation-repair + handoff interaction | Implemented + cloud tested |
-| Cross-generation metrics/event evidence | Next unfinished item |
-| Durable project memory | Not started |
+| Cross-generation metrics/event evidence | Implemented + cloud tested |
+| Durable project memory | **Next milestone** |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
@@ -393,7 +395,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 6. **Validation commands are trusted configuration** — they execute outside the model and must remain explicit/bounded.
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
-9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with later project-memory policy.
+9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
 
 ---
 
@@ -401,16 +403,19 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Finish Milestone 3 cross-generation evidence**
-   - assert attempts/turn metrics remain attributable across session generations;
-   - planned rotations remain separate from retry/stall counters;
-   - handoff/recovery events preserve target generation and reason clearly.
+1. **Start Milestone 4: durable project metadata + memory storage skeleton**
+   - `.orchestrator/project.json`;
+   - `.orchestrator/memory/` files/directories;
+   - explicit serialization/update tests.
 
-2. **Close Milestone 3** after green cloud CI and update this plan.
+2. **Build selective durable project memory**
+   - architecture, decisions, code map, conventions, known issues;
+   - explicit/auditable updates;
+   - selective retrieval.
 
-3. **Build Milestone 4: durable project memory**.
+3. **Integrate per-task structured summaries/handoffs with project memory**.
 
-4. **Perform Milestone 5 Hub/RPC technical spike** only after Milestones 3–4 are complete.
+4. **Perform Milestone 5 Hub/RPC technical spike** only after Milestone 4 is complete.
 
 ---
 
@@ -451,11 +456,17 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 ## 2026-09-21 — Milestone 3 validation-repair recovery proven
 
 - Tests: a repair task with a real pre-repair checkpoint and failed validation loses its Cline session; recovery writes a durable handoff containing the repair instruction, failed-validation summary, and original checkpoint fingerprint.
-- Tests: the repair run does not replace the original checkpoint; after the replacement model reports completion, task state returns to `validating` and no `completed` event is emitted.
+- Tests: the repair run does not replace the original checkpoint; after replacement model completion, task state returns to `validating` and no `completed` event is emitted.
 - Evidence: commit `af9db66835c5dfc7a657e1c0291cdaef24668a2d`; CI `#190` / `35577839253` passed.
-- Milestone impact: validation-repair interaction criterion complete; one Milestone 3 evidence item remains.
-- Known limitation: explicit cross-generation run-metric attribution has not yet been asserted even though generation/handoff events are already covered.
-- Next action: add cross-generation metrics/event assertions and close Milestone 3 if CI stays green.
+- Next action: cross-generation metrics/event evidence.
+
+## 2026-09-21 — Milestone 3 context durability completed
+
+- Tests: expanded repeated-rotation coverage to assert attempts `1/2/3`, per-attempt token/tool metrics, cumulative token/tool totals, zero retry/stall inflation, rotation counts, generation-tagged handoff/recovery events, and distinct durable handoff IDs.
+- Evidence: commit `7fa6abebbc00b801349d321a98efd626795e2d1f`; CI `#194` / `35578149506` passed.
+- Milestone impact: **Milestone 3 COMPLETE**.
+- Known limitation: durable handoff retention/compaction is deliberately deferred to Milestone 4 project-memory policy.
+- Next action: begin Milestone 4 with durable project metadata and the `.orchestrator/memory/` storage skeleton. Hub/RPC remains deferred.
 
 ---
 
