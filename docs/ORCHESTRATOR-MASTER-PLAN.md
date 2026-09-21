@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-09-21
+Last updated: 2026-09-22
 Branch: `phase-1/bootstrap`
 
 ## Purpose
@@ -379,7 +379,7 @@ This complements the focused unit/integration coverage already present for proje
 
 ## Current Next Step
 
-Complete the final Milestone 5 technical-spike unit: **produce the migration design from orchestrator-owned `ClineCore` to a safe ChatGPT-plugin / Hub-backed runtime**, including the machine-local project/workspace registry, plan-token/Safety Preview boundary, orchestrator-owned session lifecycle, and a non-bypassable pre-execution policy gate. Do not implement live Hub write control yet.
+Begin Milestone 5 implementation Unit 1: **machine-local project/workspace registry + read-only Safety Preview + opaque single-use plan-token store + stale-state rejection**. Do not implement live Hub write control yet.
 
 ---
 
@@ -404,18 +404,32 @@ Let the user invoke Cline Orchestrator from any ChatGPT conversation, with or wi
 
 The pinned Cline generation is `0.0.83`. Discovery/authentication behavior for the pinned release is documented in `docs/MILESTONE-5-HUB-SPIKE.md`: managed discovery records carry a random local auth token; native WebSocket clients use the `cline-hub-auth.<token>` subprotocol; authenticated HTTP control endpoints use Bearer auth; the orchestrator must consume Cline's managed discovery credential rather than persist a second token.
 
-The package/import boundary is also confirmed for `0.0.83`: `@cline/sdk` is the user-facing alias for `@cline/core`; the SDK root re-exports the Core root, and the Core root re-exports `./hub`. Therefore the orchestrator can import `NodeHubClient`, `HubSessionClient`, `HubUIClient`, `HubRuntimeHost`, discovery helpers, and related Hub types from the existing `@cline/sdk` root. A direct `@cline/core` dependency is **not required for the attach-only path** and should be added only if a future implementation deliberately imports a Core-only subpath such as `@cline/core/hub` or `@cline/core/hub/daemon-entry`.
+The package/import boundary is confirmed for `0.0.83`: `@cline/sdk` is the user-facing alias for `@cline/core`; the SDK root re-exports the Core root and the Core root re-exports `./hub`. The existing `@cline/sdk: 0.0.83` dependency is sufficient for the first Hub path; if a future implementation deliberately imports a Core-only subpath, `@cline/core` must become an exact direct dependency.
 
-The session-control surface is mapped. One authenticated `NodeHubClient` identity can own `session.list`/`session.get`, raw `stream.subscribe`, explicit `session.attach`, `session.send_input`, `run.abort`, and `session.detach`. Cline's VS Code example subscribes before attaching. `run.abort` and `session.detach` are separate operations. `HubSessionClient` covers most convenience operations but does not expose `session.attach`; `HubRuntimeHost` is the pinned reference for Core-style event normalization.
+The session-control surface is mapped. `NodeHubClient` exposes list/get, stream subscription, explicit attach, send, abort, and detach. Cline's VS Code example subscribes before attaching. `HubRuntimeHost` is the pinned reference for Core-style event normalization.
 
-Workspace/session identity and multi-client ownership are now mapped in `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md`:
+Workspace/session identity and multi-client ownership are documented in `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md`:
 
-- the user-configured machine-local registry owns opaque `project_id` / `workspace_id` mappings and canonical local roots; repository content and ChatGPT-supplied raw paths cannot self-authorize;
-- durable task resume must verify the persisted Hub session's `workspaceRoot` still canonicalizes to the registered workspace;
-- new ChatGPT write tasks should create a fresh **orchestrator-owned Hub session** by default; existing VS Code-created sessions are read-only/observational for the first pilot rather than silently inheriting unknown authority;
-- Hub attachment does not transfer creator/client-local capability ownership; client contribution/capability requests target the creator/owner client ID and wrong-client responses are rejected;
-- Hub tool approvals are broader: pending approvals are broadcast/replayed to session subscribers and `approval.respond` is not creator-targeted, so multiple clients can race to resolve the same approval;
-- therefore native Hub approval UI cannot be the security boundary. A non-bypassable orchestrator pre-execution policy gate is required before live shared-session writes are accepted.
+- the user-configured machine-local registry owns opaque `project_id` / `workspace_id` mappings and canonical local roots;
+- durable task resume verifies the persisted Hub session's workspace against that registered root;
+- new ChatGPT write tasks create a fresh orchestrator-owned Hub session by default; existing VS Code-created sessions remain observational for the first pilot;
+- attachment does not transfer creator/client-local capability ownership;
+- client contribution/capability requests are creator-targeted and wrong-client responses are rejected;
+- native Hub tool approvals are broader and can race across subscribers, so native approval UI is not the security boundary.
+
+The safe migration is now documented in `docs/MILESTONE-5-MIGRATION-DESIGN.md`:
+
+- preserve `ClineRunner` and its existing durability/watchdog/context-rotation/recovery logic;
+- keep the `ClineCore` API and switch plugin workers to `backendMode: "hub"` through an internal runtime factory instead of rewriting Milestones 1–4 around raw Hub commands;
+- introduce a machine-local registry plus an immutable Safety Plan represented by an opaque, short-lived, single-use plan token;
+- create orchestrator-owned Hub sessions only after plan-token revalidation/consumption;
+- use an owner-targeted `beforeTool` contribution as the early fail-closed policy gate;
+- route `readFile`, `search`, `editor`, and `applyPatch` through owner-targeted client tool executors that re-enforce the durable safety envelope immediately before execution;
+- parse/check every file in a multi-file patch before applying it;
+- keep final checkpoint-relative diff safety as the post-execution backstop;
+- disable arbitrary model shell commands, ungoverned network/MCP/plugin execution, subagents/teams, and provider-owned execution tools in the first write-capable pilot;
+- continue running trusted validation commands outside the model;
+- use orchestrator `waiting_for_human` / escalation state rather than native Hub approval as the human authorization channel.
 
 ## Technical Spike Acceptance Criteria
 
@@ -423,20 +437,33 @@ Workspace/session identity and multi-client ownership are now mapped in `docs/MI
 - [x] Confirm exact imports at `0.0.83` and direct-dependency needs.
 - [x] Identify list/attach/send/abort/session-event APIs.
 - [x] Determine workspace session identity and multi-client approval/tool-executor behavior.
-- [ ] Produce migration design from owned `ClineCore` to safe Hub-backed/plugin operation.
+- [x] Produce migration design from owned `ClineCore` to safe Hub-backed/plugin operation.
+
+## Implementation Acceptance Criteria
+
+- [ ] Machine-local user-configured project/workspace registry with canonical-root validation, opaque IDs, and revisioned safety profiles.
+- [ ] Read-only Safety Preview + immutable server-side Safety Plan + opaque single-use/expiring plan token; task start rejects stale registry/Git/policy fingerprints.
+- [ ] Durable tasks bind to approved project/workspace/safety-plan identity so `continue_task` cannot silently broaden authority.
+- [ ] Pre-execution policy engine with fail-closed action normalization, secret/protected/allowed path checks, traversal/symlink containment, and durable human escalation.
+- [ ] Owner-targeted `beforeTool` contribution plus owner-targeted read/search/editor/apply-patch executors; unknown/unsupported tools fail closed.
+- [ ] First-pilot worker safety profile disables arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams, and provider-owned execution surfaces.
+- [ ] Hub-backed runtime factory preserves existing start/send/abort/events/watchdog/context-rotation/recovery/validation/diff-safety behavior and revalidates workspace/session identity on resume.
+- [ ] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
+- [ ] Cloud tests cover registry/plan replay/staleness, containment, secret/protected scope, patch all-or-nothing policy, disabled surfaces, Hub owner targeting/failure, and all existing lifecycle safety regressions.
+- [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating the shared Ollama runtime.
 
 ## Evidence
 
 - Hub discovery/authentication spike: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264`, workflow `35607213364`, success.
-- Hub import/dependency boundary: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268`, workflow `35609556979`, success. The corrected decision is to keep `package.json` unchanged with only `@cline/sdk: 0.0.83` for the attach-only path; do not rely on undeclared `@cline/core` subpath imports.
+- Hub import/dependency boundary: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268`, workflow `35609556979`, success.
 - Hub session-control API map: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272`, workflow `35611491671`, success.
 - ChatGPT plugin UX/safety contract: `docs/MILESTONE-5-CHATGPT-PLUGIN-UX-SAFETY.md`, commit `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276`, workflow `35614305961`, success.
 - Workspace/session identity + multi-client safety: `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md`, commit `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278`, workflow `35618180127`, success.
-- Static upstream evidence was inspected at `cline/cline` tag `sdk/sdk/v0.0.83`; no Hub process, VS Code runtime, or shared Ollama runtime was mutated.
+- Safe Hub/plugin migration design: `docs/MILESTONE-5-MIGRATION-DESIGN.md`, commit `d51a85585c831b24da9cd7129d34d74488ec2750`; CI `#282`, workflow `35668708848`, success. Static pinned-source inspection proved the `beforeTool` ordering, owner-targeted Hub client contributions/tool executors, and the ClineCore Hub runtime seam; no live Hub, VS Code runtime, workspace, or shared Ollama process was mutated.
 
 ## Status
 
-**RESEARCH IN PROGRESS — one technical-spike criterion remains; implementation has not started**
+**TECHNICAL SPIKE COMPLETE — implementation pending**
 
 ---
 
@@ -527,7 +554,9 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | ChatGPT plugin UX/safety contract | **Documented + cloud tested** |
 | User-configured project/workspace authority | **Documented + cloud tested** |
 | Hub workspace/session + multi-client safety | **Documented + cloud tested** |
-| Shared VS Code/Hub write session | Research in progress |
+| Safe Hub/plugin migration architecture | **Documented + cloud tested** |
+| Milestone 5 technical spike | **Complete / proven** |
+| Shared VS Code/Hub write session | Implementation pending |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
 
@@ -547,9 +576,12 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 10. **Hub authentication credential** — Cline's local discovery token is a runtime credential and must not be copied into orchestrator task state, project memory, handoffs, logs, Git, or ChatGPT/MCP results.
 11. **Hub package boundary** — use the public `@cline/sdk` root for the first Hub adapter; if a Core-only subpath is intentionally adopted later, declare and version-pin `@cline/core` directly rather than relying on its transitive installation.
 12. **Project/workspace authorization** — authorization must come from a user-configured machine-local registry outside repositories. A ChatGPT-supplied raw path, repository instruction, fuzzy name match, or ChatGPT Project name cannot grant write access.
-13. **Session capability ownership** — attaching to a Hub session does not transfer the creator's client-local tool/capability ownership. First-pilot ChatGPT write tasks should be orchestrator-created; third-party/VS Code-created sessions remain observational until a stronger migration design proves safe takeover.
-14. **Hub approval race** — `approval.requested` is broadcast/replayed to matching subscribers and is not a creator-targeted capability request. Native Hub approval responses are UX, not authorization. The orchestrator needs a non-bypassable pre-execution policy gate before shared-session writes.
+13. **Session capability ownership** — attaching to a Hub session does not transfer the creator's client-local tool/capability ownership. First-pilot ChatGPT write tasks are orchestrator-created; third-party/VS Code-created sessions remain observational unless a future separately-proven transfer model exists.
+14. **Hub approval race** — native `approval.requested` is broadcast/replayed to matching subscribers and is not creator-targeted. Native Hub approval is UX/defense-in-depth only, never the security boundary.
 15. **Owner disconnect** — a disconnected capability-owner client loses live Hub ownership and pending targeted capability requests are cancelled. Recovery must use durable handoff/session replacement rather than assuming re-attach restored ownership.
+16. **Pre-execution enforcement** — the first write pilot requires both an owner-targeted `beforeTool` gate and owner-targeted filesystem executors; a failure in policy/capability handling must fail closed before side effects.
+17. **Restricted pilot surfaces** — arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams, and provider-owned execution tools remain disabled until each has an enforceable policy boundary and focused tests.
+18. **Safety Plan tokens** — task approval uses opaque, short-lived, single-use tokens backed by immutable server-side plans; tokens and local credential material must not enter repository/project memory.
 
 ---
 
@@ -557,16 +589,27 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Produce the safe migration design from owned `ClineCore` to ChatGPT-plugin / Hub-backed operation.**
-   - specify the machine-local project/workspace registry and configuration UX;
-   - specify Safety Preview + plan-token validation and immutable task-envelope fields;
-   - define the Hub adapter/session lifecycle for orchestrator-created sessions, resume, owner loss, and VS Code observation;
-   - identify the non-bypassable pre-execution enforcement point for path, command, network, secret, Git, migration, and deployment policy;
-   - map existing `ClineRunner` start/send/abort/events/recovery semantics onto the new adapter without weakening Milestones 1–4.
+1. **Implement machine-local registry + Safety Preview / plan-token boundary.**
+   - store user-configured project/workspace authorization outside repositories;
+   - canonicalize/reject unsafe roots and assign opaque project/workspace IDs;
+   - add revisioned local safety profiles and read-only workspace discovery/status;
+   - add immutable server-side Safety Plans with opaque random single-use TTL plan tokens;
+   - revalidate workspace registry revision, canonical root, branch/HEAD, dirty fingerprint, policy version, and worker safety profile atomically at task start;
+   - bind the durable task to the approved project/workspace/safety-plan identity;
+   - cloud-test expiry/replay/staleness/alias/unsafe-root behavior.
 
-2. **Implement the first bounded shared-Hub proof** only after the complete migration design is documented, reviewed, and cloud-CI green. The proof must not expose a public inbound port and must not mutate the shared Ollama runtime automatically.
+2. **Implement pre-execution policy engine + owner-targeted safe executors.**
+   - normalize tool actions;
+   - enforce path/secret/protected/symlink/traversal rules;
+   - add fail-closed `beforeTool` policy contribution;
+   - route read/search/editor/apply-patch through owner-targeted executors;
+   - prove multi-file patch all-or-nothing policy and disabled shell/network/MCP/plugin surfaces.
 
-3. **Implement the narrow ChatGPT MCP/plugin gateway** only after the local runtime adapter and safety envelope have focused tests. Public tools remain task-level (`preview_task`, `start_task`, status/events, continue, abort, explicit escalation/rollback), not raw machine primitives.
+3. **Implement the Hub-backed Cline runtime adapter/factory** with mocked/fake Hub tests first; preserve current lifecycle/recovery/watchdog/context/validation/diff-safety semantics and verify workspace identity on resume.
+
+4. **Implement the machine-level ChatGPT MCP/plugin gateway** with task-level operations and no raw path/shell/Hub authority.
+
+5. **Run the isolated shared-runtime proof** only after explicit user authorization, using a disposable registered workspace and without automatic shared-Ollama mutation.
 
 ---
 
@@ -637,146 +680,112 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Tests: existing content preservation, explicit provenance, metadata audit references, multiple-update ordering/uniqueness, and invalid provenance/content/timestamp rejection.
 - Evidence: commit `0344c16cc843428af4dbe4247b9156a222e2bdb9`; CI `#202` / `35585222049` passed.
 - Milestone impact: **Architecture memory criterion complete**; Milestone 4 remains in progress.
-- Known limitation: the general memory update/retrieval system is not complete until the remaining memory types and selective retrieval are implemented.
-- Next action: implement decision-log entries with rationale and date/task provenance. Hub/RPC remains deferred.
+- Next action: implement decision-log entries with rationale and date/task provenance.
 
 ## 2026-09-21 — Milestone 4 decision log implemented
 
 - Change: added append-only decision entries with explicit decision text, unique update IDs, validated timestamp/task/rationale provenance, and machine-readable audit markers.
-- Change: project-level memory update counting now remains coherent across architecture and decision documents, with `lastMemoryUpdate` identifying the latest cross-document update.
-- Tests: existing decision-history preservation, explicit decision/rationale/date/task provenance, cross-document audit counting, and rejection of missing decision/provenance or invalid timestamps.
+- Tests: existing history preservation, decision/rationale/date/task provenance, cross-document audit counting, and invalid provenance rejection.
 - Evidence: commit `3a43401c80e6ebe3df6dc33c337d307cbeb38cee`; CI `#206` / `35586243241` passed.
-- Milestone impact: **Decision log criterion complete**; Milestone 4 remains in progress.
-- Known limitation: code map, conventions, known issues, task summaries, and selective retrieval remain unfinished.
-- Next action: implement selective code-map memory containing important modules/components only. Hub/RPC remains deferred.
+- Milestone impact: **Decision log criterion complete**.
 
 ## 2026-09-21 — Milestone 4 selective code map implemented
 
-- Change: added append-only code-map entries for important modules/components with explicit responsibility, bounded representative paths, and task/date/rationale provenance.
-- Change: code-map path selection is constrained to 1–12 unique entries so durable memory does not become a repository-wide file inventory.
-- Tests: preservation of existing code-map content, provenance markers, representative path rendering, empty/duplicate/over-limit path rejection, missing responsibility rejection, invalid timestamp rejection, and cross-document audit counting.
+- Change: added append-only code-map entries with bounded representative paths and provenance.
+- Tests: content preservation, provenance, path bounds/uniqueness, invalid input/timestamp, and cross-document audit counting.
 - Evidence: commit `3e064115c187783ec9fb86a3a732fca136e02140`; CI `#212` / `35590998279` passed.
-- Milestone impact: **Code map criterion complete**; Milestone 4 remains in progress.
-- Known limitation: conventions, known issues, task summaries, and selective retrieval remain unfinished.
-- Next action: implement conventions memory with explicit/auditable provenance. Hub/RPC remains deferred.
+- Milestone impact: **Code map criterion complete**.
 
 ## 2026-09-21 — Milestone 4 conventions memory implemented
 
-- Change: added append-only convention entries with explicit scope, convention text, unique update IDs, and validated task/date/rationale provenance.
-- Tests: existing convention-content preservation, human/machine-readable scope and provenance, required-field/timestamp rejection, and cross-document audit counting after code-map updates.
+- Change: added append-only convention entries with explicit scope/convention and task/date/rationale provenance.
+- Tests: content preservation, provenance, required fields/timestamp, and audit counting.
 - Evidence: commit `3efecb809b9679505f007d75bfd273d815fa2e55`; CI `#220` / `35593035452` passed.
-- Milestone impact: **Conventions memory criterion complete**; Milestone 4 remains in progress.
-- Repository-history note: commits `adcf36c05bef7c24d3e3404ad84f6f8004769c30` and `7e14ea2c7c16cc8d3543d7cfcfc3e443e4e1c31a` are content-neutral documentation commits created by a connector branch-update mistake; they did not alter source or plan content.
-- Known limitation: known issues, task summaries/handoff integration, and selective retrieval remain unfinished.
-- Next action: implement known-issues memory with explicit status/impact and auditable provenance. Hub/RPC remains deferred.
+- Milestone impact: **Conventions memory criterion complete**.
 
 ## 2026-09-21 — Milestone 4 known-issues memory implemented
 
-- Change: added append-only known-issue lifecycle entries with explicit status, impact, description, unique update IDs, and validated task/date/rationale provenance.
-- Change: issue status is constrained to `open`, `mitigated`, `resolved`, or `accepted`; status changes append new history instead of overwriting prior issue state.
-- Tests: existing issue-content preservation, human/machine-readable status/impact provenance, lifecycle ordering, invalid-status/required-field/timestamp rejection, and cross-document audit counting after conventions updates.
+- Change: added append-only known-issue lifecycle entries with status, impact, description, and provenance.
+- Tests: content/lifecycle preservation, status/impact provenance, invalid status/input/timestamp, and audit counting.
 - Evidence: commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c`; CI `#226` / `35595083980` passed.
-- Milestone impact: **Known-issues memory criterion complete**; Milestone 4 remains in progress.
-- Repository-history note: commit `41ce7e3c0ece9a84da7c1d837c5012e32d368572` temporarily replaced the master-plan content with a connector placeholder; commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c` immediately restored the exact prior plan while adding the implementation and tests.
-- Known limitation: per-task summaries, handoff/project-memory integration, and selective retrieval remain unfinished.
-- Next action: implement a per-task structured summary with durable provenance and focused tests. Hub/RPC remains deferred.
+- Milestone impact: **Known-issues memory criterion complete**.
 
 ## 2026-09-21 — Milestone 4 per-task structured summary implemented
 
-- Change: added versioned `.orchestrator/task-summaries/<task-id>.json` artifacts containing bounded task goal/status, lifecycle/configuration counts, selected validation/diff/Git/handoff/metrics evidence, terminal outcome, revision, and source-task timestamp provenance.
-- Change: summary text is bounded to 2,000 characters; verbose worker prompts/output, validation stdout/stderr, Git status lines, changed-path details, and per-turn metric arrays are deliberately excluded.
-- Tests: summary serialization/evidence selection, bounded-text behavior, exclusion of transient/verbose payloads, revision/creation provenance, reload, unsafe task-ID rejection, and unsupported-schema rejection.
-- Evidence: implementation commit `d74f63618898291f42363bdd846459814820b4cd`; focused-test commit `0e8c2e57cfe382b792a4178de40ccbb453c1c080`; CI `#232` / `35597817935` passed.
-- Milestone impact: **Per-task structured summary criterion complete**; Milestone 4 remains in progress.
-- Known limitation: the summary artifact is not yet consumed by context rotation/recovery, and selective project-memory retrieval remains unfinished.
-- Next action: integrate bounded task-summary/project-memory context into the existing structured handoff artifact used by rotation/recovery. Hub/RPC remains deferred.
+- Change: added versioned bounded `.orchestrator/task-summaries/<task-id>.json` artifacts with lifecycle/configuration/evidence/outcome provenance.
+- Tests: serialization, bounding, transient-data exclusion, revision/reload/path/schema safety.
+- Evidence: implementation `d74f63618898291f42363bdd846459814820b4cd`; focused tests `0e8c2e57cfe382b792a4178de40ccbb453c1c080`; CI `#232` / `35597817935` passed.
+- Milestone impact: **Per-task structured summary criterion complete**.
 
 ## 2026-09-21 — Milestone 4 handoff/project-memory integration implemented
 
-- Change: context-handoff creation now records the bounded per-task summary plus a compact project-memory index (`projectId`, schemas, canonical memory-file paths, update count, latest auditable update reference) in an optional `durableMemory` block.
-- Change: replacement-session prompts carry that bounded durable-memory block while full memory-document bodies remain out of the prompt; the existing version-1 handoff shape remains backward compatible.
-- Tests: task-summary/project metadata presence, source/provenance references, architecture sentinel exclusion from artifact/prompt, and load/render compatibility for legacy schema-v1 artifacts without `durableMemory`.
-- Evidence: implementation commit `822125be3d7e0d81d44a20e503397b2b3a9014e1`; compatibility-test commit `7387489e360b851a726b42dcc6797ba48f29ed6a`; CI `#238` / `35599286479` passed.
-- Milestone impact: **Structured handoff/project-memory integration criterion complete**; Milestone 4 remains in progress.
-- Known limitation: relevant project-memory document content is still not selectively retrieved into task/handoff context.
-- Next action: implement selective project-memory retrieval with explicit selection, provenance, and bounded-content tests. Hub/RPC remains deferred.
+- Change: structured handoffs now include bounded task summary + compact project-memory index while full memory bodies remain out of prompts.
+- Tests: provenance/index presence, unrelated sentinel exclusion, and legacy v1 compatibility.
+- Evidence: implementation `822125be3d7e0d81d44a20e503397b2b3a9014e1`; compatibility tests `7387489e360b851a726b42dcc6797ba48f29ed6a`; CI `#238` / `35599286479` passed.
+- Milestone impact: **Structured handoff/project-memory integration criterion complete**.
 
 ## 2026-09-21 — Milestone 4 selective project-memory retrieval implemented
 
-- Change: added deterministic retrieval over orchestrator-authored memory entries, with meaningful-query filtering, source provenance, relevance scoring, exact-task provenance preference, and deterministic ordering.
-- Change: retrieval is bounded to six entries total, two per memory document, 32 query terms, and 1,800 characters per selected excerpt; generic orchestration words are filtered so they cannot create false-positive relevance by themselves.
-- Change: selected entries are embedded in the existing handoff `durableMemory` block and therefore reach rotation/recovery prompts without copying all durable memory documents.
-- Tests: relevant/unrelated selection, task-local provenance, global/per-document/excerpt bounding, invalid-limit rejection, selected handoff content, irrelevant sentinel exclusion, and preservation of prior handoff no-full-dump compatibility behavior.
-- Evidence: implementation commits `b0a4192058c9f541915220911903bd828f2515b0` and `3ff385be69912f8a81f99a4a5ba4d2f976586240`; focused tests `fa73ac07cb73a184cc3e1648758d0e7456d46d1e`; relevance tightening `148248103c4e153941240e2a9a83cafb63338463`; corrected exclusion fixture `a8e34addbe3bacf56ce22cdf1d58e4ad166ca623`; CI `#250` / `35602317107` passed. CI `#246` exposed false-positive retrieval and an outdated compatibility assumption and was intentionally not accepted.
-- Milestone impact: **Selective retrieval criterion complete**; Milestone 4 remains in progress.
-- Known limitation: the final two acceptance criteria—explicit/auditable memory updates and complete serialization/update/selection test closure—remain to be formally verified.
-- Next action: audit and close the explicit/auditable memory-update criterion. Hub/RPC remains deferred.
+- Change: deterministic bounded retrieval over orchestrator-authored provenance entries with relevance/task preference and prompt integration.
+- Tests: relevant/unrelated selection, task-local provenance, global/per-document/excerpt bounds, invalid limits, handoff inclusion/exclusion.
+- Evidence: `b0a4192058c9f541915220911903bd828f2515b0`, `3ff385be69912f8a81f99a4a5ba4d2f976586240`, tests `fa73ac07cb73a184cc3e1648758d0e7456d46d1e`, fixes `148248103c4e153941240e2a9a83cafb63338463` / `a8e34addbe3bacf56ce22cdf1d58e4ad166ca623`; CI `#250` / `35602317107` passed.
+- Milestone impact: **Selective retrieval criterion complete**.
 
 ## 2026-09-21 — Milestone 4 explicit/auditable memory updates verified
 
-- Change: added a read-only project-memory audit report that verifies every orchestrator-authored provenance marker across all five durable memory documents and reconciles them with project-level update count/latest-update metadata.
-- Change: the verifier detects malformed provenance, declared-document mismatch, invalid timestamps, duplicate update IDs, metadata count drift, missing latest-update references, and exact latest-reference mismatches.
-- Tests: all five update primitives audit cleanly end-to-end; deliberately duplicated durable provenance triggers duplicate-ID plus count-drift issues; deliberately tampered `lastMemoryUpdate` metadata triggers a latest-reference mismatch.
-- Evidence: implementation commit `43ca077d91ecf137b34db4d68b8d6a694c58cfe5`; focused-test commit `f379272930f9fe9ffb71d70c6cc51f2eb4f1213e`; CI `#256` / `35604217740` passed.
-- Milestone impact: **Memory updates are explicit/auditable criterion complete**; Milestone 4 remains in progress with one acceptance criterion left.
-- Known limitation: the existing serialization/update/selection coverage must be reviewed once as a complete Milestone 4 matrix before closure.
-- Next action: close the final serialization/update/selection test criterion. Hub/RPC remains deferred.
+- Change: added read-only project-memory audit verifier across all five documents.
+- Tests: all update primitives audit cleanly; duplicate/count drift and tampered latest metadata fail closed.
+- Evidence: implementation `43ca077d91ecf137b34db4d68b8d6a694c58cfe5`; tests `f379272930f9fe9ffb71d70c6cc51f2eb4f1213e`; CI `#256` / `35604217740` passed.
+- Milestone impact: **Memory updates are explicit/auditable criterion complete**.
 
 ## 2026-09-21 — Milestone 4 durable project memory completed
 
-- Change: added one cross-cutting closure test that writes all five memory types, reloads project metadata through a fresh store instance, appends a later known-issue lifecycle update, audits the resulting durable state, and performs repeated selective retrieval from disk.
-- Tests: stable project identity and update count survive reload; the later update becomes `lastMemoryUpdate`; the audit sees all six durable updates with unique IDs; repeated retrieval returns stable relevant IDs while excluding unrelated finance memory.
+- Change: cross-cutting closure test writes all memory types, reloads a fresh store, appends a lifecycle update, audits state, and repeats selective retrieval.
+- Tests: stable identity/count/revision, coherent latest update, six unique audited updates, deterministic relevant selection and unrelated exclusion.
 - Evidence: commit `8cdb3b9da1b0de97d5d654636fab12992f4176e8`; CI `#260` / `35604869492` passed.
-- Milestone impact: **Milestone 4 COMPLETE** — all durable project-memory acceptance criteria are now implemented and cloud-tested.
-- Known limitation: no Hub/RPC runtime ownership change has been attempted; that belongs to Milestone 5.
-- Next action: begin the Milestone 5 Hub/RPC technical spike with Hub discovery/authentication documentation for pinned Cline `0.0.83` only.
+- Milestone impact: **Milestone 4 COMPLETE**.
+- Next action: Milestone 5 research.
 
 ## 2026-09-21 — Milestone 5 Hub discovery/authentication documented
 
-- Change: added `docs/MILESTONE-5-HUB-SPIKE.md` with pinned `0.0.83` discovery ownership, endpoint overrides, discovery-record publication, token generation, native WebSocket auth, HTTP Bearer-auth endpoints, and local-browser exception semantics.
-- Research: verified that managed discovery publishes a 32-byte random token, native clients use the `cline-hub-auth.<token>` subprotocol, `/status`/`/drain`/`/shutdown` require Bearer auth, and the orchestrator should consume Cline's credential without persisting a second copy.
-- Evidence: commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264` / `35607213364` passed.
-- Milestone impact: first Milestone 5 technical-spike criterion complete; runtime implementation has not started.
-- Known limitation: exact imports/direct-dependency requirements, session-control APIs, multi-client ownership semantics, and migration design remain unresolved.
-- Next action: confirm exact Hub imports and direct-dependency requirements for Cline `0.0.83`.
+- Change: documented pinned `0.0.83` discovery ownership, endpoint overrides, token publication/authentication, authenticated HTTP controls, and local-browser semantics.
+- Evidence: `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264` / `35607213364` passed.
+- Milestone impact: first M5 research criterion complete.
 
 ## 2026-09-21 — Milestone 5 Hub import/dependency boundary confirmed
 
-- Change: expanded `docs/MILESTONE-5-HUB-SPIKE.md` with the pinned package export chain and supported attach-only Hub import boundary.
-- Research: verified that `@cline/sdk` re-exports the `@cline/core` root and that Core's root re-exports `./hub`, so `NodeHubClient`, `HubSessionClient`, `HubUIClient`, discovery helpers, and Hub types are available from the existing `@cline/sdk` root at `0.0.83`.
-- Decision: keep `package.json` unchanged with only `@cline/sdk: 0.0.83` for the attach-only path. If a future implementation intentionally imports `@cline/core/hub` or `@cline/core/hub/daemon-entry`, add `@cline/core` as a direct dependency pinned to exactly `0.0.83`; never rely on its transitive installation.
-- Evidence: commit `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268` / `35609556979` passed.
-- Milestone impact: second Milestone 5 technical-spike criterion complete; runtime implementation remains pending.
-- Known limitation: exact session-control APIs, multi-client approval/tool-executor semantics, workspace/session identity, and migration design remain unresolved.
-- Next action: map list/attach/get/send/abort/detach/session-event APIs for pinned Cline `0.0.83`.
+- Change: documented package export chain and confirmed the existing exact `@cline/sdk: 0.0.83` dependency is sufficient for the first path.
+- Evidence: `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268` / `35609556979` passed.
+- Milestone impact: second M5 research criterion complete.
 
 ## 2026-09-21 — Milestone 5 Hub session-control API map documented
 
-- Change: expanded `docs/MILESTONE-5-HUB-SPIKE.md` with the pinned list/get, explicit attach, send, abort, detach, and event-stream contracts plus the current orchestrator integration surface.
-- Research: verified explicit `session.attach`; Cline's VS Code example subscribes before attach; `session.send_input`/`run.start` target an existing session; `run.abort` is distinct from `session.detach`; raw `NodeHubClient.subscribe()` provides complete Hub lifecycle/run events and sequence-based replay where supported.
-- Decision: the first attach-only adapter should own one authenticated `NodeHubClient` identity for subscription, attach, send, abort, and detach. Use `HubRuntimeHost` as the pinned reference for Core-style event normalization, but do not combine it with a second client solely to gain `session.attach` before multi-client ownership semantics are understood.
-- Evidence: commit `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272` / `35611491671` passed.
-- Milestone impact: third Milestone 5 technical-spike criterion complete; runtime implementation remains pending.
-- Known limitation: workspace/session selection, participant/creator semantics, approval routing, client-owned tool/capability executors, and final migration design remain unresolved.
-- Next action: determine workspace/session identity and multi-client approval/tool-executor behavior for pinned Cline `0.0.83`.
+- Change: mapped list/get/subscribe/attach/send/abort/detach and event semantics.
+- Evidence: `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272` / `35611491671` passed.
+- Milestone impact: third M5 research criterion complete.
 
 ## 2026-09-21 — Milestone 5 ChatGPT plugin UX/safety contract documented
 
-- Change: added `docs/MILESTONE-5-CHATGPT-PLUGIN-UX-SAFETY.md` and moved the product target from a hidden local controller to a task-level ChatGPT plugin/MCP experience usable from ordinary chats or ChatGPT Projects.
-- Safety: defined Safety Preview + immutable plan token, task-level MCP tools only, local credential isolation, no raw shell/filesystem/Hub tools, durable human escalation, and no automatic push/deploy/destructive actions in the first pilot.
-- Evidence: commit `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276` / `35614305961` passed.
-- Milestone impact: establishes a mandatory design gate for all remaining Milestone 5 work; technical-spike implementation criteria remain unchanged.
-- Next action: resolve workspace/session identity and multi-client safety under this UX contract.
+- Change: added task-level ChatGPT plugin/MCP UX, Safety Preview + immutable plan-token boundary, local credential isolation, durable escalation, and no raw shell/filesystem/Hub authority.
+- Evidence: `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276` / `35614305961` passed.
+- Milestone impact: mandatory design gate established.
 
 ## 2026-09-21 — Milestone 5 workspace/session identity and multi-client safety documented
 
-- Change: added `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md` defining a user-configured machine-local project/workspace authorization registry, opaque `project_id` / `workspace_id` write identity, deterministic session verification, and safe new-session defaults.
-- Research: pinned `0.0.83` confirms participants do not inherit creator-owned client capabilities; targeted capability responses enforce the owner client ID; owner disconnect cancels targeted capability requests; by contrast native tool approvals are broadcast/replayed to session subscribers and are not creator-targeted.
-- Decision: first-pilot ChatGPT write tasks create orchestrator-owned Hub sessions; existing VS Code-created sessions remain read-only/observational unless converted through a fresh Safety Preview + durable handoff. Native Hub approval UI is defense-in-depth only, not the security boundary.
-- Evidence: commit `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278` / `35618180127` passed.
-- Milestone impact: **workspace session identity and multi-client approval/tool-executor criterion complete**; one technical-spike criterion remains.
-- Known limitation: the exact migration/pre-execution enforcement architecture is not yet designed, so live shared-session writes remain intentionally blocked.
-- Next action: produce the safe migration design from owned `ClineCore` to ChatGPT-plugin / Hub-backed operation.
+- Change: added user-configured machine-local project/workspace registry, deterministic session verification, orchestrator-owned write sessions, and multi-client capability/approval analysis.
+- Research: creator-owned capability responses are targeted; native approval events are broadcast/raceable and cannot be the security boundary.
+- Evidence: `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278` / `35618180127` passed.
+- Milestone impact: fourth M5 research criterion complete.
+
+## 2026-09-22 — Milestone 5 safe migration design completed
+
+- Change: added `docs/MILESTONE-5-MIGRATION-DESIGN.md` with the machine-local registry, immutable Safety Plan/token, ClineCore Hub runtime seam, owner-targeted pre-execution hook/executors, restricted first-pilot tool surfaces, escalation model, MCP boundary, migration units, and required test matrix.
+- Research: pinned `0.0.83` proves `beforeTool` runs before approval/tool execution; Hub proxies client hooks and tool executors to the creator/owner client and rejects wrong-client responses; `ClineCore` preserves its start/send/abort/subscribe contract over a Hub `RuntimeHost`.
+- Decision: keep `ClineRunner`/`ClineCore`; move plugin tasks to `backendMode: "hub"` through a runtime factory; use dual pre-execution enforcement (`beforeTool` + owner-targeted filesystem executors); keep arbitrary model shell/network/MCP/plugins/subagents/teams/provider-owned tools disabled in the first write pilot; retain external validation and final diff safety.
+- Evidence: commit `d51a85585c831b24da9cd7129d34d74488ec2750`; CI `#282` / `35668708848` passed.
+- Milestone impact: **Milestone 5 technical spike COMPLETE; implementation remains pending**.
+- Known limitation: no write-capable Hub adapter/MCP gateway or live shared-session proof has been implemented or run.
+- Next action: implement Unit 1 — machine-local project/workspace registry + read-only Safety Preview + opaque single-use plan-token store + stale-state rejection. Do not start live Hub writes yet.
 
 ---
 
