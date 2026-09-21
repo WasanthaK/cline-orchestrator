@@ -11,6 +11,8 @@ function worker(overrides: Partial<WorkerConfig> = {}): WorkerConfig {
     contextWindow: 32768,
     maxInputTokens: 30000,
     maxTokensPerTurn: 4096,
+    contextRotateAtTokens: 25500,
+    maxContextRotations: 8,
     reasoningEffort: "none",
     timeoutMs: 0,
     preflightTimeoutMs: 1000,
