@@ -4,6 +4,7 @@ export type TaskStatus =
   | "waiting"
   | "stalled"
   | "validating"
+  | "repairing"
   | "completed"
   | "validation_failed"
   | "failed"
@@ -120,6 +121,7 @@ export type TaskEventType =
   | "validation_started"
   | "validation_passed"
   | "validation_failed"
+  | "validation_repairing"
   | "abort_requested"
   | "completed"
   | "failed"
@@ -145,6 +147,7 @@ export interface OrchestratorTask {
   acceptanceCriteria?: string[];
   validationCommands?: string[];
   validationRunCount?: number;
+  validationRepairCount?: number;
   lastValidation?: ValidationRun;
   clineSessionId?: string;
   sessionGeneration?: number;
@@ -182,6 +185,7 @@ export interface WorkerConfig {
   preflightTimeoutMs: number;
   validationTimeoutMs: number;
   maxValidationOutputChars: number;
+  maxValidationRepairs: number;
   maxIterations: number;
   stallTimeoutMs: number;
   maxRetries: number;
