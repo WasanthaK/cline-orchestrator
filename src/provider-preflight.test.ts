@@ -16,6 +16,7 @@ function worker(overrides: Partial<WorkerConfig> = {}): WorkerConfig {
     preflightTimeoutMs: 1000,
     validationTimeoutMs: 600000,
     maxValidationOutputChars: 20000,
+    maxValidationRepairs: 1,
     maxIterations: 0,
     stallTimeoutMs: 300000,
     maxRetries: 2,
