@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { checkpointLimitsFromEnvironment } from "./checkpoint-config.js";
+import {
+  createGitRollbackCheckpoint,
+  finalizeGitRollbackCheckpoint,
+} from "./git-checkpoint.js";
 import { captureGitSnapshot } from "./git-state.js";
 import type {
   GitSnapshot,
@@ -11,7 +16,13 @@ import type {
 } from "./types.js";
 
 function isTerminalStatus(status: TaskStatus): boolean {
-  return status === "completed" || status === "validation_failed" || status === "failed" || status === "aborted";
+  return (
+    status === "completed" ||
+    status === "validation_failed" ||
+    status === "failed" ||
+    status === "aborted" ||
+    status === "rolled_back"
+  );
 }
 
 function gitSnapshotMessage(phase: "before" | "after", snapshot: GitSnapshot): string {
@@ -70,6 +81,9 @@ export class TaskStore {
     const validationChanged =
       task.lastValidation !== undefined &&
       task.lastValidation.completedAt !== previous.lastValidation?.completedAt;
+    const checkpointChanged =
+      task.lastRunCheckpoint !== undefined &&
+      task.lastRunCheckpoint.createdAt !== previous.lastRunCheckpoint?.createdAt;
     const beforeSnapshot = task.lastRunGit?.before;
     const afterSnapshot = task.lastRunGit?.after;
     const beforeChanged =
@@ -78,6 +92,29 @@ export class TaskStore {
     const afterChanged =
       afterSnapshot !== undefined &&
       afterSnapshot.capturedAt !== previous.lastRunGit?.after?.capturedAt;
+
+    if (checkpointChanged && task.lastRunCheckpoint) {
+      const checkpoint = task.lastRunCheckpoint;
+      await this.appendEvent(
+        task.id,
+        checkpoint.available ? "checkpoint_created" : "checkpoint_unavailable",
+        {
+          status: task.status,
+          message: checkpoint.available
+            ? `Rollback checkpoint created for run ${checkpoint.runCount}`
+            : `Rollback checkpoint unavailable: ${checkpoint.error ?? "unknown error"}`,
+          data: {
+            runCount: checkpoint.runCount,
+            available: checkpoint.available,
+            head: checkpoint.head,
+            branch: checkpoint.branch,
+            untrackedFiles: checkpoint.untrackedFiles,
+            untrackedBytes: checkpoint.untrackedBytes,
+            error: checkpoint.error,
+          },
+        },
+      );
+    }
 
     if (beforeChanged && beforeSnapshot) {
       await this.appendEvent(task.id, "git_snapshot", {
@@ -233,6 +270,13 @@ export class TaskStore {
         previous.status !== "repairing" &&
         (task.runCount ?? 0) > (previous.runCount ?? 0);
       if (runStarted) {
+        const limits = checkpointLimitsFromEnvironment();
+        task.lastRunCheckpoint = await createGitRollbackCheckpoint(
+          this.rootDir,
+          task.id,
+          task.runCount ?? 1,
+          limits,
+        );
         task.lastRunGit = {
           before: await captureGitSnapshot(this.rootDir),
         };
@@ -245,6 +289,13 @@ export class TaskStore {
           ...task.lastRunGit,
           after: await captureGitSnapshot(this.rootDir),
         };
+      }
+      if (terminalTransition && task.lastRunCheckpoint && !task.lastRunCheckpoint.restoredAt) {
+        task.lastRunCheckpoint = await finalizeGitRollbackCheckpoint(
+          this.rootDir,
+          task.lastRunCheckpoint,
+          checkpointLimitsFromEnvironment(),
+        );
       }
     }
 
