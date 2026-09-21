@@ -265,7 +265,7 @@ Make project continuity independent of any particular model context or Cline ses
 - [x] Known-issues memory.
 - [x] Per-task structured summary.
 - [x] Structured handoff artifact shared with context rotation/recovery.
-- [ ] Selective retrieval so whole project memory is not dumped into every prompt.
+- [x] Selective retrieval so whole project memory is not dumped into every prompt.
 - [ ] Memory updates are explicit/auditable.
 - [ ] Tests for serialization, update, and selection logic.
 
@@ -327,7 +327,13 @@ Summary text is bounded to 2,000 characters per retained text field. Verbose/tra
 
 New structured handoffs now carry an optional bounded `durableMemory` block while retaining schema version 1 for backward compatibility. That block contains the current bounded per-task summary plus a compact project-memory index: project ID/schema, canonical memory-file paths, project memory update count, and latest auditable memory-update reference.
 
-The handoff prompt includes that bounded block for replacement Cline sessions, so planned context rotation and recovery can continue from durable task/project provenance rather than reconstructed prose alone. Full architecture/decision/code-map/conventions/known-issues document bodies are deliberately not embedded; focused tests prove a sentinel stored in an architecture document does not appear in either the handoff artifact or generated recovery prompt. Legacy version-1 handoffs without `durableMemory` continue to load and render normally.
+The handoff prompt includes that bounded block for replacement Cline sessions, so planned context rotation and recovery can continue from durable task/project provenance rather than reconstructed prose alone. Full architecture/decision/code-map/conventions/known-issues document bodies are deliberately not embedded; focused tests prove a sentinel stored in an unrelated durable entry does not appear in either the handoff artifact or generated recovery prompt. Legacy version-1 handoffs without `durableMemory` continue to load and render normally.
+
+## Selective Project-Memory Retrieval
+
+Selective retrieval now parses only orchestrator-authored entries that carry valid machine-readable memory provenance. The current goal, pending action, acceptance criteria, expected changed paths, and task ID form a bounded retrieval query; generic orchestration words such as `memory`, `project`, `durable`, and `task` are ignored so they cannot make unrelated records appear relevant.
+
+A non-task-local entry must match at least two meaningful query terms. Exact task provenance remains eligible even without lexical overlap. Selected results retain update ID, document, task ID, timestamp, rationale, source path, relevance score, and a bounded excerpt. Retrieval is capped at six entries total, two entries per memory document, 32 query terms, and 1,800 excerpt characters per selected entry. The selected set is embedded in the existing handoff `durableMemory` block; irrelevant durable records are not copied into the handoff or replacement prompt.
 
 ## Evidence
 
@@ -339,7 +345,8 @@ The handoff prompt includes that bounded block for replacement Cline sessions, s
 - Known-issues memory implementation: commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c` (`feat: add auditable known issues memory`); CI `#226`, workflow `35595083980`, success.
 - Per-task summary implementation: commit `d74f63618898291f42363bdd846459814820b4cd` (`feat: add durable per-task structured summaries`) plus focused tests in commit `0e8c2e57cfe382b792a4178de40ccbb453c1c080` (`test: cover durable task summaries`); CI `#232`, workflow `35597817935`, success.
 - Handoff/project-memory integration: commit `822125be3d7e0d81d44a20e503397b2b3a9014e1` (`feat: integrate durable memory into context handoffs`) plus compatibility tests in commit `7387489e360b851a726b42dcc6797ba48f29ed6a` (`test: cover durable memory handoff integration`); CI `#238`, workflow `35599286479`, success.
-- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, task-summary serialization/revision/bounding/schema/path safety, bounded handoff memory provenance, no full-memory dump into handoffs/prompts, legacy handoff compatibility, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
+- Selective retrieval implementation: commits `b0a4192058c9f541915220911903bd828f2515b0` (`feat: add selective project memory retrieval`) and `3ff385be69912f8a81f99a4a5ba4d2f976586240` (`feat: supply selective memory to context handoffs`), with focused tests `fa73ac07cb73a184cc3e1648758d0e7456d46d1e`, relevance tightening `148248103c4e153941240e2a9a83cafb63338463`, and corrected exclusion fixture `a8e34addbe3bacf56ce22cdf1d58e4ad166ca623`; CI `#250`, workflow `35602317107`, success. CI `#246` initially failed because generic terms admitted false-positive records and the prior handoff test assumed no selected content could appear; both issues were corrected before acceptance.
+- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, task-summary serialization/revision/bounding/schema/path safety, bounded handoff memory provenance, legacy handoff compatibility, selective relevance scoring, task-local provenance selection, global/per-document/excerpt caps, irrelevant-record exclusion from handoffs/prompts, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
@@ -348,7 +355,7 @@ The handoff prompt includes that bounded block for replacement Cline sessions, s
 
 ## Current Next Step
 
-Implement the next Milestone 4 unit: **selective project-memory retrieval so only relevant bounded memory is supplied to a task/handoff instead of dumping all durable memory documents**, with focused selection/bounding tests. Do not begin Hub/RPC work.
+Close the next Milestone 4 criterion: **verify that every project-memory update path is explicit/auditable end-to-end**, with focused provenance/audit tests for any remaining gap. Do not begin Hub/RPC work.
 
 ---
 
@@ -459,7 +466,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Conventions memory + provenance | Implemented + cloud tested |
 | Known issues memory + provenance | Implemented + cloud tested |
 | Per-task structured summary | Implemented + cloud tested |
-| Handoff + bounded durable memory context | **Implemented + cloud tested** |
+| Handoff + bounded durable memory context | Implemented + cloud tested |
+| Selective project-memory retrieval | **Implemented + cloud tested** |
 | Durable project memory content/retrieval | In progress |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -478,7 +486,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Project memory remains partial** — core memory documents, task summaries, and handoff provenance are durable/auditable, but selective retrieval of relevant memory content remains unfinished.
+10. **Project memory remains partial** — durable content, task summaries, handoff integration, and bounded selective retrieval are implemented; the remaining Milestone 4 work is to close the explicit/auditable-update criterion and final serialization/update/selection test criterion.
 
 ---
 
@@ -486,12 +494,11 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Implement selective project-memory retrieval**
-   - choose relevant memory documents/entries for the current task rather than loading everything;
-   - bound returned memory content and preserve source/provenance references;
-   - add focused selection/bounding tests.
+1. **Verify and close explicit/auditable memory updates**
+   - audit every update primitive for update ID, document, task/date/rationale provenance, append-only behavior, and project-level latest-update/count coherence;
+   - add focused cross-document audit tests for any remaining gap.
 
-2. **Close the remaining explicit/auditable update and selection-test acceptance criteria** once retrieval behavior is proven.
+2. **Close final serialization/update/selection test criterion** once the audit criterion is proven.
 
 3. **Perform Milestone 5 Hub/RPC technical spike** only after Milestone 4 is complete.
 
@@ -627,6 +634,17 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Structured handoff/project-memory integration criterion complete**; Milestone 4 remains in progress.
 - Known limitation: relevant project-memory document content is still not selectively retrieved into task/handoff context.
 - Next action: implement selective project-memory retrieval with explicit selection, provenance, and bounded-content tests. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 selective project-memory retrieval implemented
+
+- Change: added deterministic retrieval over orchestrator-authored memory entries, with meaningful-query filtering, source provenance, relevance scoring, exact-task provenance preference, and deterministic ordering.
+- Change: retrieval is bounded to six entries total, two per memory document, 32 query terms, and 1,800 characters per selected excerpt; generic orchestration words are filtered so they cannot create false-positive relevance by themselves.
+- Change: selected entries are embedded in the existing handoff `durableMemory` block and therefore reach rotation/recovery prompts without copying all durable memory documents.
+- Tests: relevant/unrelated selection, task-local provenance, global/per-document/excerpt bounding, invalid-limit rejection, selected handoff content, irrelevant sentinel exclusion, and preservation of prior handoff no-full-dump compatibility behavior.
+- Evidence: implementation commits `b0a4192058c9f541915220911903bd828f2515b0` and `3ff385be69912f8a81f99a4a5ba4d2f976586240`; focused tests `fa73ac07cb73a184cc3e1648758d0e7456d46d1e`; relevance tightening `148248103c4e153941240e2a9a83cafb63338463`; corrected exclusion fixture `a8e34addbe3bacf56ce22cdf1d58e4ad166ca623`; CI `#250` / `35602317107` passed. CI `#246` exposed false-positive retrieval and an outdated compatibility assumption and was intentionally not accepted.
+- Milestone impact: **Selective retrieval criterion complete**; Milestone 4 remains in progress.
+- Known limitation: the final two acceptance criteria—explicit/auditable memory updates and complete serialization/update/selection test closure—remain to be formally verified.
+- Next action: audit and close the explicit/auditable memory-update criterion. Hub/RPC remains deferred.
 
 ---
 
