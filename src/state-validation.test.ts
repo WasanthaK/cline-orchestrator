@@ -105,3 +105,30 @@ test("failed validation persists as validation_failed instead of generic complet
     assert.equal(eventTypes.includes("completed"), false);
   });
 });
+
+test("failed validation with repair budget remains nonterminal and records repair lifecycle", async () => {
+  await withStore(async (store) => {
+    const value = task();
+    value.id = "validation-repair-test";
+    await store.save(value);
+
+    value.status = "completed";
+    value.finishReason = "completed";
+    await store.save(value);
+    assert.equal(value.status, "validating");
+
+    value.lastValidation = validation(false);
+    value.validationRepairCount = 1;
+    value.status = "repairing";
+    value.finishReason = undefined;
+    value.error = "Validation command failed";
+    await store.save(value);
+
+    const persisted = await store.load(value.id);
+    assert.equal(persisted.status, "repairing");
+    const eventTypes = (await store.events(value.id)).map((event) => event.type);
+    assert.ok(eventTypes.includes("validation_failed"));
+    assert.ok(eventTypes.includes("validation_repairing"));
+    assert.equal(eventTypes.includes("completed"), false);
+  });
+});
