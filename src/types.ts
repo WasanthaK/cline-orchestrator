@@ -141,7 +141,8 @@ export interface ValidationRun {
 export type SessionRecoveryReason =
   | "session_not_found"
   | "missing_session_id"
-  | "watchdog_stall";
+  | "watchdog_stall"
+  | "context_threshold";
 
 export type RetryReason = "watchdog_stall";
 
@@ -154,6 +155,7 @@ export type TaskEventType =
   | "run_started"
   | "session_started"
   | "session_recovered"
+  | "context_rotating"
   | "stalled"
   | "retrying"
   | "validation_started"
@@ -190,6 +192,10 @@ export interface OrchestratorTask {
   validationRunCount?: number;
   validationRepairCount?: number;
   lastValidation?: ValidationRun;
+  contextRotationCount?: number;
+  lastContextRotationAt?: string;
+  lastContextRotationInputTokens?: number;
+  lastContextRotationThreshold?: number;
   clineSessionId?: string;
   sessionGeneration?: number;
   recoveryCount?: number;
@@ -230,6 +236,8 @@ export interface WorkerConfig {
   maxValidationRepairs: number;
   checkpointMaxUntrackedFiles: number;
   checkpointMaxUntrackedBytes: number;
+  contextRotateAtTokens: number;
+  maxContextRotations: number;
   maxIterations: number;
   stallTimeoutMs: number;
   maxRetries: number;
