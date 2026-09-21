@@ -3,6 +3,7 @@ import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { ClineRunner } from "./cline-runner.js";
 import { preflightProvider } from "./provider-preflight.js";
+import { rollbackTask } from "./rollback.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
 import type { OrchestratorTask, ProviderPreflightResult, WorkerConfig } from "./types.js";
 import {
@@ -90,7 +91,8 @@ function isTerminal(task: OrchestratorTask): boolean {
     task.status === "completed" ||
     task.status === "validation_failed" ||
     task.status === "failed" ||
-    task.status === "aborted"
+    task.status === "aborted" ||
+    task.status === "rolled_back"
   );
 }
 
@@ -107,6 +109,8 @@ export async function startDaemon(
   let activeTaskId: string | undefined;
   let activeValidationTaskId: string | undefined;
   let activeValidationAbort: AbortController | undefined;
+  let queuedJobs = 0;
+  let rollbackInProgress = false;
   let lastProviderPreflight: ProviderPreflightResult | undefined;
 
   function serial<T>(job: () => Promise<T>): Promise<T> {
@@ -260,7 +264,9 @@ export async function startDaemon(
   }
 
   function enqueue(taskId: string, label: string, job: () => Promise<unknown>) {
+    queuedJobs += 1;
     void serial(async () => {
+      queuedJobs = Math.max(0, queuedJobs - 1);
       if (closing) {
         await abortIfPending(taskId, "Daemon shutting down before task started");
         return;
@@ -289,6 +295,8 @@ export async function startDaemon(
           workspace,
           activeTaskId,
           activeValidationTaskId,
+          queuedJobs,
+          rollbackInProgress,
           providerPreflight: lastProviderPreflight,
           worker: {
             providerId: worker.providerId,
@@ -302,6 +310,8 @@ export async function startDaemon(
             validationTimeoutMs: worker.validationTimeoutMs,
             maxValidationOutputChars: worker.maxValidationOutputChars,
             maxValidationRepairs: worker.maxValidationRepairs,
+            checkpointMaxUntrackedFiles: worker.checkpointMaxUntrackedFiles,
+            checkpointMaxUntrackedBytes: worker.checkpointMaxUntrackedBytes,
             stallTimeoutMs: worker.stallTimeoutMs,
             maxRetries: worker.maxRetries,
             retryDelayMs: worker.retryDelayMs,
@@ -351,9 +361,38 @@ export async function startDaemon(
         return;
       }
 
+      const rollbackMatch = url.pathname.match(/^\/tasks\/([^/]+)\/rollback$/);
+      if (req.method === "POST" && rollbackMatch) {
+        if (closing) {
+          json(res, 503, { error: "Orchestrator daemon is shutting down" });
+          return;
+        }
+        if (rollbackInProgress || activeTaskId || activeValidationTaskId || queuedJobs > 0) {
+          json(res, 409, {
+            error: "Rollback requires an idle orchestrator with no active or queued work",
+            code: "invalid_task_state",
+          });
+          return;
+        }
+
+        const taskId = decodeURIComponent(rollbackMatch[1]);
+        rollbackInProgress = true;
+        try {
+          const task = await serial(() => rollbackTask(store, workspace, taskId));
+          json(res, 200, task);
+        } finally {
+          rollbackInProgress = false;
+        }
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/run") {
         if (closing) {
           json(res, 503, { error: "Orchestrator daemon is shutting down" });
+          return;
+        }
+        if (rollbackInProgress) {
+          json(res, 409, { error: "Rollback is in progress", code: "invalid_task_state" });
           return;
         }
 
@@ -401,6 +440,10 @@ export async function startDaemon(
           json(res, 503, { error: "Orchestrator daemon is shutting down" });
           return;
         }
+        if (rollbackInProgress) {
+          json(res, 409, { error: "Rollback is in progress", code: "invalid_task_state" });
+          return;
+        }
 
         const body = await readJson(req);
         const taskId = String(body?.taskId ?? "").trim();
@@ -419,6 +462,13 @@ export async function startDaemon(
           task.status === "repairing"
         ) {
           json(res, 409, { error: `Task ${task.id} is already ${task.status}` });
+          return;
+        }
+        if (task.status === "rolled_back") {
+          json(res, 409, {
+            error: `Task ${task.id} was rolled back; start a new task instead of resuming stale model context`,
+            code: "invalid_task_state",
+          });
           return;
         }
 
