@@ -99,7 +99,133 @@ The local HTTP companion endpoints behave differently:
 5. **Do not start or replace a Hub merely because discovery metadata exists.** Later spike steps must first determine the supported attach/list APIs and multi-client ownership semantics.
 6. **Treat explicit endpoint overrides separately from managed discovery.** An explicit endpoint still needs an explicit or otherwise resolvable authentication token.
 
+## 2. Exact imports and dependency boundary
+
+Status: **verified from the pinned 0.0.83 package exports and source entry points**.
+
+### Package export chain
+
+The current orchestrator declares only:
+
+```json
+"@cline/sdk": "0.0.83"
+```
+
+That is sufficient for the attach-only Hub research and the likely first adapter implementation.
+
+At 0.0.83, `@cline/sdk` describes itself as the user-facing alias for `@cline/core`, exports only its package root (`.`), and its source root is:
+
+```ts
+export * from "@cline/core";
+```
+
+The `@cline/core` root in turn contains:
+
+```ts
+export * from "./hub";
+```
+
+and the Core package also explicitly publishes the public subpath:
+
+```text
+@cline/core/hub
+```
+
+Therefore the Hub symbols exported by `sdk/packages/core/src/hub/index.ts` are available through the existing public `@cline/sdk` root export. Importing those symbols from `@cline/sdk` does **not** require the orchestrator to reach through to an undeclared transitive package path.
+
+### Supported Hub symbols confirmed at 0.0.83
+
+The pinned Hub index publicly re-exports the client, connection, session-client, UI-client, daemon, discovery, runtime-host, and server Hub modules. For the orchestrator's attach-only path, the relevant confirmed public symbols include:
+
+- `NodeHubClient` and `HubClientOptions`;
+- `HubSessionClient` and `HubSessionClientOptions`;
+- `HubSessionRow`, `HubStreamEvent`, and related session-client types;
+- `HubUIClient` and `HubUIClientOptions`;
+- `connectToHub`, `resolveHubUrl`, `probeHubConnection`, and `sendHubCommand`;
+- `readHubDiscovery`, `probeHubServer`, and Hub discovery record/types;
+- `resolveProductionHubOwnerContext()` and `resolveSharedHubOwnerContext()`;
+- Hub endpoint/default helpers re-exported by the Hub index.
+
+`HubSessionClient` is itself built on `NodeHubClient` and is the higher-level session-oriented client. `HubUIClient` is a lighter UI/notification/client-tracking facade. The exact session-control method mapping is intentionally left to the next spike unit.
+
+### Recommended import style for this repository
+
+For Milestone 5 attach-only work, prefer the already-declared SDK facade:
+
+```ts
+import {
+  HubSessionClient,
+  NodeHubClient,
+  readHubDiscovery,
+  resolveProductionHubOwnerContext,
+  resolveSharedHubOwnerContext,
+} from "@cline/sdk";
+```
+
+Use type-only imports from the same package where applicable.
+
+This keeps the orchestrator on Cline's documented user-facing alias, preserves the existing single pinned dependency, and avoids coupling the repository to Core-only package subpaths before that is necessary.
+
+### When `@cline/core` should become a direct dependency
+
+If future Milestone 5 implementation intentionally imports a Core subpath, then `@cline/core` must be declared directly and pinned to the exact same version as `@cline/sdk`.
+
+For example, this import would require a direct Core dependency:
+
+```ts
+import { ... } from "@cline/core/hub";
+```
+
+and a future daemon-owner integration using:
+
+```text
+@cline/core/hub/daemon-entry
+```
+
+would also require direct `@cline/core` ownership in `package.json`.
+
+The orchestrator must **not** import `@cline/core/hub` merely because `@cline/core` happens to be installed transitively under `@cline/sdk`. If we choose a Core subpath, we declare it ourselves.
+
+### Dependency decision
+
+**Decision for the current technical spike: keep `package.json` unchanged with only `@cline/sdk: 0.0.83`.**
+
+Reasons:
+
+1. the required Hub symbols are already on the public SDK root at this pinned release;
+2. the SDK package is explicitly the user-facing alias for Core;
+3. the planned first implementation is attach-only and does not require `hub/daemon-entry`;
+4. one direct Cline dependency reduces package/version drift during the migration;
+5. adding `@cline/core` later remains straightforward if a deliberately chosen Core-only subpath becomes necessary.
+
+Both packages must remain version-aligned if `@cline/core` is later added; do not mix Hub/Core and SDK versions.
+
+### Correction to the preliminary recommendation
+
+The initial research note assumed that because `@cline/sdk` exposes only its root package path, Hub APIs would require a direct `@cline/core/hub` import. Inspection of the pinned Core root shows that assumption was incomplete: the Core root re-exports `./hub`, and the SDK root re-exports the Core root. The corrected recommendation is therefore to **use `@cline/sdk` directly and not add `@cline/core` yet**.
+
+### Import-boundary rules for implementation
+
+1. Prefer `@cline/sdk` root imports for the attach-only Hub adapter.
+2. Do not import unpublished internal paths such as `@cline/core/dist/...` or source-tree paths.
+3. Do not add `@cline/core` until an implementation actually requires one of its explicit Core-only subpaths.
+4. If Core is added, pin both packages to exactly `0.0.83` during this milestone.
+5. Do not use daemon/server ownership imports during the first attach-only proof.
+
 ### Pinned upstream evidence
+
+Inspected at `cline/cline` tag `sdk/sdk/v0.0.83`:
+
+- `sdk/packages/sdk/package.json`
+- `sdk/packages/sdk/src/index.ts`
+- `sdk/packages/core/package.json`
+- `sdk/packages/core/src/index.ts`
+- `sdk/packages/core/src/hub/index.ts`
+- `sdk/packages/core/src/hub/client/index.ts`
+- `sdk/packages/core/src/hub/client/session-client.ts`
+- `sdk/packages/core/src/hub/client/ui-client.ts`
+
+## Pinned upstream evidence for discovery/authentication
 
 Inspected at `cline/cline` tag `sdk/sdk/v0.0.83`:
 
@@ -117,7 +243,6 @@ Inspected at `cline/cline` tag `sdk/sdk/v0.0.83`:
 
 These remain deliberately unresolved until their own plan units:
 
-- exact supported imports at 0.0.83 and whether `@cline/core` must be a direct dependency;
 - session list/attach/send/abort/event APIs;
 - workspace/session identity and multi-client approval/tool-executor behavior;
 - migration design from the orchestrator-owned `ClineCore` runtime to shared Hub attachment.
