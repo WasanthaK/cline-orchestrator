@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { ClineRunner } from "./cline-runner.js";
+import { preflightProvider } from "./provider-preflight.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
-import type { OrchestratorTask, WorkerConfig } from "./types.js";
+import type { OrchestratorTask, ProviderPreflightResult, WorkerConfig } from "./types.js";
 
 interface DaemonOptions {
   host: string;
@@ -57,11 +58,10 @@ export async function startDaemon(
   const store = new TaskStore(workspace);
   const runner = new ClineRunner(workspace, worker);
 
-  // Deliberately serialize all model work. This mirrors OLLAMA_NUM_PARALLEL=1
-  // and prevents multiple client requests from competing for the local model.
   let tail: Promise<void> = Promise.resolve();
   let closing = false;
   let activeTaskId: string | undefined;
+  let lastProviderPreflight: ProviderPreflightResult | undefined;
 
   function serial<T>(job: () => Promise<T>): Promise<T> {
     const next = tail.then(job, job);
@@ -70,6 +70,23 @@ export async function startDaemon(
       () => undefined,
     );
     return next;
+  }
+
+  async function runProviderPreflight(): Promise<ProviderPreflightResult> {
+    lastProviderPreflight = await preflightProvider(worker);
+    return lastProviderPreflight;
+  }
+
+  async function requireProviderReady(res: ServerResponse): Promise<boolean> {
+    const result = await runProviderPreflight();
+    if (result.ok) return true;
+
+    json(res, 503, {
+      error: result.message,
+      code: result.code,
+      preflight: result,
+    });
+    return false;
   }
 
   async function abortIfPending(taskId: string, reason: string): Promise<void> {
@@ -112,6 +129,7 @@ export async function startDaemon(
           status: closing ? "shutting_down" : "running",
           workspace,
           activeTaskId,
+          providerPreflight: lastProviderPreflight,
           worker: {
             providerId: worker.providerId,
             modelId: worker.modelId,
@@ -120,11 +138,18 @@ export async function startDaemon(
             maxInputTokens: worker.maxInputTokens,
             maxTokensPerTurn: worker.maxTokensPerTurn,
             reasoningEffort: worker.reasoningEffort,
+            preflightTimeoutMs: worker.preflightTimeoutMs,
             stallTimeoutMs: worker.stallTimeoutMs,
             maxRetries: worker.maxRetries,
             retryDelayMs: worker.retryDelayMs,
           },
         });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/preflight") {
+        const result = await runProviderPreflight();
+        json(res, 200, result);
         return;
       }
 
@@ -168,6 +193,8 @@ export async function startDaemon(
           return;
         }
 
+        if (!(await requireProviderReady(res))) return;
+
         const now = new Date().toISOString();
         const task: OrchestratorTask = {
           id: crypto.randomUUID(),
@@ -186,8 +213,6 @@ export async function startDaemon(
         });
         process.stdout.write(`\n[orchestrator task queued: ${task.id}]\n`);
 
-        // Acknowledge immediately. Model/tool work continues inside the daemon;
-        // clients poll /tasks/:id instead of holding one long HTTP request open.
         json(res, 202, task);
         enqueue(task.id, `run ${task.id}`, () => runner.start(task));
         return;
@@ -212,6 +237,8 @@ export async function startDaemon(
           json(res, 409, { error: `Task ${task.id} is already ${task.status}` });
           return;
         }
+
+        if (!(await requireProviderReady(res))) return;
 
         task.status = "waiting";
         task.lastPrompt = prompt;
@@ -270,9 +297,6 @@ export async function startDaemon(
           await abortIfPending(activeTaskId, reason);
         }
 
-        // Keep the listener alive while draining so polling clients can observe
-        // final task/event state. New run/resume requests receive 503 because
-        // closing=true. Queued work is persisted as aborted by enqueue().
         await tail;
         await runner.close(reason);
         await new Promise<void>((serverClosed) => {
