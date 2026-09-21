@@ -132,3 +132,34 @@ test("failed validation with repair budget remains nonterminal and records repai
     assert.equal(eventTypes.includes("completed"), false);
   });
 });
+
+test("repair model turn does not replace the original git-before baseline", async () => {
+  await withStore(async (store) => {
+    const value = task();
+    value.id = "validation-repair-git-baseline";
+    value.status = "repairing";
+    value.runCount = 1;
+    value.lastRunGit = {
+      before: {
+        capturedAt: "2026-09-21T00:00:00.000Z",
+        available: true,
+        root: "/repo",
+        branch: "feature",
+        head: "0123456789abcdef",
+        dirty: true,
+        changedFiles: 2,
+      },
+    };
+    await store.save(value);
+
+    value.status = "running";
+    value.runCount = 2;
+    await store.save(value);
+
+    const persisted = await store.load(value.id);
+    assert.equal(persisted.lastRunGit?.before?.capturedAt, "2026-09-21T00:00:00.000Z");
+    assert.equal(persisted.lastRunGit?.before?.head, "0123456789abcdef");
+    const eventTypes = (await store.events(value.id)).map((event) => event.type);
+    assert.equal(eventTypes.includes("run_started"), false);
+  });
+});
