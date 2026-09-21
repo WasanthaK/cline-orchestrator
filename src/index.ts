@@ -33,6 +33,8 @@ Environment:
   ORCH_REASONING_EFFORT=none
   ORCH_TIMEOUT_MS=0
   ORCH_PREFLIGHT_TIMEOUT_MS=5000
+  ORCH_VALIDATION_TIMEOUT_MS=600000
+  ORCH_MAX_VALIDATION_OUTPUT_CHARS=20000
   ORCH_MAX_ITERATIONS=0
   ORCH_STALL_TIMEOUT_MS=300000
   ORCH_MAX_RETRIES=2
@@ -88,6 +90,8 @@ function workerConfig(): WorkerConfig {
     reasoningEffort: readReasoningEffort(),
     timeoutMs: readInt("ORCH_TIMEOUT_MS", 0),
     preflightTimeoutMs: Math.max(250, readInt("ORCH_PREFLIGHT_TIMEOUT_MS", 5000)),
+    validationTimeoutMs: Math.max(1000, readInt("ORCH_VALIDATION_TIMEOUT_MS", 600000)),
+    maxValidationOutputChars: Math.max(1000, readInt("ORCH_MAX_VALIDATION_OUTPUT_CHARS", 20000)),
     maxIterations: readInt("ORCH_MAX_ITERATIONS", 0),
     stallTimeoutMs: readInt("ORCH_STALL_TIMEOUT_MS", 300000),
     maxRetries: Math.max(0, readInt("ORCH_MAX_RETRIES", 2)),
@@ -167,7 +171,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function isTerminalStatus(status: OrchestratorTask["status"]): boolean {
-  return status === "completed" || status === "failed" || status === "aborted";
+  return status === "completed" || status === "validation_failed" || status === "failed" || status === "aborted";
 }
 
 function printEvent(event: TaskEvent) {
@@ -289,7 +293,7 @@ async function main() {
     const config = workerConfig();
     const { host, port } = daemonAddress();
     console.log(
-      `[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}; context=${config.contextWindow}; input=${config.maxInputTokens}; turn=${config.maxTokensPerTurn}; reasoning=${config.reasoningEffort}; preflight=${config.preflightTimeoutMs}ms; stall=${config.stallTimeoutMs}ms; retries=${config.maxRetries}]`,
+      `[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}; context=${config.contextWindow}; input=${config.maxInputTokens}; turn=${config.maxTokensPerTurn}; reasoning=${config.reasoningEffort}; preflight=${config.preflightTimeoutMs}ms; validation=${config.validationTimeoutMs}ms; stall=${config.stallTimeoutMs}ms; retries=${config.maxRetries}]`,
     );
     await startDaemon(workspace, config, { host, port });
     return;
