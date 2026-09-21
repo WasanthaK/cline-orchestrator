@@ -261,7 +261,7 @@ Make project continuity independent of any particular model context or Cline ses
 - [x] Decision log with rationale and date/task provenance.
 - [x] Code map containing important modules/components only.
 - [x] Conventions memory.
-- [ ] Known-issues memory.
+- [x] Known-issues memory.
 - [ ] Per-task structured summary.
 - [ ] Structured handoff artifact shared with context rotation/recovery.
 - [ ] Selective retrieval so whole project memory is not dumped into every prompt.
@@ -310,6 +310,12 @@ Conventions memory now records durable implementation/project rules that future 
 
 Existing convention content is preserved rather than replaced. Required title/scope/convention/provenance fields are validated, and project-level `memoryUpdateCount` plus `lastMemoryUpdate` remain coherent when convention updates follow other memory document types.
 
+## Known Issues Memory
+
+Known-issues memory now records durable risks/constraints as append-only lifecycle entries. Each update carries an explicit status (`open`, `mitigated`, `resolved`, or `accepted`), impact, description, unique update ID, timestamp, originating task ID, and rationale, with machine-readable provenance beside the human-readable entry.
+
+Existing issue history is preserved instead of being rewritten when status changes. Invalid statuses and missing status/impact/description/provenance fields are rejected, while project-level `memoryUpdateCount` and `lastMemoryUpdate` remain coherent when issue updates follow other memory types.
+
 ## Evidence
 
 - Project metadata/skeleton implementation: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198`, workflow `35579239935`, success.
@@ -317,7 +323,8 @@ Existing convention content is preserved rather than replaced. Required title/sc
 - Decision memory implementation: commit `3a43401c80e6ebe3df6dc33c337d307cbeb38cee` (`feat: add auditable decision memory updates`); CI `#206`, workflow `35586243241`, success.
 - Code-map memory implementation: commit `3e064115c187783ec9fb86a3a732fca136e02140` (`feat: add selective code map memory`); CI `#212`, workflow `35590998279`, success.
 - Conventions memory implementation: commit `3efecb809b9679505f007d75bfd273d815fa2e55` (`feat: add auditable conventions memory`); CI `#220`, workflow `35593035452`, success.
-- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
+- Known-issues memory implementation: commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c` (`feat: add auditable known issues memory`); CI `#226`, workflow `35595083980`, success.
+- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
@@ -326,7 +333,7 @@ Existing convention content is preserved rather than replaced. Required title/sc
 
 ## Current Next Step
 
-Implement the next Milestone 4 unit: **known-issues memory with explicit status/impact, auditable provenance, and focused tests**, preserving the append-only memory model. Do not begin Hub/RPC work.
+Implement the next Milestone 4 unit: **per-task structured summary with durable provenance and focused tests**. Do not begin Hub/RPC work.
 
 ---
 
@@ -434,7 +441,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Architecture memory + provenance | Implemented + cloud tested |
 | Decision log + provenance | Implemented + cloud tested |
 | Selective code map + provenance | Implemented + cloud tested |
-| Conventions memory + provenance | **Implemented + cloud tested** |
+| Conventions memory + provenance | Implemented + cloud tested |
+| Known issues memory + provenance | **Implemented + cloud tested** |
 | Durable project memory content/retrieval | In progress |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -453,7 +461,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Project memory remains partial** — architecture, decisions, code map, and conventions are durable/auditable, but known issues, task summaries, and selective retrieval remain unfinished.
+10. **Project memory remains partial** — the five core memory documents are durable/auditable, but per-task summaries, handoff/project-memory integration, and selective retrieval remain unfinished.
 
 ---
 
@@ -461,15 +469,14 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Implement known-issues memory**
-   - explicit issue status and impact;
-   - task/date/rationale provenance;
-   - append-only auditable updates;
-   - focused update tests.
+1. **Implement per-task structured summary**
+   - durable structured task outcome/progress summary;
+   - task/date provenance;
+   - focused serialization/update tests.
 
-2. **Implement selective retrieval** without dumping all project memory into every prompt.
+2. **Share project-memory context with structured handoff rotation/recovery**.
 
-3. **Integrate per-task structured summaries/handoffs with project memory**.
+3. **Implement selective retrieval** without dumping all project memory into every prompt.
 
 4. **Perform Milestone 5 Hub/RPC technical spike** only after Milestone 4 is complete.
 
@@ -574,6 +581,17 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Repository-history note: commits `adcf36c05bef7c24d3e3404ad84f6f8004769c30` and `7e14ea2c7c16cc8d3543d7cfcfc3e443e4e1c31a` are content-neutral documentation commits created by a connector branch-update mistake; they did not alter source or plan content.
 - Known limitation: known issues, task summaries/handoff integration, and selective retrieval remain unfinished.
 - Next action: implement known-issues memory with explicit status/impact and auditable provenance. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 known-issues memory implemented
+
+- Change: added append-only known-issue lifecycle entries with explicit status, impact, description, unique update IDs, and validated task/date/rationale provenance.
+- Change: issue status is constrained to `open`, `mitigated`, `resolved`, or `accepted`; status changes append new history instead of overwriting prior issue state.
+- Tests: existing issue-content preservation, human/machine-readable status/impact provenance, lifecycle ordering, invalid-status/required-field/timestamp rejection, and cross-document audit counting after conventions updates.
+- Evidence: commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c`; CI `#226` / `35595083980` passed.
+- Milestone impact: **Known-issues memory criterion complete**; Milestone 4 remains in progress.
+- Repository-history note: commit `41ce7e3c0ece9a84da7c1d837c5012e32d368572` temporarily replaced the master-plan content with a connector placeholder; commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c` immediately restored the exact prior plan while adding the implementation and tests.
+- Known limitation: per-task summaries, handoff/project-memory integration, and selective retrieval remain unfinished.
+- Next action: implement a per-task structured summary with durable provenance and focused tests. Hub/RPC remains deferred.
 
 ---
 
