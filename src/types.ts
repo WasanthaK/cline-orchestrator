@@ -5,6 +5,7 @@ export type TaskStatus =
   | "stalled"
   | "validating"
   | "repairing"
+  | "safety_checking"
   | "completed"
   | "validation_failed"
   | "failed"
@@ -138,6 +139,66 @@ export interface ValidationRun {
   results: ValidationCommandResult[];
 }
 
+export type DiffPathStatus =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "type_changed"
+  | "unmerged"
+  | "unknown";
+
+export interface DiffChangedPath {
+  path: string;
+  previousPath?: string;
+  status: DiffPathStatus;
+  source: "tracked" | "untracked";
+}
+
+export type DiffSafetyIssueCode =
+  | "checkpoint_unavailable"
+  | "repository_mismatch"
+  | "branch_moved"
+  | "head_moved"
+  | "protected_path"
+  | "unexpected_path"
+  | "excessive_diff"
+  | "deployment_sensitive_path"
+  | "scope_unconfigured"
+  | "diff_unavailable";
+
+export interface DiffSafetyIssue {
+  code: DiffSafetyIssueCode;
+  message: string;
+  path?: string;
+  pattern?: string;
+}
+
+export interface DiffSafetySummary {
+  changedFiles: number;
+  trackedFiles: number;
+  untrackedFiles: number;
+  trackedAdditions: number;
+  trackedDeletions: number;
+}
+
+export interface DiffSafetyResult {
+  checkedAt: string;
+  passed: boolean;
+  checkpointCreatedAt?: string;
+  baselineRef?: string;
+  baselineBranch?: string;
+  baselineHead?: string;
+  currentBranch?: string;
+  currentHead?: string;
+  finalDiffSummary: string;
+  summary: DiffSafetySummary;
+  changedPaths: DiffChangedPath[];
+  warnings: DiffSafetyIssue[];
+  failures: DiffSafetyIssue[];
+}
+
 export type SessionRecoveryReason =
   | "session_not_found"
   | "missing_session_id"
@@ -162,6 +223,10 @@ export type TaskEventType =
   | "validation_passed"
   | "validation_failed"
   | "validation_repairing"
+  | "diff_safety_started"
+  | "diff_safety_warning"
+  | "diff_safety_passed"
+  | "diff_safety_failed"
   | "abort_requested"
   | "rollback_requested"
   | "rollback_completed"
@@ -189,9 +254,11 @@ export interface OrchestratorTask {
   updatedAt: string;
   acceptanceCriteria?: string[];
   validationCommands?: string[];
+  expectedChangedPaths?: string[];
   validationRunCount?: number;
   validationRepairCount?: number;
   lastValidation?: ValidationRun;
+  lastDiffSafety?: DiffSafetyResult;
   contextRotationCount?: number;
   lastContextRotationAt?: string;
   lastContextRotationInputTokens?: number;
