@@ -171,7 +171,16 @@ export class TaskStore {
     }
 
     if (task.status !== previous.status) {
-      if (task.status === "running" && !retryIncreased) {
+      if (task.status === "repairing") {
+        await this.appendEvent(task.id, "validation_repairing", {
+          status: task.status,
+          message: `Starting validation repair ${task.validationRepairCount ?? 0}`,
+          data: {
+            validationRepairCount: task.validationRepairCount ?? 0,
+            validationRunCount: task.validationRunCount ?? 0,
+          },
+        });
+      } else if (task.status === "running" && !retryIncreased) {
         await this.appendEvent(task.id, "run_started", {
           status: task.status,
           message: `Run ${task.runCount ?? 1} started`,
