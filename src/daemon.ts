@@ -4,11 +4,20 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ClineRunner } from "./cline-runner.js";
 import { preflightProvider } from "./provider-preflight.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
-import type { OrchestratorTask, ProviderPreflightResult, WorkerConfig } from "./types.js";
+import type { OrchestratorTask, ProviderPreflightResult, ValidationRun, WorkerConfig } from "./types.js";
+import { runValidationCommands } from "./validation.js";
 
 interface DaemonOptions {
   host: string;
   port: number;
+}
+
+class BadRequestError extends Error {
+  readonly code = "bad_request";
+}
+
+class DaemonTaskStateError extends Error {
+  readonly code = "invalid_task_state";
 }
 
 function json(res: ServerResponse, statusCode: number, body: unknown) {
@@ -28,13 +37,39 @@ async function readJson(req: IncomingMessage): Promise<any> {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     total += buffer.length;
     if (total > 1024 * 1024) {
-      throw new Error("Request body is too large");
+      throw new BadRequestError("Request body is too large");
     }
     chunks.push(buffer);
   }
 
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new BadRequestError("Request body must be valid JSON");
+  }
+}
+
+function readStringList(
+  value: unknown,
+  field: string,
+  maxItems: number,
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new BadRequestError(`${field} must be an array of strings`);
+  if (value.length > maxItems) throw new BadRequestError(`${field} supports at most ${maxItems} items`);
+
+  return value.map((item, index) => {
+    if (typeof item !== "string") {
+      throw new BadRequestError(`${field}[${index}] must be a string`);
+    }
+    const normalized = item.trim();
+    if (!normalized) throw new BadRequestError(`${field}[${index}] must not be empty`);
+    if (normalized.length > 2000) {
+      throw new BadRequestError(`${field}[${index}] exceeds 2000 characters`);
+    }
+    return normalized;
+  });
 }
 
 function errorPayload(error: unknown) {
@@ -47,7 +82,22 @@ function errorPayload(error: unknown) {
 }
 
 function isTerminal(task: OrchestratorTask): boolean {
-  return task.status === "completed" || task.status === "failed" || task.status === "aborted";
+  return (
+    task.status === "completed" ||
+    task.status === "validation_failed" ||
+    task.status === "failed" ||
+    task.status === "aborted"
+  );
+}
+
+function validationFailureMessage(validation: ValidationRun): string {
+  const failed = validation.results.find(
+    (result) => result.aborted || result.timedOut || result.exitCode !== 0,
+  );
+  if (!failed) return "Validation did not complete all requested commands";
+  if (failed.aborted) return `Validation aborted while running: ${failed.command}`;
+  if (failed.timedOut) return `Validation timed out while running: ${failed.command}`;
+  return `Validation command failed with exit code ${failed.exitCode ?? "unknown"}: ${failed.command}`;
 }
 
 export async function startDaemon(
@@ -61,6 +111,8 @@ export async function startDaemon(
   let tail: Promise<void> = Promise.resolve();
   let closing = false;
   let activeTaskId: string | undefined;
+  let activeValidationTaskId: string | undefined;
+  let activeValidationAbort: AbortController | undefined;
   let lastProviderPreflight: ProviderPreflightResult | undefined;
 
   function serial<T>(job: () => Promise<T>): Promise<T> {
@@ -89,14 +141,104 @@ export async function startDaemon(
     return false;
   }
 
+  async function abortValidationTask(taskId: string, reason: string): Promise<OrchestratorTask> {
+    const task = await store.load(taskId);
+    if (isTerminal(task)) {
+      throw new DaemonTaskStateError(`Task ${taskId} is already ${task.status}`);
+    }
+
+    const requestedAt = new Date().toISOString();
+    await store.appendEvent(taskId, "abort_requested", {
+      status: task.status,
+      message: reason,
+      data: {
+        sessionId: task.clineSessionId,
+        requestedAt,
+        phase: "validation",
+      },
+    });
+
+    if (activeValidationTaskId === taskId) {
+      activeValidationAbort?.abort();
+    }
+
+    task.abortRequestedAt = requestedAt;
+    task.abortReason = reason;
+    task.status = "aborted";
+    task.finishReason = "aborted";
+    task.error = undefined;
+    await store.save(task);
+    process.stdout.write(`\n[orchestrator validation aborted: ${taskId}; reason=${reason}]\n`);
+    return task;
+  }
+
   async function abortIfPending(taskId: string, reason: string): Promise<void> {
     const task = await store.load(taskId);
     if (isTerminal(task)) return;
+    if (task.status === "validating" || activeValidationTaskId === taskId) {
+      await abortValidationTask(taskId, reason);
+      return;
+    }
+
     try {
       await runner.abort(taskId, reason);
     } catch (error) {
       const latest = await store.load(taskId);
       if (!isTerminal(latest)) throw error;
+    }
+  }
+
+  async function executeWithValidation(
+    task: OrchestratorTask,
+    modelJob: () => Promise<OrchestratorTask>,
+  ): Promise<OrchestratorTask> {
+    const result = await modelJob();
+    if (result.status !== "validating") return result;
+
+    const commands = result.validationCommands ?? [];
+    if (commands.length === 0) {
+      result.status = "completed";
+      result.finishReason = "completed";
+      await store.save(result);
+      return result;
+    }
+
+    const controller = new AbortController();
+    activeValidationTaskId = result.id;
+    activeValidationAbort = controller;
+
+    try {
+      process.stdout.write(
+        `\n[orchestrator validation: ${commands.length} command(s); timeout=${worker.validationTimeoutMs}ms each]\n`,
+      );
+      const validation = await runValidationCommands(workspace, commands, {
+        timeoutMs: worker.validationTimeoutMs,
+        maxOutputChars: worker.maxValidationOutputChars,
+        signal: controller.signal,
+      });
+
+      const latest = await store.load(result.id);
+      if (latest.status === "aborted" || controller.signal.aborted) return latest;
+
+      latest.lastValidation = validation;
+      if (validation.passed) {
+        latest.status = "completed";
+        latest.finishReason = "completed";
+        latest.error = undefined;
+        process.stdout.write(
+          `\n[orchestrator validation passed: ${validation.commandsRun}/${validation.commandsRequested} commands]\n`,
+        );
+      } else {
+        latest.status = "validation_failed";
+        latest.finishReason = "validation_failed";
+        latest.error = validationFailureMessage(validation);
+        process.stdout.write(`\n[orchestrator validation failed: ${latest.error}]\n`);
+      }
+      await store.save(latest);
+      return latest;
+    } finally {
+      if (activeValidationTaskId === result.id) activeValidationTaskId = undefined;
+      if (activeValidationAbort === controller) activeValidationAbort = undefined;
     }
   }
 
@@ -129,6 +271,7 @@ export async function startDaemon(
           status: closing ? "shutting_down" : "running",
           workspace,
           activeTaskId,
+          activeValidationTaskId,
           providerPreflight: lastProviderPreflight,
           worker: {
             providerId: worker.providerId,
@@ -139,6 +282,8 @@ export async function startDaemon(
             maxTokensPerTurn: worker.maxTokensPerTurn,
             reasoningEffort: worker.reasoningEffort,
             preflightTimeoutMs: worker.preflightTimeoutMs,
+            validationTimeoutMs: worker.validationTimeoutMs,
+            maxValidationOutputChars: worker.maxValidationOutputChars,
             stallTimeoutMs: worker.stallTimeoutMs,
             maxRetries: worker.maxRetries,
             retryDelayMs: worker.retryDelayMs,
@@ -176,7 +321,15 @@ export async function startDaemon(
         const taskId = decodeURIComponent(abortMatch[1]);
         const body = await readJson(req);
         const reason = String(body?.reason ?? "").trim() || "Task aborted by user";
-        json(res, 200, await runner.abort(taskId, reason));
+        const task = await store.load(taskId);
+        if (isTerminal(task)) {
+          throw new DaemonTaskStateError(`Task ${taskId} is already ${task.status}`);
+        }
+        if (task.status === "validating" || activeValidationTaskId === taskId) {
+          json(res, 200, await abortValidationTask(taskId, reason));
+        } else {
+          json(res, 200, await runner.abort(taskId, reason));
+        }
         return;
       }
 
@@ -193,6 +346,9 @@ export async function startDaemon(
           return;
         }
 
+        const acceptanceCriteria = readStringList(body?.acceptanceCriteria, "acceptanceCriteria", 50);
+        const validationCommands = readStringList(body?.validationCommands, "validationCommands", 20);
+
         if (!(await requireProviderReady(res))) return;
 
         const now = new Date().toISOString();
@@ -204,17 +360,21 @@ export async function startDaemon(
           createdAt: now,
           updatedAt: now,
           lastPrompt: goal,
+          ...(acceptanceCriteria ? { acceptanceCriteria } : {}),
+          ...(validationCommands ? { validationCommands } : {}),
         };
         await store.save(task);
         await store.appendEvent(task.id, "queued", {
           status: task.status,
           message: "Task queued for execution",
-          data: { goal },
+          data: { goal, acceptanceCriteria, validationCommands },
         });
         process.stdout.write(`\n[orchestrator task queued: ${task.id}]\n`);
 
         json(res, 202, task);
-        enqueue(task.id, `run ${task.id}`, () => runner.start(task));
+        enqueue(task.id, `run ${task.id}`, () =>
+          executeWithValidation(task, () => runner.start(task)),
+        );
         return;
       }
 
@@ -233,10 +393,18 @@ export async function startDaemon(
         }
 
         const task = await store.load(taskId);
-        if (task.status === "running" || task.status === "waiting" || task.status === "stalled") {
+        if (
+          task.status === "running" ||
+          task.status === "waiting" ||
+          task.status === "stalled" ||
+          task.status === "validating"
+        ) {
           json(res, 409, { error: `Task ${task.id} is already ${task.status}` });
           return;
         }
+
+        const acceptanceCriteria = readStringList(body?.acceptanceCriteria, "acceptanceCriteria", 50);
+        const validationCommands = readStringList(body?.validationCommands, "validationCommands", 20);
 
         if (!(await requireProviderReady(res))) return;
 
@@ -244,21 +412,34 @@ export async function startDaemon(
         task.lastPrompt = prompt;
         task.error = undefined;
         task.finishReason = undefined;
+        task.lastValidation = undefined;
+        if (acceptanceCriteria !== undefined) task.acceptanceCriteria = acceptanceCriteria;
+        if (validationCommands !== undefined) task.validationCommands = validationCommands;
         await store.save(task);
         await store.appendEvent(task.id, "resume_queued", {
           status: task.status,
           message: "Task queued for resume",
-          data: { prompt },
+          data: {
+            prompt,
+            acceptanceCriteria: task.acceptanceCriteria,
+            validationCommands: task.validationCommands,
+          },
         });
         process.stdout.write(`\n[orchestrator task queued for resume: ${task.id}]\n`);
 
         json(res, 202, task);
-        enqueue(task.id, `resume ${task.id}`, () => runner.resume(task, prompt));
+        enqueue(task.id, `resume ${task.id}`, () =>
+          executeWithValidation(task, () => runner.resume(task, prompt)),
+        );
         return;
       }
 
       json(res, 404, { error: "not found" });
     } catch (error) {
+      if (error instanceof BadRequestError) {
+        json(res, 400, errorPayload(error));
+        return;
+      }
       if (error instanceof TaskNotFoundError) {
         json(res, 404, errorPayload(error));
         return;
