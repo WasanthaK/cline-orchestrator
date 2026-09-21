@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runValidationCommands } from "./validation.js";
+import { buildValidationRepairPrompt, runValidationCommands } from "./validation.js";
+import type { OrchestratorTask, ValidationRun } from "./types.js";
 
 function nodeCommand(source: string): string {
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(source)}`;
@@ -80,4 +81,45 @@ test("a pre-aborted validation run executes nothing and fails closed", async () 
     assert.equal(run.passed, false);
     assert.equal(run.commandsRun, 0);
   });
+});
+
+test("repair prompt carries bounded failure evidence and acceptance criteria", () => {
+  const now = new Date().toISOString();
+  const task: OrchestratorTask = {
+    id: "repair-test",
+    goal: "Fix the broken feature without unrelated changes",
+    workspace: "/tmp/workspace",
+    status: "repairing",
+    createdAt: now,
+    updatedAt: now,
+    acceptanceCriteria: ["Typecheck passes", "Existing behavior is preserved"],
+  };
+  const validation: ValidationRun = {
+    startedAt: now,
+    completedAt: now,
+    durationMs: 10,
+    passed: false,
+    commandsRequested: 1,
+    commandsRun: 1,
+    results: [
+      {
+        command: "npm run typecheck",
+        startedAt: now,
+        completedAt: now,
+        durationMs: 10,
+        exitCode: 2,
+        timedOut: false,
+        aborted: false,
+        stdout: "compiler output",
+        stderr: "Type error in src/example.ts",
+      },
+    ],
+  };
+
+  const prompt = buildValidationRepairPrompt(task, validation);
+  assert.match(prompt, /Fix the broken feature/);
+  assert.match(prompt, /Typecheck passes/);
+  assert.match(prompt, /npm run typecheck/);
+  assert.match(prompt, /Type error in src\/example\.ts/);
+  assert.match(prompt, /smallest change needed/);
 });
