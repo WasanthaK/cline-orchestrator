@@ -5,6 +5,7 @@ import type { OrchestratorTask, TaskStatus } from "./types.js";
 
 export const PROJECT_MEMORY_SCHEMA_VERSION = 1 as const;
 export const PROJECT_MEMORY_UPDATE_SCHEMA_VERSION = 1 as const;
+export const CODE_MAP_MAX_PATHS = 12 as const;
 
 export const PROJECT_MEMORY_DOCUMENTS = {
   architecture: "architecture.md",
@@ -81,6 +82,27 @@ export interface DecisionMemoryUpdate {
   rationale: string;
 }
 
+export interface CodeMapMemoryUpdateInput {
+  taskId: string;
+  component: string;
+  paths: string[];
+  responsibility: string;
+  rationale: string;
+  recordedAt?: string;
+}
+
+export interface CodeMapMemoryUpdate {
+  schemaVersion: typeof PROJECT_MEMORY_UPDATE_SCHEMA_VERSION;
+  id: string;
+  document: "codeMap";
+  recordedAt: string;
+  taskId: string;
+  component: string;
+  paths: string[];
+  responsibility: string;
+  rationale: string;
+}
+
 const MEMORY_TEMPLATES: Record<ProjectMemoryDocumentName, string> = {
   architecture: `# Architecture\n\nDurable project architecture memory. Record stable components, boundaries, and important data/control flows only.\n`,
   decisions: `# Decisions\n\nDurable decision log. Record decisions with rationale plus date/task provenance; do not use this file as transient scratch space.\n`,
@@ -136,6 +158,20 @@ function validateRecordedAt(value: string): string {
   return value;
 }
 
+function selectivePaths(paths: string[]): string[] {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    throw new Error("paths must contain at least one important path");
+  }
+  if (paths.length > CODE_MAP_MAX_PATHS) {
+    throw new Error(`paths must contain at most ${CODE_MAP_MAX_PATHS} entries`);
+  }
+  const normalized = paths.map((value, index) => singleLine(`paths[${index}]`, value));
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error("paths must not contain duplicates");
+  }
+  return normalized;
+}
+
 function formatArchitectureUpdate(update: ArchitectureMemoryUpdate): string {
   const provenance = JSON.stringify({
     schemaVersion: update.schemaVersion,
@@ -184,6 +220,39 @@ function formatDecisionUpdate(update: DecisionMemoryUpdate): string {
     "### Decision",
     "",
     update.decision,
+    "",
+  ].join("\n");
+}
+
+function formatCodeMapUpdate(update: CodeMapMemoryUpdate): string {
+  const provenance = JSON.stringify({
+    schemaVersion: update.schemaVersion,
+    id: update.id,
+    document: update.document,
+    recordedAt: update.recordedAt,
+    taskId: update.taskId,
+    component: update.component,
+    paths: update.paths,
+    rationale: update.rationale,
+  });
+
+  return [
+    "",
+    `<!-- orchestrator-memory-update ${provenance} -->`,
+    `## ${update.component}`,
+    "",
+    `- Update ID: \`${update.id}\``,
+    `- Recorded at: ${update.recordedAt}`,
+    `- Task: \`${update.taskId}\``,
+    `- Rationale: ${update.rationale}`,
+    "",
+    "### Important paths",
+    "",
+    ...update.paths.map((value) => `- \`${value}\``),
+    "",
+    "### Responsibility",
+    "",
+    update.responsibility,
     "",
   ].join("\n");
 }
@@ -358,6 +427,32 @@ export class ProjectMemoryStore {
     };
 
     await appendFile(this.memoryPath("decisions"), formatDecisionUpdate(update), "utf8");
+    await this.recordMemoryUpdate(current, {
+      id: update.id,
+      document: update.document,
+      recordedAt: update.recordedAt,
+      taskId: update.taskId,
+      rationale: update.rationale,
+    });
+    return update;
+  }
+
+  async appendCodeMapUpdate(input: CodeMapMemoryUpdateInput): Promise<CodeMapMemoryUpdate> {
+    const current = await this.ensure();
+    const recordedAt = validateRecordedAt(input.recordedAt ?? new Date().toISOString());
+    const update: CodeMapMemoryUpdate = {
+      schemaVersion: PROJECT_MEMORY_UPDATE_SCHEMA_VERSION,
+      id: crypto.randomUUID(),
+      document: "codeMap",
+      recordedAt,
+      taskId: singleLine("taskId", input.taskId),
+      component: singleLine("component", input.component),
+      paths: selectivePaths(input.paths),
+      responsibility: requiredText("responsibility", input.responsibility),
+      rationale: singleLine("rationale", input.rationale),
+    };
+
+    await appendFile(this.memoryPath("codeMap"), formatCodeMapUpdate(update), "utf8");
     await this.recordMemoryUpdate(current, {
       id: update.id,
       document: update.document,
