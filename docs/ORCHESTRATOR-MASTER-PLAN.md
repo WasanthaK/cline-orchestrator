@@ -445,7 +445,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Project memory remains partial** — architecture, decisions, and selective code-map updates are durable/auditable, but conventions, known issues, task summaries, and selective retrieval remain unfinished.
+10. **Project memory remains partial** — architecture, decisions, and code map are durable/auditable, but conventions, known issues, task summaries, and selective retrieval remain unfinished.
 
 ---
 
@@ -454,10 +454,10 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
 1. **Implement conventions memory**
-   - record durable implementation/project conventions only;
-   - explicit convention text plus task/date/rationale provenance;
+   - explicit convention text and scope;
+   - task/date/rationale provenance;
    - append-only auditable updates;
-   - focused validation/update tests.
+   - focused update tests.
 
 2. **Extend the memory model selectively**
    - known issues;
@@ -551,14 +551,13 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 
 ## 2026-09-21 — Milestone 4 selective code map implemented
 
-- Change: added append-only code-map updates for one important module/component at a time, with concise responsibility plus task/date/rationale provenance.
-- Change: representative path lists are deliberately bounded to 1–12 unique paths; empty, duplicate, and over-broad path sets are rejected to prevent indiscriminate repository cataloguing.
-- Change: code-map provenance participates in the same project-wide `memoryUpdateCount` and `lastMemoryUpdate` audit trail as architecture and decision memory.
-- Tests: existing code-map content preservation, explicit component/responsibility/path provenance, bounded/unique path validation, invalid timestamp/responsibility rejection, and three-document audit-count coherence.
+- Change: added append-only code-map entries for important modules/components with explicit responsibility, bounded representative paths, and task/date/rationale provenance.
+- Change: code-map path selection is constrained to 1–12 unique entries so durable memory does not become a repository-wide file inventory.
+- Tests: preservation of existing code-map content, provenance markers, representative path rendering, empty/duplicate/over-limit path rejection, missing responsibility rejection, invalid timestamp rejection, and cross-document audit counting.
 - Evidence: commit `3e064115c187783ec9fb86a3a732fca136e02140`; CI `#212` / `35590998279` passed.
 - Milestone impact: **Code map criterion complete**; Milestone 4 remains in progress.
-- Known limitation: conventions, known issues, task summaries, handoff/project-memory integration, and selective retrieval remain unfinished.
-- Next action: implement conventions memory with explicit/auditable provenance and focused tests. Hub/RPC remains deferred.
+- Known limitation: conventions, known issues, task summaries, and selective retrieval remain unfinished.
+- Next action: implement conventions memory with explicit/auditable provenance. Hub/RPC remains deferred.
 
 ---
 
