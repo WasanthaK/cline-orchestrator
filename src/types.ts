@@ -3,7 +3,9 @@ export type TaskStatus =
   | "running"
   | "waiting"
   | "stalled"
+  | "validating"
   | "completed"
+  | "validation_failed"
   | "failed"
   | "aborted";
 
@@ -75,6 +77,30 @@ export interface ProviderPreflightResult {
   availableModels?: string[];
 }
 
+export interface ValidationCommandResult {
+  command: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  exitCode?: number;
+  signal?: string;
+  timedOut: boolean;
+  aborted: boolean;
+  stdout: string;
+  stderr: string;
+  outputTruncated?: boolean;
+}
+
+export interface ValidationRun {
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  passed: boolean;
+  commandsRequested: number;
+  commandsRun: number;
+  results: ValidationCommandResult[];
+}
+
 export type SessionRecoveryReason =
   | "session_not_found"
   | "missing_session_id"
@@ -91,6 +117,9 @@ export type TaskEventType =
   | "session_recovered"
   | "stalled"
   | "retrying"
+  | "validation_started"
+  | "validation_passed"
+  | "validation_failed"
   | "abort_requested"
   | "completed"
   | "failed"
@@ -113,6 +142,10 @@ export interface OrchestratorTask {
   status: TaskStatus;
   createdAt: string;
   updatedAt: string;
+  acceptanceCriteria?: string[];
+  validationCommands?: string[];
+  validationRunCount?: number;
+  lastValidation?: ValidationRun;
   clineSessionId?: string;
   sessionGeneration?: number;
   recoveryCount?: number;
@@ -147,6 +180,8 @@ export interface WorkerConfig {
   reasoningEffort: ReasoningEffort;
   timeoutMs: number;
   preflightTimeoutMs: number;
+  validationTimeoutMs: number;
+  maxValidationOutputChars: number;
   maxIterations: number;
   stallTimeoutMs: number;
   maxRetries: number;
