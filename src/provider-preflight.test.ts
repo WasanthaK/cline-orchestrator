@@ -14,6 +14,8 @@ function worker(overrides: Partial<WorkerConfig> = {}): WorkerConfig {
     reasoningEffort: "none",
     timeoutMs: 0,
     preflightTimeoutMs: 1000,
+    validationTimeoutMs: 600000,
+    maxValidationOutputChars: 20000,
     maxIterations: 0,
     stallTimeoutMs: 300000,
     maxRetries: 2,
