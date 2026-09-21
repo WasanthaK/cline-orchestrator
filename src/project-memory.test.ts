@@ -106,6 +106,116 @@ test("TaskStore save automatically bootstraps project memory and records the lat
   });
 });
 
+test("architecture memory updates are append-only and carry explicit task/date/rationale provenance", async () => {
+  await withWorkspace(async (dir) => {
+    const store = new ProjectMemoryStore(dir);
+    await store.ensure();
+    const architecturePath = path.join(dir, ".orchestrator", "memory", "architecture.md");
+    await writeFile(architecturePath, "# Architecture\n\nHuman-authored durable note.\n", "utf8");
+
+    const update = await store.appendArchitectureUpdate({
+      taskId: "task-architecture-1",
+      title: "Orchestration boundaries",
+      content: "The orchestrator owns durable state while Cline remains the implementation worker.",
+      rationale: "Preserve the stable responsibility boundary for future sessions.",
+      recordedAt: "2026-09-21T09:00:00.000Z",
+    });
+
+    assert.equal(update.schemaVersion, 1);
+    assert.equal(update.document, "architecture");
+    assert.equal(update.taskId, "task-architecture-1");
+    assert.equal(update.recordedAt, "2026-09-21T09:00:00.000Z");
+    assert.ok(update.id);
+
+    const content = await readFile(architecturePath, "utf8");
+    assert.match(content, /^# Architecture\n\nHuman-authored durable note\./);
+    assert.match(content, /<!-- orchestrator-memory-update \{/);
+    assert.match(content, /## Orchestration boundaries/);
+    assert.match(content, /Task: `task-architecture-1`/);
+    assert.match(content, /Recorded at: 2026-09-21T09:00:00\.000Z/);
+    assert.match(content, /Rationale: Preserve the stable responsibility boundary for future sessions\./);
+    assert.match(content, /The orchestrator owns durable state while Cline remains the implementation worker\./);
+    assert.match(content, new RegExp(update.id));
+
+    const metadata = await store.load();
+    assert.equal(metadata.memoryUpdateCount, 1);
+    assert.deepEqual(metadata.lastMemoryUpdate, {
+      id: update.id,
+      document: "architecture",
+      recordedAt: "2026-09-21T09:00:00.000Z",
+      taskId: "task-architecture-1",
+      rationale: "Preserve the stable responsibility boundary for future sessions.",
+    });
+  });
+});
+
+test("multiple architecture updates remain ordered and independently auditable", async () => {
+  await withWorkspace(async (dir) => {
+    const store = new ProjectMemoryStore(dir);
+    const first = await store.appendArchitectureUpdate({
+      taskId: "task-a",
+      title: "Durable state",
+      content: "Project continuity lives under .orchestrator.",
+      rationale: "Record the persistence boundary.",
+      recordedAt: "2026-09-21T09:01:00.000Z",
+    });
+    const second = await store.appendArchitectureUpdate({
+      taskId: "task-b",
+      title: "Worker boundary",
+      content: "Cline executes bounded implementation work.",
+      rationale: "Record the worker responsibility.",
+      recordedAt: "2026-09-21T09:02:00.000Z",
+    });
+
+    assert.notEqual(first.id, second.id);
+    const content = await readFile(
+      path.join(dir, ".orchestrator", "memory", "architecture.md"),
+      "utf8",
+    );
+    assert.ok(content.indexOf(first.id) < content.indexOf(second.id));
+    assert.ok(content.indexOf("## Durable state") < content.indexOf("## Worker boundary"));
+
+    const metadata = await store.load();
+    assert.equal(metadata.memoryUpdateCount, 2);
+    assert.equal(metadata.lastMemoryUpdate?.id, second.id);
+    assert.equal(metadata.lastMemoryUpdate?.taskId, "task-b");
+  });
+});
+
+test("architecture update primitive rejects missing provenance or content", async () => {
+  await withWorkspace(async (dir) => {
+    const store = new ProjectMemoryStore(dir);
+    await assert.rejects(
+      store.appendArchitectureUpdate({
+        taskId: "",
+        title: "Architecture",
+        content: "content",
+        rationale: "reason",
+      }),
+      /taskId is required/,
+    );
+    await assert.rejects(
+      store.appendArchitectureUpdate({
+        taskId: "task-1",
+        title: "Architecture",
+        content: " ",
+        rationale: "reason",
+      }),
+      /content is required/,
+    );
+    await assert.rejects(
+      store.appendArchitectureUpdate({
+        taskId: "task-1",
+        title: "Architecture",
+        content: "content",
+        rationale: "reason",
+        recordedAt: "not-a-date",
+      }),
+      /recordedAt is not a valid timestamp/,
+    );
+  });
+});
+
 test("unsupported project metadata schema is rejected instead of silently rewritten", async () => {
   await withWorkspace(async (dir) => {
     const orchestratorDir = path.join(dir, ".orchestrator");

@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { OrchestratorTask, TaskStatus } from "./types.js";
 
 export const PROJECT_MEMORY_SCHEMA_VERSION = 1 as const;
+export const PROJECT_MEMORY_UPDATE_SCHEMA_VERSION = 1 as const;
 
 export const PROJECT_MEMORY_DOCUMENTS = {
   architecture: "architecture.md",
@@ -21,6 +22,14 @@ export interface ProjectTaskPointer {
   updatedAt: string;
 }
 
+export interface ProjectMemoryUpdateReference {
+  id: string;
+  document: ProjectMemoryDocumentName;
+  recordedAt: string;
+  taskId: string;
+  rationale: string;
+}
+
 export interface ProjectMetadata {
   schemaVersion: typeof PROJECT_MEMORY_SCHEMA_VERSION;
   projectId: string;
@@ -29,7 +38,28 @@ export interface ProjectMetadata {
   workspaceRoot: string;
   memorySchemaVersion: 1;
   memoryFiles: Record<ProjectMemoryDocumentName, string>;
+  memoryUpdateCount?: number;
+  lastMemoryUpdate?: ProjectMemoryUpdateReference;
   lastTask?: ProjectTaskPointer;
+}
+
+export interface ArchitectureMemoryUpdateInput {
+  taskId: string;
+  title: string;
+  content: string;
+  rationale: string;
+  recordedAt?: string;
+}
+
+export interface ArchitectureMemoryUpdate {
+  schemaVersion: typeof PROJECT_MEMORY_UPDATE_SCHEMA_VERSION;
+  id: string;
+  document: "architecture";
+  recordedAt: string;
+  taskId: string;
+  title: string;
+  content: string;
+  rationale: string;
 }
 
 const MEMORY_TEMPLATES: Record<ProjectMemoryDocumentName, string> = {
@@ -72,6 +102,46 @@ function validateMetadata(value: unknown, filePath: string): ProjectMetadata {
   return metadata as ProjectMetadata;
 }
 
+function requiredText(label: string, value: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error(`${label} is required`);
+  return normalized;
+}
+
+function singleLine(label: string, value: string): string {
+  return requiredText(label, value).replace(/\s+/g, " ");
+}
+
+function validateRecordedAt(value: string): string {
+  if (Number.isNaN(Date.parse(value))) throw new Error(`recordedAt is not a valid timestamp: ${value}`);
+  return value;
+}
+
+function formatArchitectureUpdate(update: ArchitectureMemoryUpdate): string {
+  const provenance = JSON.stringify({
+    schemaVersion: update.schemaVersion,
+    id: update.id,
+    document: update.document,
+    recordedAt: update.recordedAt,
+    taskId: update.taskId,
+    rationale: update.rationale,
+  });
+
+  return [
+    "",
+    `<!-- orchestrator-memory-update ${provenance} -->`,
+    `## ${update.title}`,
+    "",
+    `- Update ID: \`${update.id}\``,
+    `- Recorded at: ${update.recordedAt}`,
+    `- Task: \`${update.taskId}\``,
+    `- Rationale: ${update.rationale}`,
+    "",
+    update.content,
+    "",
+  ].join("\n");
+}
+
 export class ProjectMemoryStore {
   constructor(private readonly rootDir: string) {}
 
@@ -85,6 +155,10 @@ export class ProjectMemoryStore {
 
   private projectPath(): string {
     return path.join(this.orchestratorDir(), "project.json");
+  }
+
+  private memoryPath(name: ProjectMemoryDocumentName): string {
+    return path.join(this.memoryDir(), PROJECT_MEMORY_DOCUMENTS[name]);
   }
 
   private relativeMemoryFiles(): Record<ProjectMemoryDocumentName, string> {
@@ -183,5 +257,38 @@ export class ProjectMemoryStore {
     };
     await writeFile(this.projectPath(), serialize(next), "utf8");
     return next;
+  }
+
+  async appendArchitectureUpdate(input: ArchitectureMemoryUpdateInput): Promise<ArchitectureMemoryUpdate> {
+    const current = await this.ensure();
+    const recordedAt = validateRecordedAt(input.recordedAt ?? new Date().toISOString());
+    const update: ArchitectureMemoryUpdate = {
+      schemaVersion: PROJECT_MEMORY_UPDATE_SCHEMA_VERSION,
+      id: crypto.randomUUID(),
+      document: "architecture",
+      recordedAt,
+      taskId: singleLine("taskId", input.taskId),
+      title: singleLine("title", input.title),
+      content: requiredText("content", input.content),
+      rationale: singleLine("rationale", input.rationale),
+    };
+
+    await appendFile(this.memoryPath("architecture"), formatArchitectureUpdate(update), "utf8");
+
+    const reference: ProjectMemoryUpdateReference = {
+      id: update.id,
+      document: update.document,
+      recordedAt: update.recordedAt,
+      taskId: update.taskId,
+      rationale: update.rationale,
+    };
+    const next: ProjectMetadata = {
+      ...current,
+      updatedAt: new Date().toISOString(),
+      memoryUpdateCount: (current.memoryUpdateCount ?? 0) + 1,
+      lastMemoryUpdate: reference,
+    };
+    await writeFile(this.projectPath(), serialize(next), "utf8");
+    return update;
   }
 }
