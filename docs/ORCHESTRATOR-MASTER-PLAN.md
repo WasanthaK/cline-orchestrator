@@ -16,18 +16,22 @@ ChatGPT
 Planner / Architect / Reviewer
           |
           v
+Cline Orchestrator Plugin / MCP
+Task-level authority + safety preview
+          |
+          v
 Orchestrator
 Durable state + safety + supervision
           |
           v
-Cline
-Implementation agent
+Cline Hub
+Authoritative shared runtime
+       /       \
+      v         v
+VS Code Cline   Cline session
           |
           v
-VS Code workspace
-          |
-          v
-Tests / validation / Git safety
+Workspace / Git / validation
 ```
 
 The system should eventually support long-running and unattended coding work while preserving human control, reversible workspace changes, durable project memory, bounded model context, and evidence-based completion.
@@ -47,13 +51,13 @@ The system should eventually support long-running and unattended coding work whi
    ->
 4. Durable Project Memory
    ->
-5. Cline Hub / VS Code Integration
+5. ChatGPT Plugin / Cline Hub Shared Runtime
    ->
 6. GPT Supervisor
    ->
 7. Unattended Execution
    ->
-8. UI / MCP / Multi-worker
+8. Advanced UI / Multi-worker
 ```
 
 A milestone is complete only when its acceptance criteria are implemented, relevant automated tests exist, normal GitHub-hosted CI is green, required runtime behavior has evidence where appropriate, and this document records the result.
@@ -83,6 +87,12 @@ completed is persisted
 ```
 
 A hard diff-policy failure prevents `completed`.
+
+## Rule 5 — ChatGPT receives task authority, not machine authority
+
+The ChatGPT integration must expose project/workspace/task-level operations, not unrestricted shell/filesystem/Hub primitives. User-configured local project/workspace registration is the authority boundary. Raw paths supplied by ChatGPT, repository text, fuzzy name matching, and Hub participation cannot grant additional write authority.
+
+A write-capable task begins only after a user-visible Safety Preview and a server-verifiable bounded task envelope. Any scope expansion or high-risk action must fail closed into durable human escalation rather than being silently approved by another model or Hub client.
 
 ---
 
@@ -369,15 +379,26 @@ This complements the focused unit/integration coverage already present for proje
 
 ## Current Next Step
 
-Continue Milestone 5 technical research with **workspace/session identity and multi-client approval/tool-executor behavior at Cline `0.0.83`**. Do not change runtime ownership yet.
+Complete the final Milestone 5 technical-spike unit: **produce the migration design from orchestrator-owned `ClineCore` to a safe ChatGPT-plugin / Hub-backed runtime**, including the machine-local project/workspace registry, plan-token/Safety Preview boundary, orchestrator-owned session lifecycle, and a non-bypassable pre-execution policy gate. Do not implement live Hub write control yet.
 
 ---
 
-# Milestone 5 — Cline Hub / VS Code Shared Runtime
+# Milestone 5 — ChatGPT Plugin / Cline Hub Shared Runtime
 
 ## Objective
 
-Allow the orchestrator and the user's VS Code Cline UI to observe/control the same authoritative Cline session instead of maintaining separate hidden runtime ownership.
+Let the user invoke Cline Orchestrator from any ChatGPT conversation, with or without a ChatGPT Project, while keeping machine authority local. The user explicitly configures local projects/workspaces; ChatGPT receives task-level operations; the local orchestrator creates/controls a safety-bounded authoritative Cline Hub session that VS Code can observe or attach to without weakening the task policy.
+
+## UX / Safety Design Gate
+
+`docs/MILESTONE-5-CHATGPT-PLUGIN-UX-SAFETY.md` defines the required user experience and trust boundary:
+
+- ChatGPT uses a narrow plugin/MCP surface rather than raw shell, filesystem, or generic Hub commands;
+- local project/workspace registration is authoritative and independent of ChatGPT conversation/Project identity;
+- write tasks begin with a Safety Preview and immutable/server-verifiable plan token;
+- Hub credentials and tunnel credentials remain local and are never persisted in task/project memory or sent to ChatGPT;
+- scope expansion, commands with material side effects, protected paths, network side effects, Git push/deploy, migrations, and destructive actions fail closed into explicit human escalation;
+- MCP/ChatGPT confirmation UI is defense-in-depth, while the local orchestrator is the actual enforcement boundary.
 
 ## Confirmed Research
 
@@ -385,26 +406,37 @@ The pinned Cline generation is `0.0.83`. Discovery/authentication behavior for t
 
 The package/import boundary is also confirmed for `0.0.83`: `@cline/sdk` is the user-facing alias for `@cline/core`; the SDK root re-exports the Core root, and the Core root re-exports `./hub`. Therefore the orchestrator can import `NodeHubClient`, `HubSessionClient`, `HubUIClient`, `HubRuntimeHost`, discovery helpers, and related Hub types from the existing `@cline/sdk` root. A direct `@cline/core` dependency is **not required for the attach-only path** and should be added only if a future implementation deliberately imports a Core-only subpath such as `@cline/core/hub` or `@cline/core/hub/daemon-entry`.
 
-The session-control surface is now mapped. For a single-identity attach-only proof, one authenticated `NodeHubClient` should own `session.list`/`session.get`, raw `stream.subscribe`, explicit `session.attach`, `session.send_input`, `run.abort`, and `session.detach`. Cline's VS Code example subscribes before attaching. `run.abort` and `session.detach` are separate operations. `HubSessionClient` covers most convenience operations but does not expose `session.attach` and normalizes only a subset of events; `HubRuntimeHost` implements the higher-level `RuntimeHost` semantics and is the pinned reference for Core-style event normalization, but its private client means combining it with a second client only for attach would create two Hub identities.
+The session-control surface is mapped. One authenticated `NodeHubClient` identity can own `session.list`/`session.get`, raw `stream.subscribe`, explicit `session.attach`, `session.send_input`, `run.abort`, and `session.detach`. Cline's VS Code example subscribes before attaching. `run.abort` and `session.detach` are separate operations. `HubSessionClient` covers most convenience operations but does not expose `session.attach`; `HubRuntimeHost` is the pinned reference for Core-style event normalization.
+
+Workspace/session identity and multi-client ownership are now mapped in `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md`:
+
+- the user-configured machine-local registry owns opaque `project_id` / `workspace_id` mappings and canonical local roots; repository content and ChatGPT-supplied raw paths cannot self-authorize;
+- durable task resume must verify the persisted Hub session's `workspaceRoot` still canonicalizes to the registered workspace;
+- new ChatGPT write tasks should create a fresh **orchestrator-owned Hub session** by default; existing VS Code-created sessions are read-only/observational for the first pilot rather than silently inheriting unknown authority;
+- Hub attachment does not transfer creator/client-local capability ownership; client contribution/capability requests target the creator/owner client ID and wrong-client responses are rejected;
+- Hub tool approvals are broader: pending approvals are broadcast/replayed to session subscribers and `approval.respond` is not creator-targeted, so multiple clients can race to resolve the same approval;
+- therefore native Hub approval UI cannot be the security boundary. A non-bypassable orchestrator pre-execution policy gate is required before live shared-session writes are accepted.
 
 ## Technical Spike Acceptance Criteria
 
 - [x] Document Hub discovery and local authentication/token mechanism.
 - [x] Confirm exact imports at `0.0.83` and direct-dependency needs.
 - [x] Identify list/attach/send/abort/session-event APIs.
-- [ ] Determine workspace session identity and multi-client approval/tool-executor behavior.
-- [ ] Produce migration design from owned `ClineCore` to Hub-backed attachment.
+- [x] Determine workspace session identity and multi-client approval/tool-executor behavior.
+- [ ] Produce migration design from owned `ClineCore` to safe Hub-backed/plugin operation.
 
 ## Evidence
 
 - Hub discovery/authentication spike: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264`, workflow `35607213364`, success.
 - Hub import/dependency boundary: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268`, workflow `35609556979`, success. The corrected decision is to keep `package.json` unchanged with only `@cline/sdk: 0.0.83` for the attach-only path; do not rely on undeclared `@cline/core` subpath imports.
-- Hub session-control API map: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272`, workflow `35611491671`, success. The first adapter should keep one authenticated `NodeHubClient` identity for subscribe/attach/control and use `HubRuntimeHost` as the reference for normalization semantics rather than creating a second Hub client identity.
+- Hub session-control API map: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272`, workflow `35611491671`, success.
+- ChatGPT plugin UX/safety contract: `docs/MILESTONE-5-CHATGPT-PLUGIN-UX-SAFETY.md`, commit `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276`, workflow `35614305961`, success.
+- Workspace/session identity + multi-client safety: `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md`, commit `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278`, workflow `35618180127`, success.
 - Static upstream evidence was inspected at `cline/cline` tag `sdk/sdk/v0.0.83`; no Hub process, VS Code runtime, or shared Ollama runtime was mutated.
 
 ## Status
 
-**RESEARCH IN PROGRESS — implementation remains pending**
+**RESEARCH IN PROGRESS — one technical-spike criterion remains; implementation has not started**
 
 ---
 
@@ -447,12 +479,12 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 ---
 
-# Milestone 8 — UI, MCP, and Multi-worker
+# Milestone 8 — Advanced UI and Multi-worker
 
 ## Possible Scope
 
-- [ ] VS Code orchestration panel and web/dashboard view.
-- [ ] MCP server surface.
+- [ ] Rich VS Code orchestration panel and web/dashboard view beyond the Milestone 5 plugin UX.
+- [ ] Advanced MCP surfaces beyond the bounded task-level plugin gateway introduced in Milestone 5.
 - [ ] Sequential specialist roles and multiple workers when capacity permits.
 - [ ] Team-role handoffs and rich task/event/usage visualization.
 
@@ -492,7 +524,10 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Hub discovery/authentication research | **Documented + cloud tested** |
 | Hub import/dependency boundary | **Documented + cloud tested** |
 | Hub session-control API research | **Documented + cloud tested** |
-| Shared VS Code/Hub session | Research in progress |
+| ChatGPT plugin UX/safety contract | **Documented + cloud tested** |
+| User-configured project/workspace authority | **Documented + cloud tested** |
+| Hub workspace/session + multi-client safety | **Documented + cloud tested** |
+| Shared VS Code/Hub write session | Research in progress |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
 
@@ -509,9 +544,12 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction remains a future policy concern rather than a Milestone 4 blocker.
-10. **Hub authentication credential** — Cline's local discovery token is a runtime credential and must not be copied into orchestrator task state, project memory, handoffs, logs, or Git.
-11. **Hub package boundary** — use the public `@cline/sdk` root for the attach-only Hub adapter; if a Core-only subpath is intentionally adopted later, declare and version-pin `@cline/core` directly rather than relying on its transitive installation.
-12. **Hub client identity** — the first attach-only proof should use one authenticated `NodeHubClient` identity for event subscription, `session.attach`, send, abort, and detach. Avoid a second Hub client merely to bridge a convenience-wrapper gap until multi-client capability ownership is understood.
+10. **Hub authentication credential** — Cline's local discovery token is a runtime credential and must not be copied into orchestrator task state, project memory, handoffs, logs, Git, or ChatGPT/MCP results.
+11. **Hub package boundary** — use the public `@cline/sdk` root for the first Hub adapter; if a Core-only subpath is intentionally adopted later, declare and version-pin `@cline/core` directly rather than relying on its transitive installation.
+12. **Project/workspace authorization** — authorization must come from a user-configured machine-local registry outside repositories. A ChatGPT-supplied raw path, repository instruction, fuzzy name match, or ChatGPT Project name cannot grant write access.
+13. **Session capability ownership** — attaching to a Hub session does not transfer the creator's client-local tool/capability ownership. First-pilot ChatGPT write tasks should be orchestrator-created; third-party/VS Code-created sessions remain observational until a stronger migration design proves safe takeover.
+14. **Hub approval race** — `approval.requested` is broadcast/replayed to matching subscribers and is not a creator-targeted capability request. Native Hub approval responses are UX, not authorization. The orchestrator needs a non-bypassable pre-execution policy gate before shared-session writes.
+15. **Owner disconnect** — a disconnected capability-owner client loses live Hub ownership and pending targeted capability requests are cancelled. Recovery must use durable handoff/session replacement rather than assuming re-attach restored ownership.
 
 ---
 
@@ -519,14 +557,16 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Determine workspace/session identity and multi-client approval/tool-executor behavior at Cline `0.0.83`.**
-   - define how an orchestrator workspace selects the correct existing Hub session without relying on "newest session" heuristics;
-   - determine participant/creator semantics when VS Code and orchestrator are attached simultaneously;
-   - trace approval routing and client-owned tool/capability executor behavior so an observer/controller cannot accidentally steal runtime capabilities.
+1. **Produce the safe migration design from owned `ClineCore` to ChatGPT-plugin / Hub-backed operation.**
+   - specify the machine-local project/workspace registry and configuration UX;
+   - specify Safety Preview + plan-token validation and immutable task-envelope fields;
+   - define the Hub adapter/session lifecycle for orchestrator-created sessions, resume, owner loss, and VS Code observation;
+   - identify the non-bypassable pre-execution enforcement point for path, command, network, secret, Git, migration, and deployment policy;
+   - map existing `ClineRunner` start/send/abort/events/recovery semantics onto the new adapter without weakening Milestones 1–4.
 
-2. **Produce migration design** from owned `ClineCore` to Hub-backed attachment.
+2. **Implement the first bounded shared-Hub proof** only after the complete migration design is documented, reviewed, and cloud-CI green. The proof must not expose a public inbound port and must not mutate the shared Ollama runtime automatically.
 
-3. **Implement an attach-only shared Hub proof** only after the full technical spike is documented and reviewed.
+3. **Implement the narrow ChatGPT MCP/plugin gateway** only after the local runtime adapter and safety envelope have focused tests. Public tools remain task-level (`preview_task`, `start_task`, status/events, continue, abort, explicit escalation/rollback), not raw machine primitives.
 
 ---
 
@@ -719,6 +759,24 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: third Milestone 5 technical-spike criterion complete; runtime implementation remains pending.
 - Known limitation: workspace/session selection, participant/creator semantics, approval routing, client-owned tool/capability executors, and final migration design remain unresolved.
 - Next action: determine workspace/session identity and multi-client approval/tool-executor behavior for pinned Cline `0.0.83`.
+
+## 2026-09-21 — Milestone 5 ChatGPT plugin UX/safety contract documented
+
+- Change: added `docs/MILESTONE-5-CHATGPT-PLUGIN-UX-SAFETY.md` and moved the product target from a hidden local controller to a task-level ChatGPT plugin/MCP experience usable from ordinary chats or ChatGPT Projects.
+- Safety: defined Safety Preview + immutable plan token, task-level MCP tools only, local credential isolation, no raw shell/filesystem/Hub tools, durable human escalation, and no automatic push/deploy/destructive actions in the first pilot.
+- Evidence: commit `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276` / `35614305961` passed.
+- Milestone impact: establishes a mandatory design gate for all remaining Milestone 5 work; technical-spike implementation criteria remain unchanged.
+- Next action: resolve workspace/session identity and multi-client safety under this UX contract.
+
+## 2026-09-21 — Milestone 5 workspace/session identity and multi-client safety documented
+
+- Change: added `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md` defining a user-configured machine-local project/workspace authorization registry, opaque `project_id` / `workspace_id` write identity, deterministic session verification, and safe new-session defaults.
+- Research: pinned `0.0.83` confirms participants do not inherit creator-owned client capabilities; targeted capability responses enforce the owner client ID; owner disconnect cancels targeted capability requests; by contrast native tool approvals are broadcast/replayed to session subscribers and are not creator-targeted.
+- Decision: first-pilot ChatGPT write tasks create orchestrator-owned Hub sessions; existing VS Code-created sessions remain read-only/observational unless converted through a fresh Safety Preview + durable handoff. Native Hub approval UI is defense-in-depth only, not the security boundary.
+- Evidence: commit `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278` / `35618180127` passed.
+- Milestone impact: **workspace session identity and multi-client approval/tool-executor criterion complete**; one technical-spike criterion remains.
+- Known limitation: the exact migration/pre-execution enforcement architecture is not yet designed, so live shared-session writes remain intentionally blocked.
+- Next action: produce the safe migration design from owned `ClineCore` to ChatGPT-plugin / Hub-backed operation.
 
 ---
 
