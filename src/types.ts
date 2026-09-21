@@ -55,6 +55,26 @@ export interface RunGitState {
   after?: GitSnapshot;
 }
 
+export type ProviderPreflightCode =
+  | "ok"
+  | "unsupported_provider"
+  | "provider_unreachable"
+  | "model_not_found"
+  | "invalid_response";
+
+export interface ProviderPreflightResult {
+  checkedAt: string;
+  ok: boolean;
+  supported: boolean;
+  providerId: string;
+  modelId: string;
+  code: ProviderPreflightCode;
+  message: string;
+  endpoint?: string;
+  latencyMs?: number;
+  availableModels?: string[];
+}
+
 export type SessionRecoveryReason =
   | "session_not_found"
   | "missing_session_id"
@@ -126,6 +146,7 @@ export interface WorkerConfig {
   maxTokensPerTurn: number;
   reasoningEffort: ReasoningEffort;
   timeoutMs: number;
+  preflightTimeoutMs: number;
   maxIterations: number;
   stallTimeoutMs: number;
   maxRetries: number;
