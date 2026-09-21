@@ -4,8 +4,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ClineRunner } from "./cline-runner.js";
 import { preflightProvider } from "./provider-preflight.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
-import type { OrchestratorTask, ProviderPreflightResult, ValidationRun, WorkerConfig } from "./types.js";
-import { runValidationCommands } from "./validation.js";
+import type { OrchestratorTask, ProviderPreflightResult, WorkerConfig } from "./types.js";
+import {
+  buildValidationRepairPrompt,
+  runValidationCommands,
+  validationFailureMessage,
+} from "./validation.js";
 
 interface DaemonOptions {
   host: string;
@@ -88,16 +92,6 @@ function isTerminal(task: OrchestratorTask): boolean {
     task.status === "failed" ||
     task.status === "aborted"
   );
-}
-
-function validationFailureMessage(validation: ValidationRun): string {
-  const failed = validation.results.find(
-    (result) => result.aborted || result.timedOut || result.exitCode !== 0,
-  );
-  if (!failed) return "Validation did not complete all requested commands";
-  if (failed.aborted) return `Validation aborted while running: ${failed.command}`;
-  if (failed.timedOut) return `Validation timed out while running: ${failed.command}`;
-  return `Validation command failed with exit code ${failed.exitCode ?? "unknown"}: ${failed.command}`;
 }
 
 export async function startDaemon(
@@ -192,30 +186,35 @@ export async function startDaemon(
     task: OrchestratorTask,
     modelJob: () => Promise<OrchestratorTask>,
   ): Promise<OrchestratorTask> {
-    const result = await modelJob();
-    if (result.status !== "validating") return result;
+    let result = await modelJob();
 
-    const commands = result.validationCommands ?? [];
-    if (commands.length === 0) {
-      result.status = "completed";
-      result.finishReason = "completed";
-      await store.save(result);
-      return result;
-    }
+    while (result.status === "validating") {
+      const commands = result.validationCommands ?? [];
+      if (commands.length === 0) {
+        result.status = "completed";
+        result.finishReason = "completed";
+        await store.save(result);
+        return result;
+      }
 
-    const controller = new AbortController();
-    activeValidationTaskId = result.id;
-    activeValidationAbort = controller;
+      const controller = new AbortController();
+      activeValidationTaskId = result.id;
+      activeValidationAbort = controller;
 
-    try {
-      process.stdout.write(
-        `\n[orchestrator validation: ${commands.length} command(s); timeout=${worker.validationTimeoutMs}ms each]\n`,
-      );
-      const validation = await runValidationCommands(workspace, commands, {
-        timeoutMs: worker.validationTimeoutMs,
-        maxOutputChars: worker.maxValidationOutputChars,
-        signal: controller.signal,
-      });
+      let validation;
+      try {
+        process.stdout.write(
+          `\n[orchestrator validation: ${commands.length} command(s); timeout=${worker.validationTimeoutMs}ms each]\n`,
+        );
+        validation = await runValidationCommands(workspace, commands, {
+          timeoutMs: worker.validationTimeoutMs,
+          maxOutputChars: worker.maxValidationOutputChars,
+          signal: controller.signal,
+        });
+      } finally {
+        if (activeValidationTaskId === result.id) activeValidationTaskId = undefined;
+        if (activeValidationAbort === controller) activeValidationAbort = undefined;
+      }
 
       const latest = await store.load(result.id);
       if (latest.status === "aborted" || controller.signal.aborted) return latest;
@@ -228,18 +227,36 @@ export async function startDaemon(
         process.stdout.write(
           `\n[orchestrator validation passed: ${validation.commandsRun}/${validation.commandsRequested} commands]\n`,
         );
-      } else {
+        await store.save(latest);
+        return latest;
+      }
+
+      const failure = validationFailureMessage(validation);
+      const repairsUsed = latest.validationRepairCount ?? 0;
+      if (repairsUsed >= worker.maxValidationRepairs) {
         latest.status = "validation_failed";
         latest.finishReason = "validation_failed";
-        latest.error = validationFailureMessage(validation);
-        process.stdout.write(`\n[orchestrator validation failed: ${latest.error}]\n`);
+        latest.error = failure;
+        process.stdout.write(`\n[orchestrator validation failed: ${failure}]\n`);
+        await store.save(latest);
+        return latest;
       }
+
+      latest.validationRepairCount = repairsUsed + 1;
+      latest.status = "repairing";
+      latest.finishReason = undefined;
+      latest.error = failure;
       await store.save(latest);
-      return latest;
-    } finally {
-      if (activeValidationTaskId === result.id) activeValidationTaskId = undefined;
-      if (activeValidationAbort === controller) activeValidationAbort = undefined;
+
+      const repairPrompt = buildValidationRepairPrompt(latest, validation);
+      process.stdout.write(
+        `\n[orchestrator validation repair: ${latest.validationRepairCount}/${worker.maxValidationRepairs}]\n`,
+      );
+      result = await runner.resume(latest, repairPrompt);
+      if (result.status !== "validating") return result;
     }
+
+    return result;
   }
 
   function enqueue(taskId: string, label: string, job: () => Promise<unknown>) {
@@ -284,6 +301,7 @@ export async function startDaemon(
             preflightTimeoutMs: worker.preflightTimeoutMs,
             validationTimeoutMs: worker.validationTimeoutMs,
             maxValidationOutputChars: worker.maxValidationOutputChars,
+            maxValidationRepairs: worker.maxValidationRepairs,
             stallTimeoutMs: worker.stallTimeoutMs,
             maxRetries: worker.maxRetries,
             retryDelayMs: worker.retryDelayMs,
@@ -397,7 +415,8 @@ export async function startDaemon(
           task.status === "running" ||
           task.status === "waiting" ||
           task.status === "stalled" ||
-          task.status === "validating"
+          task.status === "validating" ||
+          task.status === "repairing"
         ) {
           json(res, 409, { error: `Task ${task.id} is already ${task.status}` });
           return;
@@ -413,6 +432,7 @@ export async function startDaemon(
         task.error = undefined;
         task.finishReason = undefined;
         task.lastValidation = undefined;
+        task.validationRepairCount = 0;
         if (acceptanceCriteria !== undefined) task.acceptanceCriteria = acceptanceCriteria;
         if (validationCommands !== undefined) task.validationCommands = validationCommands;
         await store.save(task);
