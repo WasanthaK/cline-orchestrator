@@ -259,7 +259,7 @@ Make project continuity independent of any particular model context or Cline ses
 - [x] Durable project metadata.
 - [x] Architecture memory.
 - [x] Decision log with rationale and date/task provenance.
-- [ ] Code map containing important modules/components only.
+- [x] Code map containing important modules/components only.
 - [ ] Conventions memory.
 - [ ] Known-issues memory.
 - [ ] Per-task structured summary.
@@ -298,12 +298,19 @@ Decision memory now uses the same append-only audit model. Each decision entry r
 
 Existing decision history is preserved. Project-level `memoryUpdateCount` spans architecture and decision updates together, and `lastMemoryUpdate` identifies the latest update regardless of document, keeping audit provenance coherent across memory types.
 
+## Code Map Memory
+
+Code-map memory now records one important module/component per append-only entry. Each update includes the component name, a concise responsibility, task/date/rationale provenance, and a bounded set of representative paths rather than a repository-wide inventory.
+
+The path list is deliberately constrained to 1–12 unique entries. Empty, duplicate, or over-broad path sets are rejected. Machine-readable provenance includes the component and representative paths, while project-level `memoryUpdateCount` and `lastMemoryUpdate` remain coherent across architecture, decisions, and code-map updates.
+
 ## Evidence
 
 - Project metadata/skeleton implementation: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198`, workflow `35579239935`, success.
 - Architecture memory implementation: commit `0344c16cc843428af4dbe4247b9156a222e2bdb9` (`feat: add auditable architecture memory updates`); CI `#202`, workflow `35585222049`, success.
 - Decision memory implementation: commit `3a43401c80e6ebe3df6dc33c337d307cbeb38cee` (`feat: add auditable decision memory updates`); CI `#206`, workflow `35586243241`, success.
-- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
+- Code-map memory implementation: commit `3e064115c187783ec9fb86a3a732fca136e02140` (`feat: add selective code map memory`); CI `#212`, workflow `35590998279`, success.
+- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, project-wide cross-document update counting, invalid-input rejection, and unsupported metadata schemas.
 - No self-hosted/Ollama runtime mutation was performed.
 
 ## Status
@@ -312,7 +319,7 @@ Existing decision history is preserved. Project-level `memoryUpdateCount` spans 
 
 ## Current Next Step
 
-Implement the next Milestone 4 unit: **selective code-map memory containing important modules/components only**, with explicit/auditable provenance and focused tests. Do not begin Hub/RPC work.
+Implement the next Milestone 4 unit: **conventions memory with explicit/auditable provenance and focused tests**, preserving the append-only memory model. Do not begin Hub/RPC work.
 
 ---
 
@@ -418,7 +425,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Cross-generation metrics/event evidence | Implemented + cloud tested |
 | Durable project metadata + memory skeleton | Implemented + cloud tested |
 | Architecture memory + provenance | Implemented + cloud tested |
-| Decision log + provenance | **Implemented + cloud tested** |
+| Decision log + provenance | Implemented + cloud tested |
+| Selective code map + provenance | **Implemented + cloud tested** |
 | Durable project memory content/retrieval | In progress |
 | Shared VS Code/Hub session | Research only |
 | GPT supervisor | Not started |
@@ -437,7 +445,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction belongs with project-memory policy.
-10. **Project memory remains partial** — architecture and decisions are durable/auditable, but code map, conventions, known issues, task summaries, and selective retrieval remain unfinished.
+10. **Project memory remains partial** — architecture, decisions, and selective code-map updates are durable/auditable, but conventions, known issues, task summaries, and selective retrieval remain unfinished.
 
 ---
 
@@ -445,14 +453,13 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Implement selective code-map memory**
-   - record important modules/components only;
-   - explicit purpose/responsibility plus task/date provenance;
+1. **Implement conventions memory**
+   - record durable implementation/project conventions only;
+   - explicit convention text plus task/date/rationale provenance;
    - append-only auditable updates;
-   - focused tests that discourage indiscriminate file cataloguing.
+   - focused validation/update tests.
 
 2. **Extend the memory model selectively**
-   - conventions;
    - known issues;
    - selective retrieval without dumping all memory into every prompt.
 
@@ -541,6 +548,17 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Decision log criterion complete**; Milestone 4 remains in progress.
 - Known limitation: code map, conventions, known issues, task summaries, and selective retrieval remain unfinished.
 - Next action: implement selective code-map memory containing important modules/components only. Hub/RPC remains deferred.
+
+## 2026-09-21 — Milestone 4 selective code map implemented
+
+- Change: added append-only code-map updates for one important module/component at a time, with concise responsibility plus task/date/rationale provenance.
+- Change: representative path lists are deliberately bounded to 1–12 unique paths; empty, duplicate, and over-broad path sets are rejected to prevent indiscriminate repository cataloguing.
+- Change: code-map provenance participates in the same project-wide `memoryUpdateCount` and `lastMemoryUpdate` audit trail as architecture and decision memory.
+- Tests: existing code-map content preservation, explicit component/responsibility/path provenance, bounded/unique path validation, invalid timestamp/responsibility rejection, and three-document audit-count coherence.
+- Evidence: commit `3e064115c187783ec9fb86a3a732fca136e02140`; CI `#212` / `35590998279` passed.
+- Milestone impact: **Code map criterion complete**; Milestone 4 remains in progress.
+- Known limitation: conventions, known issues, task summaries, handoff/project-memory integration, and selective retrieval remain unfinished.
+- Next action: implement conventions memory with explicit/auditable provenance and focused tests. Hub/RPC remains deferred.
 
 ---
 
