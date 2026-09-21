@@ -369,7 +369,7 @@ This complements the focused unit/integration coverage already present for proje
 
 ## Current Next Step
 
-Begin Milestone 5 with the **Cline Hub / VS Code technical spike only**: document Hub discovery and local authentication/token behavior for the pinned Cline `0.0.83` surface before making any runtime-ownership changes.
+Continue Milestone 5 technical research with the **exact supported Hub imports at Cline `0.0.83` and whether `@cline/core` must be declared as a direct dependency**. Do not change runtime ownership yet.
 
 ---
 
@@ -381,25 +381,24 @@ Allow the orchestrator and the user's VS Code Cline UI to observe/control the sa
 
 ## Confirmed Research
 
-The pinned Cline generation is `0.0.83`. Research shows Hub-related architecture through `@cline/core/hub`, including `NodeHubClient`, `HubSessionClient`, `HubUIClient`, and `connectToHub`. This remains research only.
+The pinned Cline generation is `0.0.83`. Research shows Hub-related architecture through `@cline/core/hub`, including `NodeHubClient`, `HubSessionClient`, `HubUIClient`, and `connectToHub`. Discovery/authentication behavior for the pinned release is documented in `docs/MILESTONE-5-HUB-SPIKE.md`: managed discovery records carry a random local auth token; native WebSocket clients use the `cline-hub-auth.<token>` subprotocol; authenticated HTTP control endpoints use Bearer auth; the orchestrator must consume Cline's managed discovery credential rather than persist a second token.
 
 ## Technical Spike Acceptance Criteria
 
-- [ ] Document Hub discovery and local authentication/token mechanism.
+- [x] Document Hub discovery and local authentication/token mechanism.
 - [ ] Confirm exact imports at `0.0.83` and direct-dependency needs.
 - [ ] Identify list/attach/send/abort/session-event APIs.
 - [ ] Determine workspace session identity and multi-client approval/tool-executor behavior.
 - [ ] Produce migration design from owned `ClineCore` to Hub-backed attachment.
 
-## Implementation Acceptance Criteria
+## Evidence
 
-- [ ] Attach orchestrator to shared Hub runtime.
-- [ ] Preserve task/session mapping, watchdog, abort, usage/events, validation, and Git safety semantics.
-- [ ] Confirm VS Code and orchestrator can observe the same authoritative session.
+- Hub discovery/authentication spike: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264`, workflow `35607213364`, success.
+- Static upstream evidence was inspected at `cline/cline` tag `sdk/sdk/v0.0.83`; no Hub process, VS Code runtime, or shared Ollama runtime was mutated.
 
 ## Status
 
-**RESEARCH ONLY — technical spike is now unblocked; implementation remains pending**
+**RESEARCH IN PROGRESS — implementation remains pending**
 
 ---
 
@@ -484,7 +483,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Selective project-memory retrieval | Implemented + cloud tested |
 | Project-memory audit verification | Implemented + cloud tested |
 | Durable project memory content/retrieval | **Complete / proven** |
-| Shared VS Code/Hub session | Research only |
+| Hub discovery/authentication research | **Documented + cloud tested** |
+| Shared VS Code/Hub session | Research in progress |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
 
@@ -501,7 +501,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
 8. **Event/state persistence** — currently lightweight JSON/JSONL.
 9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction remains a future policy concern rather than a Milestone 4 blocker.
-10. **Project memory** — Milestone 4 durability, provenance, bounded selection, handoff integration, audit verification, and composed serialization/update/selection coverage are complete.
+10. **Hub authentication credential** — Cline's local discovery token is a runtime credential and must not be copied into orchestrator task state, project memory, handoffs, logs, or Git.
 
 ---
 
@@ -509,14 +509,18 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Perform Milestone 5 Hub/RPC technical spike**
-   - document Hub discovery and local authentication/token mechanism for pinned Cline `0.0.83`;
-   - confirm exact imports and direct-dependency needs;
-   - identify list/attach/send/abort/session-event APIs;
-   - determine workspace session identity and multi-client approval/tool-executor behavior;
-   - produce migration design before implementation.
+1. **Confirm exact Hub imports and direct-dependency requirements at Cline `0.0.83`**
+   - identify which Hub types/helpers are exported only from `@cline/core/hub` versus the `@cline/sdk` root alias;
+   - determine whether `@cline/core` must be a declared direct dependency rather than relying on `@cline/sdk`'s transitive dependency;
+   - document the supported import surface without changing runtime ownership.
 
-2. **Implement shared Hub runtime attachment** only after the technical spike is documented and reviewed.
+2. **Identify Hub session-control APIs** for list/attach/send/abort/events.
+
+3. **Determine workspace/session identity and multi-client approval/tool-executor behavior.**
+
+4. **Produce migration design** from owned `ClineCore` to Hub-backed attachment.
+
+5. **Implement shared Hub runtime attachment** only after the full technical spike is documented and reviewed.
 
 ---
 
@@ -680,6 +684,15 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Milestone 4 COMPLETE** — all durable project-memory acceptance criteria are now implemented and cloud-tested.
 - Known limitation: no Hub/RPC runtime ownership change has been attempted; that belongs to Milestone 5.
 - Next action: begin the Milestone 5 Hub/RPC technical spike with Hub discovery/authentication documentation for pinned Cline `0.0.83` only.
+
+## 2026-09-21 — Milestone 5 Hub discovery/authentication documented
+
+- Change: added `docs/MILESTONE-5-HUB-SPIKE.md` with pinned `0.0.83` discovery ownership, endpoint overrides, discovery-record publication, token generation, native WebSocket auth, HTTP Bearer-auth endpoints, and local-browser exception semantics.
+- Research: verified that managed discovery publishes a 32-byte random token, native clients use the `cline-hub-auth.<token>` subprotocol, `/status`/`/drain`/`/shutdown` require Bearer auth, and the orchestrator should consume Cline's credential without persisting a second copy.
+- Evidence: commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264` / `35607213364` passed.
+- Milestone impact: first Milestone 5 technical-spike criterion complete; runtime implementation has not started.
+- Known limitation: exact imports/direct-dependency requirements, session-control APIs, multi-client ownership semantics, and migration design remain unresolved.
+- Next action: confirm exact Hub imports and direct-dependency requirements for Cline `0.0.83`.
 
 ---
 
