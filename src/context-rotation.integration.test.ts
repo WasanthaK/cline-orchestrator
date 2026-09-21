@@ -150,6 +150,32 @@ test("multiple planned context rotations are bounded and preserve distinct hando
       assert.match(fake.prompts[1]?.prompt ?? "", /"targetGeneration": 2/);
       assert.match(fake.prompts[2]?.prompt ?? "", /"targetGeneration": 3/);
 
+      const metrics = completed.lastRunMetrics;
+      assert.ok(metrics);
+      assert.equal(metrics.attempts, 3);
+      assert.equal(metrics.retries, 0);
+      assert.equal(metrics.stalls, 0);
+      assert.equal(metrics.iterations, 3);
+      assert.equal(metrics.toolCalls, 3);
+      assert.equal(metrics.totalInputTokens, 360);
+      assert.equal(metrics.totalOutputTokens, 30);
+      assert.deepEqual(
+        metrics.turns.map((turn) => ({
+          attempt: turn.attempt,
+          iteration: turn.iteration,
+          toolCalls: turn.toolCalls,
+          inputTokens: turn.inputTokens,
+          outputTokens: turn.outputTokens,
+        })),
+        [
+          { attempt: 1, iteration: 1, toolCalls: 1, inputTokens: 120, outputTokens: 10 },
+          { attempt: 2, iteration: 2, toolCalls: 1, inputTokens: 120, outputTokens: 10 },
+          { attempt: 3, iteration: 3, toolCalls: 1, inputTokens: 120, outputTokens: 10 },
+        ],
+      );
+      assert.equal(completed.retryCount ?? 0, 0);
+      assert.equal(completed.stallCount ?? 0, 0);
+
       const events = await store.events(value.id);
       const rotationEvents = events.filter((event) => event.type === "context_rotating");
       const handoffEvents = events.filter((event) => event.type === "context_handoff_created");
@@ -159,14 +185,33 @@ test("multiple planned context rotations are bounded and preserve distinct hando
       assert.equal(handoffEvents.length, 2);
       assert.equal(recoveredEvents.length, 2);
       assert.deepEqual(
-        handoffEvents.map((event) => event.data?.targetGeneration),
-        [2, 3],
+        rotationEvents.map((event) => event.data?.runRotationCount),
+        [1, 2],
       );
       assert.deepEqual(
-        recoveredEvents.map((event) => event.data?.generation),
-        [2, 3],
+        handoffEvents.map((event) => ({
+          reason: event.data?.reason,
+          sourceGeneration: event.data?.sourceGeneration,
+          targetGeneration: event.data?.targetGeneration,
+        })),
+        [
+          { reason: "context_threshold", sourceGeneration: 1, targetGeneration: 2 },
+          { reason: "context_threshold", sourceGeneration: 2, targetGeneration: 3 },
+        ],
+      );
+      assert.deepEqual(
+        recoveredEvents.map((event) => ({
+          reason: event.data?.reason,
+          generation: event.data?.generation,
+        })),
+        [
+          { reason: "context_threshold", generation: 2 },
+          { reason: "context_threshold", generation: 3 },
+        ],
       );
       assert.equal(new Set(handoffEvents.map((event) => event.data?.handoffId)).size, 2);
+      assert.equal(events.some((event) => event.type === "stalled"), false);
+      assert.equal(events.some((event) => event.type === "retrying"), false);
     } finally {
       (ClineCore as any).create = originalCreate;
     }
