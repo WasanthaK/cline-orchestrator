@@ -7,6 +7,10 @@ import {
   type ProjectMetadata,
   type ProjectMemoryUpdateReference,
 } from "./project-memory.js";
+import {
+  selectProjectMemory,
+  type ProjectMemorySelection,
+} from "./project-memory-selection.js";
 import { TaskSummaryStore, type TaskStructuredSummary } from "./task-summary.js";
 import type {
   ContextHandoffArtifact,
@@ -35,6 +39,7 @@ export interface ContextHandoffProjectMemoryEvidence {
 export interface ContextHandoffDurableMemoryContext {
   taskSummary: TaskStructuredSummary;
   project: ContextHandoffProjectMemoryEvidence;
+  selection?: ProjectMemorySelection;
 }
 
 export type ContextHandoffArtifactWithMemory = ContextHandoffArtifact & {
@@ -98,12 +103,26 @@ function boundedLastMemoryUpdate(
   };
 }
 
+function memorySelectionQuery(task: OrchestratorTask, pendingAction: string): string {
+  return [
+    task.goal,
+    pendingAction,
+    ...(task.acceptanceCriteria ?? []),
+    ...(task.expectedChangedPaths ?? []),
+  ].join("\n");
+}
+
 async function createDurableMemoryContext(
   workspace: string,
   task: OrchestratorTask,
+  pendingAction: string,
 ): Promise<ContextHandoffDurableMemoryContext> {
   const project = await new ProjectMemoryStore(workspace).ensure();
   const taskSummary = await new TaskSummaryStore(workspace).record(task);
+  const selection = await selectProjectMemory(workspace, {
+    query: memorySelectionQuery(task, pendingAction),
+    taskId: task.id,
+  });
   return {
     taskSummary,
     project: {
@@ -115,6 +134,7 @@ async function createDurableMemoryContext(
       memoryUpdateCount: project.memoryUpdateCount ?? 0,
       lastMemoryUpdate: boundedLastMemoryUpdate(project.lastMemoryUpdate),
     },
+    selection,
   };
 }
 
@@ -128,7 +148,7 @@ export async function createContextHandoff(
   const sourceGeneration = task.sessionGeneration ?? (input.sourceSessionId ? 1 : 0);
   const targetGeneration = input.targetGeneration ?? sourceGeneration + 1;
   const git = await captureGitSnapshot(workspace);
-  const durableMemory = await createDurableMemoryContext(workspace, task);
+  const durableMemory = await createDurableMemoryContext(workspace, task, input.pendingAction);
 
   const checkpoint = task.lastRunCheckpoint
     ? {
