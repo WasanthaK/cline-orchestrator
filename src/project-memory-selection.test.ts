@@ -58,6 +58,8 @@ test("selective retrieval returns relevant auditable entries and excludes unrela
     assert.equal(selection.schemaVersion, 1);
     assert.ok(selection.queryTerms.includes("context"));
     assert.ok(selection.queryTerms.includes("rotation"));
+    assert.ok(!selection.queryTerms.includes("memory"));
+    assert.ok(!selection.queryTerms.includes("durable"));
     assert.ok(selection.totalCandidates >= 3);
     assert.ok(selection.entries.some((entry) => entry.id === architecture.id));
     assert.ok(selection.entries.some((entry) => entry.id === convention.id));
@@ -167,11 +169,11 @@ test("context handoff receives only selected bounded memory and omits irrelevant
     });
     await store.appendKnownIssueUpdate({
       taskId: "unrelated-domain",
-      title: "Unrelated billing issue",
+      title: "Quarterly invoice reconciliation gap",
       status: "open",
-      impact: "IRRELEVANT_MEMORY_SENTINEL must never appear in the context-recovery prompt.",
-      description: "Finance reconciliation is unrelated to context handoff retrieval.",
-      rationale: "Exercise exclusion of irrelevant memory.",
+      impact: "IRRELEVANT_MEMORY_SENTINEL affects the finance close calendar.",
+      description: "Supplier invoice totals require an accounting review before quarter end.",
+      rationale: "Track a separate finance-domain operational risk.",
       recordedAt: "2026-09-21T13:21:00.000Z",
     });
 
