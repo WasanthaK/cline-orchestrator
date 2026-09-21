@@ -2,6 +2,12 @@ import crypto from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { captureGitSnapshot } from "./git-state.js";
+import {
+  ProjectMemoryStore,
+  type ProjectMetadata,
+  type ProjectMemoryUpdateReference,
+} from "./project-memory.js";
+import { TaskSummaryStore, type TaskStructuredSummary } from "./task-summary.js";
 import type {
   ContextHandoffArtifact,
   ContextHandoffReference,
@@ -14,6 +20,26 @@ const MAX_RECENT_OUTPUT_CHARS = 12000;
 const MAX_PROMPT_GOAL_CHARS = 6000;
 const MAX_PROMPT_PENDING_ACTION_CHARS = 6000;
 const MAX_PROMPT_STATUS_LINES = 50;
+const MAX_PROJECT_MEMORY_RATIONALE_CHARS = 1000;
+
+export interface ContextHandoffProjectMemoryEvidence {
+  schemaVersion: ProjectMetadata["schemaVersion"];
+  projectId: string;
+  updatedAt: string;
+  memorySchemaVersion: ProjectMetadata["memorySchemaVersion"];
+  memoryFiles: ProjectMetadata["memoryFiles"];
+  memoryUpdateCount: number;
+  lastMemoryUpdate?: ProjectMemoryUpdateReference;
+}
+
+export interface ContextHandoffDurableMemoryContext {
+  taskSummary: TaskStructuredSummary;
+  project: ContextHandoffProjectMemoryEvidence;
+}
+
+export type ContextHandoffArtifactWithMemory = ContextHandoffArtifact & {
+  durableMemory?: ContextHandoffDurableMemoryContext;
+};
 
 export interface CreateContextHandoffInput {
   reason: SessionRecoveryReason;
@@ -25,7 +51,7 @@ export interface CreateContextHandoffInput {
 }
 
 export interface CreatedContextHandoff {
-  artifact: ContextHandoffArtifact;
+  artifact: ContextHandoffArtifactWithMemory;
   reference: ContextHandoffReference;
 }
 
@@ -61,6 +87,37 @@ function reasonDescription(reason: SessionRecoveryReason, task: OrchestratorTask
   return "The previously recorded Cline runtime session was not available, so a replacement session was created.";
 }
 
+function boundedLastMemoryUpdate(
+  value: ProjectMemoryUpdateReference | undefined,
+): ProjectMemoryUpdateReference | undefined {
+  if (!value) return undefined;
+  return {
+    ...value,
+    rationale:
+      clipHead(value.rationale, MAX_PROJECT_MEMORY_RATIONALE_CHARS) ?? value.rationale,
+  };
+}
+
+async function createDurableMemoryContext(
+  workspace: string,
+  task: OrchestratorTask,
+): Promise<ContextHandoffDurableMemoryContext> {
+  const project = await new ProjectMemoryStore(workspace).ensure();
+  const taskSummary = await new TaskSummaryStore(workspace).record(task);
+  return {
+    taskSummary,
+    project: {
+      schemaVersion: project.schemaVersion,
+      projectId: project.projectId,
+      updatedAt: project.updatedAt,
+      memorySchemaVersion: project.memorySchemaVersion,
+      memoryFiles: project.memoryFiles,
+      memoryUpdateCount: project.memoryUpdateCount ?? 0,
+      lastMemoryUpdate: boundedLastMemoryUpdate(project.lastMemoryUpdate),
+    },
+  };
+}
+
 export async function createContextHandoff(
   workspace: string,
   task: OrchestratorTask,
@@ -71,6 +128,7 @@ export async function createContextHandoff(
   const sourceGeneration = task.sessionGeneration ?? (input.sourceSessionId ? 1 : 0);
   const targetGeneration = input.targetGeneration ?? sourceGeneration + 1;
   const git = await captureGitSnapshot(workspace);
+  const durableMemory = await createDurableMemoryContext(workspace, task);
 
   const checkpoint = task.lastRunCheckpoint
     ? {
@@ -115,7 +173,7 @@ export async function createContextHandoff(
       }
     : undefined;
 
-  const artifact: ContextHandoffArtifact = {
+  const artifact: ContextHandoffArtifactWithMemory = {
     schemaVersion: 1,
     id,
     createdAt,
@@ -149,6 +207,7 @@ export async function createContextHandoff(
       lastDiffSafety,
       runMetrics,
     },
+    durableMemory,
     supportingContext: {
       previousPrompt: clipHead(input.previousPrompt, MAX_PREVIOUS_PROMPT_CHARS),
       recentWorkerOutput: clipTail(input.recentWorkerOutput, MAX_RECENT_OUTPUT_CHARS),
@@ -179,18 +238,18 @@ export async function createContextHandoff(
 export async function loadContextHandoff(
   workspace: string,
   reference: ContextHandoffReference,
-): Promise<ContextHandoffArtifact> {
+): Promise<ContextHandoffArtifactWithMemory> {
   const handoffRoot = path.resolve(workspace, ".orchestrator", "handoffs");
   const absolutePath = path.resolve(workspace, ...reference.relativePath.split("/"));
   const relative = path.relative(handoffRoot, absolutePath);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error(`Context handoff path escapes handoff root: ${reference.relativePath}`);
   }
-  return JSON.parse(await readFile(absolutePath, "utf8")) as ContextHandoffArtifact;
+  return JSON.parse(await readFile(absolutePath, "utf8")) as ContextHandoffArtifactWithMemory;
 }
 
 export function buildContextHandoffPrompt(
-  handoff: ContextHandoffArtifact,
+  handoff: ContextHandoffArtifactWithMemory,
   reference: ContextHandoffReference,
 ): string {
   const git = handoff.workspaceEvidence.git;
@@ -229,6 +288,7 @@ export function buildContextHandoffPrompt(
     pendingAction: clipHead(handoff.pendingAction, MAX_PROMPT_PENDING_ACTION_CHARS),
     taskState: handoff.taskState,
     workspaceEvidence: promptEvidence,
+    durableMemory: handoff.durableMemory,
     supportingContext: handoff.supportingContext,
   };
 
