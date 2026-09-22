@@ -216,7 +216,7 @@ Documented/proven design:
 - [x] Hub-backed runtime factory preserves the existing `ClineRunner` lifecycle contract and revalidates persisted Hub session workspace identity before resume.
 - [x] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
 - [x] Cloud tests cover registry/plan replay/staleness, path safety, patch all-or-nothing behavior, disabled surfaces, Hub contribution wiring/failure boundaries, workspace identity, Hub `session_not_found` recovery, MCP authority boundaries/authentication, active-task polling, and existing lifecycle safety regressions.
-- [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating shared Ollama. **Deferred by explicit user decision until the remaining build milestones are complete.**
+- [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating shared Ollama. **Physical proof started by explicit user action on 2026-09-22 and remains IN PROGRESS after a Windows MCP startup prerequisite defect was found and fixed.**
 
 ## Unit 1 — Registry + Safety Preview / Plan-token Boundary
 
@@ -275,7 +275,7 @@ Evidence: runtime seam `1152c58ba2422d755072b480128c8def4c37a324`; shared enforc
 
 ## Unit 4 — Machine-level ChatGPT MCP / Plugin Gateway
 
-**COMPLETE — cloud/fake-runtime proof only; no live shared runtime mutation.**
+**COMPLETE — cloud/fake-runtime proof complete; physical proof now in progress.**
 
 Implemented:
 
@@ -309,7 +309,8 @@ Implemented:
 - ephemeral loopback HTTP proof asserts unauthenticated `401`, wrong-path `404`, and authenticated modern MCP `tools/list` success;
 - modern MCP test requests carry the required current protocol metadata/method header rather than weakening server validation;
 - active status polling remains valid across concurrent task saves after atomic persistence correction;
-- all existing lifecycle, Git safety, validation, context/recovery, memory and Unit 1–3 tests remain green.
+- all existing lifecycle, Git safety, validation, context/recovery, memory and Unit 1–3 tests remain green;
+- direct-entry regression tests now cover valid Windows `file:///C:/...` URLs, encoded Windows paths with spaces, mismatched modules, and POSIX entry paths.
 
 ### Unit 4 evidence
 
@@ -322,12 +323,14 @@ Implemented:
 - Atomic task-state persistence prerequisite fix: `ee47237d6ca7e1571f064923c909fdfe9bc07e65`.
 - Initial Unit 4 CI exposed two test-client `400` responses because the hand-written client omitted required modern MCP request metadata; this was corrected without adding a production compatibility bypass.
 - The next CI exposed a real active-polling race in direct task JSON overwrite (`Unexpected end of JSON input`); task saves were changed to atomic replacement rather than masking the defect with read retries.
-- Accepted implementation CI: push `#351` / `35726113138`, success; PR `#352` / `35726117694`, success. Typecheck and all 115 tests passed.
-- No live Cline Hub, VS Code, Ollama, shared workspace, public tunnel, deployment target, push, or external-system runtime mutation was performed.
+- Accepted Unit 4 implementation CI: push `#351` / `35726113138`, success; PR `#352` / `35726117694`, success. Typecheck and all 115 tests passed.
+- 2026-09-22 authorized disposable Windows physical proof exposed a prerequisite production-entrypoint defect: `npm run mcp` launched `tsx src/mcp-main.ts` but emitted no listener banner and port `4318` had no listener. Root cause was manual `file://` construction producing Windows-incompatible entrypoint comparison semantics.
+- Windows-safe direct-entry fix: `b56a34d0605ff29fe3a7a1b5fdeb4c6b64b8c663`; regression tests: `0f3741eb3c231696bb2cf909be3b948a71125005`; accepted CI push `#365` / `35739170423` and PR `#366` / `35739177913`, both success with typecheck + full tests.
+- Physical proof has not yet progressed beyond gateway startup because the startup defect was fixed in cloud first; remaining live acceptance points are still pending.
 
 ## Milestone 5 Status
 
-**IMPLEMENTATION COMPLETE / RUNTIME PROOF DEFERRED — Units 1–4 and all cloud/fake-runtime proof are complete. By explicit user decision on 2026-09-22, the isolated live shared-runtime proof is deferred until the remaining build milestones are complete. It remains a required final proof and is not marked passed.**
+**IMPLEMENTATION COMPLETE / RUNTIME PROOF IN PROGRESS — Units 1–4 and cloud/fake-runtime proof are complete. The user explicitly resumed the disposable live proof on 2026-09-22. The first physical attempt found a Windows MCP entrypoint defect, which is now fixed and cloud-tested; the live proof itself remains incomplete and must resume from gateway startup verification.**
 
 ---
 
@@ -372,7 +375,7 @@ Evidence:
 
 ## Status
 
-**IN PROGRESS — Slice 1 complete; planner contract is next.**
+**IN PROGRESS — Slice 1 complete; Slice 2 is queued behind the resumed Milestone 5 physical proof.**
 
 ---
 
@@ -434,7 +437,8 @@ Evidence:
 | Loopback MCP bearer/Host/Origin boundary | Implemented + cloud tested |
 | Sanitized MCP task/event/diff views | Implemented + cloud tested |
 | Atomic task-state persistence for active polling | Implemented + cloud tested |
-| Live shared VS Code/Hub write proof | **Deferred by user until build completion; still pending** |
+| Windows MCP direct-entry startup | **Fixed + cloud regression tested** |
+| Live shared VS Code/Hub write proof | **In progress; gateway startup must be re-verified, remaining proof pending** |
 | Supervisor task schema + bounded implementation instructions | **Implemented + cloud tested** |
 | Supervisor planner | Not started |
 | Supervisor reviewer | Not started |
@@ -459,7 +463,7 @@ Evidence:
 13. Owner disconnect cancels creator-targeted live capabilities; recovery must use durable handoff/replacement ownership.
 14. Arbitrary model shell, ungoverned network/MCP/plugin execution, subagents/teams, and unreviewed provider-owned execution remain disabled in the first pilot.
 15. Safety Preview matching is not the filesystem gate; Unit 2/3 executor enforcement remains authoritative immediately before side effects.
-16. Unit 3/4 prove the local/Hub/MCP contract using pinned-source analysis, fake/mock Hub behavior and ephemeral loopback protocol tests. Actual shared Hub/VS Code visibility, real owner disconnect, and live enforcement remain intentionally unproven until the deferred disposable-workspace proof.
+16. Unit 3/4 prove the local/Hub/MCP contract using pinned-source analysis, fake/mock Hub behavior and ephemeral loopback protocol tests. The live proof has now started, but shared Hub/VS Code visibility, real owner disconnect, and the remaining enforcement/rollback acceptance points are still unproven until the disposable-workspace proof completes.
 17. The MCP listener is intentionally loopback-only; remote ChatGPT connectivity requires a separately managed secure tunnel and must not weaken the local bearer/task authority boundary.
 18. The Milestone 6 supervisor contract is an instruction/evidence envelope only. It cannot grant scope, execute validation commands, bypass Unit 2/3 policy, or convert repository/model prose into authority.
 
@@ -467,19 +471,21 @@ Evidence:
 
 # Immediate Work Queue
 
-Only work on the first unfinished implementation item unless a prerequisite defect is discovered. The deferred Milestone 5 live proof returns before final project closure.
+Only work on the first unfinished implementation item unless a prerequisite defect is discovered. The user has explicitly resumed the previously deferred Milestone 5 live proof, so it is now the active item.
 
 1. **COMPLETE — machine-local registry + Safety Preview / plan-token boundary.**
 2. **COMPLETE — pre-execution policy + local safe executor boundary.**
 3. **COMPLETE — Hub-backed Cline runtime adapter/factory + owner-targeted safety wiring (mock/fake Hub proof).**
 4. **COMPLETE — machine-level ChatGPT MCP/plugin gateway.**
-5. **DEFERRED BY EXPLICIT USER DECISION UNTIL THE REMAINING BUILD IS COMPLETE — isolated shared-runtime proof.**
-   - use a disposable registered workspace only;
-   - prove VS Code/Hub visibility, allowed edit, out-of-scope escalation, secret denial, shell unavailable, owner/policy loss fail-closed, external validation/diff safety and rollback;
-   - do not stop/restart/pre-warm/switch Ollama or mutate unrelated shared VS Code/Cline sessions;
-   - return to this proof before final project closure.
+5. **IN PROGRESS — isolated shared-runtime proof resumed by explicit user action on 2026-09-22.**
+   - disposable registered workspace created and registered;
+   - shared Ollama left running unchanged;
+   - first gateway startup attempt exposed a Windows entrypoint defect before any model task was launched;
+   - Windows entrypoint defect fixed and cloud-regression-tested;
+   - next resume point is local `npm run mcp` listener/port verification, then VS Code/Hub visibility, allowed edit, out-of-scope escalation, secret denial, shell unavailable, owner/policy loss fail-closed, external validation/diff safety and rollback;
+   - do not stop/restart/pre-warm/switch Ollama or mutate unrelated shared VS Code/Cline sessions.
 6. **COMPLETE — Milestone 6 Slice 1: supervisor task schema + bounded implementation instructions.**
-7. **NEXT — Milestone 6 Slice 2: planner produces bounded acceptance criteria + proposed validation commands.**
+7. **QUEUED AFTER THE RESUMED LIVE PROOF — Milestone 6 Slice 2: planner produces bounded acceptance criteria + proposed validation commands.**
    - planner output must remain subordinate to the durable Safety Plan envelope;
    - proposed validation commands are data until explicitly admitted into trusted external validation configuration;
    - planner cannot widen paths, change worker/policy identity, grant shell/network/MCP/plugin authority, or mark the task complete;
@@ -497,14 +503,15 @@ Only work on the first unfinished implementation item unless a prerequisite defe
 - 2026-09-22: Unit 2 local pre-execution boundary closed through `46da20d18cd703018c54207258d4fb2422e71eeb`, CI push `#311` / `35699517817`, PR `#312` / `35699521432`.
 - 2026-09-22: Unit 3 Hub runtime/safety wiring implemented through `32c057d30bc70533233477e87f7e01ec09b2e04a`; accepted CI push `#329` / `35723407897` and PR `#330` / `35723411583`, both success. No live shared runtime was touched.
 - 2026-09-22: Unit 4 machine MCP/plugin gateway implemented through `ee47237d6ca7e1571f064923c909fdfe9bc07e65`; accepted CI push `#351` / `35726113138` and PR `#352` / `35726117694`, both success with typecheck + 115 tests. The implementation added task-level MCP authority, loopback bearer/Host/Origin protection, sanitized result views, immutable-envelope continuation/escalation/rollback semantics, and atomic task-state persistence for concurrent polling. No live shared runtime was touched.
-- 2026-09-22: User explicitly deferred the Milestone 5 live shared-runtime proof until the remaining build milestones are complete; the proof remains pending and must be returned to before final project closure.
+- 2026-09-22: User explicitly deferred the Milestone 5 live shared-runtime proof until the remaining build milestones were complete; the proof remained pending at that point.
 - 2026-09-22: Milestone 6 Slice 1 supervisor task contract implemented through `d8a064aa0ec6328c69c390e577fb4637af7509f9`; accepted CI push `#359` / `35729389950` and PR `#360` / `35729394317`, both success with typecheck + 120 tests. The slice binds supervisor instructions to existing durable Safety Plan authority, bounds all model-facing content, keeps validation external, and adds no new machine authority.
+- 2026-09-22: User explicitly resumed the Milestone 5 physical proof using disposable workspace `orchestrator-live-proof-01`. Before any model task was launched, Windows `npm run mcp` exited without opening port `4318`; root cause was the manual direct-entry file-URL comparison in `src/mcp-main.ts`. Fix `b56a34d0605ff29fe3a7a1b5fdeb4c6b64b8c663` plus regression tests `0f3741eb3c231696bb2cf909be3b948a71125005` passed push CI `#365` / `35739170423` and PR CI `#366` / `35739177913`. Physical proof remains incomplete and resumes from local gateway startup verification.
 
 ---
 
 # Current Next Step
 
-Begin Milestone 6 Slice 2: **planner output contract for bounded acceptance criteria and proposed validation commands**. Keep planner output non-authoritative until admitted by orchestrator policy; it must not widen the approved Safety Plan, grant model shell/network/MCP/plugin authority, or bypass external validation/diff safety. Use cloud tests only.
+Resume the explicitly authorized disposable Windows proof from the MCP startup boundary: **pull the Windows entrypoint fix, run `npm run mcp`, verify the listener banner and port `4318`, and only then continue to the first live Safety Preview/start task.** Do not restart, unload, pre-warm, or switch Ollama and do not touch unrelated Cline sessions.
 
 ---
 
