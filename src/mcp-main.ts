@@ -1,3 +1,5 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { defaultContextRotateAtTokens } from "./context-supervisor.js";
 import {
   MachineOrchestratorService,
@@ -111,6 +113,17 @@ export function environmentWorkerProfileResolver(): WorkerProfileResolver {
   };
 }
 
+export function isDirectEntryPoint(
+  moduleUrl: string,
+  argv1: string | undefined,
+  pathFlavor: "win32" | "posix" = process.platform === "win32" ? "win32" : "posix",
+): boolean {
+  if (!argv1) return false;
+  const pathApi = pathFlavor === "win32" ? path.win32 : path.posix;
+  const entryPath = pathApi.resolve(argv1);
+  return pathToFileURL(entryPath, { windows: pathFlavor === "win32" }).href === moduleUrl;
+}
+
 async function main(): Promise<void> {
   const registry = new WorkspaceRegistry();
   const safetyPlans = new SafetyPlanService(registry);
@@ -139,7 +152,7 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
+if (isDirectEntryPoint(import.meta.url, process.argv[1])) {
   void main().catch((error) => {
     process.stderr.write(
       `[cline-orchestrator MCP fatal: ${error instanceof Error ? error.message : String(error)}]\n`,
