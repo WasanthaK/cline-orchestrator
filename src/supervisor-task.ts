@@ -125,7 +125,15 @@ function boundedStringList(
 }
 
 function opaqueId(value: unknown, field: string): string {
-  const normalized = boundedString(value, field, 128);
+  let normalized: string;
+  try {
+    normalized = boundedString(value, field, 128);
+  } catch (error) {
+    if (error instanceof SupervisorTaskError) {
+      throw new SupervisorTaskError(error.message, "task_not_approved");
+    }
+    throw error;
+  }
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
     throw new SupervisorTaskError(`${field} must be an opaque UUID`, "task_not_approved");
   }
@@ -152,12 +160,19 @@ function relativePolicyPattern(value: string, field: string): string {
 }
 
 function approvedPatterns(values: unknown, field: string): string[] {
-  return boundedStringList(
-    values,
-    field,
-    MAX_SCOPE_PATTERNS,
-    MAX_SCOPE_PATTERN_CHARS,
-  ).map((value, index) => relativePolicyPattern(value, `${field}[${index}]`));
+  try {
+    return boundedStringList(
+      values,
+      field,
+      MAX_SCOPE_PATTERNS,
+      MAX_SCOPE_PATTERN_CHARS,
+    ).map((value, index) => relativePolicyPattern(value, `${field}[${index}]`));
+  } catch (error) {
+    if (error instanceof SupervisorTaskError && error.code === "schema_invalid") {
+      throw new SupervisorTaskError(error.message, "task_not_approved");
+    }
+    throw error;
+  }
 }
 
 function approvedText(value: unknown, field: string): string {
