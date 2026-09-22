@@ -17,6 +17,7 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@cline/core": "0.0.83",
     "@cline/sdk": "0.0.83",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
