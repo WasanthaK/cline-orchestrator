@@ -20,16 +20,25 @@ class FakeRuntime implements ClineRuntime {
   async dispose() {}
 }
 
-test("SDK runtime factory keeps local mode local and configures Hub mode without persisting credentials", async () => {
+test("SDK runtime factory keeps local mode local and prepares Hub mode without persisting credentials", async () => {
   const calls: Record<string, unknown>[] = [];
+  let prepareCalls = 0;
   const creator = async (options: Record<string, unknown>) => {
     calls.push(options);
     return new FakeRuntime();
   };
-  const factory = new SdkClineRuntimeFactory(creator);
+  const factory = new SdkClineRuntimeFactory(
+    creator,
+    async () => {
+      prepareCalls += 1;
+    },
+  );
 
   await factory.create({ mode: "local", workspaceRoot: "/tmp/workspace" });
+  assert.equal(prepareCalls, 0);
+
   await factory.create({ mode: "hub", workspaceRoot: "/tmp/workspace" });
+  assert.equal(prepareCalls, 1);
 
   assert.deepEqual(calls[0], {
     clientName: "cline-orchestrator",
