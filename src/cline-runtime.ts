@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { ClineCore } from "@cline/sdk";
+import { ensureClineHubDaemonEntryCompatibility } from "./cline-hub-compat.js";
 
 export type ClineRuntimeMode = "local" | "hub";
 
@@ -38,6 +39,12 @@ export class SdkClineRuntimeFactory implements ClineRuntimeFactory {
         backendMode: "local",
       });
     }
+
+    // @cline/core 0.0.83 publishes the daemon entry correctly but its bundled
+    // launcher resolves a missing dist/entry.js. Prepare the exact pinned
+    // compatibility entry before Cline performs its own Hub discovery, locking,
+    // compatibility checks, and safe retirement logic.
+    await ensureClineHubDaemonEntryCompatibility();
 
     return await this.createCore({
       clientName: "cline-orchestrator",
