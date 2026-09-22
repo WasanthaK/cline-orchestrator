@@ -214,8 +214,8 @@ Documented/proven design:
 - [x] Owner-targeted `beforeTool` contribution plus owner-targeted read/search/editor/apply-patch executors are supplied through the Hub start contract.
 - [x] First-pilot worker/runtime profile disables arbitrary model shell, ungoverned network/MCP/plugin configuration, subagents/teams, and unreviewed provider execution surfaces.
 - [x] Hub-backed runtime factory preserves the existing `ClineRunner` lifecycle contract and revalidates persisted Hub session workspace identity before resume.
-- [ ] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
-- [x] Cloud tests cover registry/plan replay/staleness, path safety, patch all-or-nothing behavior, disabled surfaces, Hub contribution wiring/failure boundaries, workspace identity, Hub `session_not_found` recovery, and existing lifecycle safety regressions.
+- [x] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
+- [x] Cloud tests cover registry/plan replay/staleness, path safety, patch all-or-nothing behavior, disabled surfaces, Hub contribution wiring/failure boundaries, workspace identity, Hub `session_not_found` recovery, MCP authority boundaries/authentication, active-task polling, and existing lifecycle safety regressions.
 - [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating shared Ollama.
 
 ## Unit 1 — Registry + Safety Preview / Plan-token Boundary
@@ -263,49 +263,71 @@ Implemented:
 - Hub creation uses `backendMode: "hub"` + `strategy: "require-hub"` with registered workspace root/cwd and no orchestrator-persisted Hub auth token;
 - persisted Hub session resume canonicalizes and verifies `workspaceRoot` before any send; missing lookup capability or mismatched workspace fails closed;
 - approved durable task safety envelope is required before a Hub write session can start;
-- pinned SDK `beforeTool` is wired through `localRuntime.hooks` so Hub registers the hook as a creator/client-owned contribution;
+- pinned SDK `beforeTool` is wired through `localRuntime.hooks` as a creator/client-owned contribution;
 - pinned SDK `RuntimeCapabilities.toolExecutors` supplies only readFile/search/editor/applyPatch owner executors;
-- SDK payload adaptation handles real `read_files` inputs and parses `apply_patch` with `computePatchChanges` before policy evaluation;
-- patch moves check source and destination paths before execution;
-- final executors re-evaluate Unit 2 policy immediately before delegating to pinned SDK default filesystem executors;
-- search/editor/applyPatch delegation is pinned to the approved registered workspace rather than caller-supplied cwd;
-- Hub tool policy enables only read/search/editor/apply-patch/completion mechanics; shell, fetch-web, skills, question and unknown surfaces remain disabled;
-- MCP settings tools are disabled; config extensions/plugin paths are empty; spawn-agent and agent-teams are disabled;
-- first-pilot provider surface is fail-closed to currently reviewed `ollama` / `openai-compatible` profiles; other providers are rejected until their provider-owned execution surfaces are separately reviewed;
-- a durable human escalation is preserved as `waiting_for_human` even if the Cline run subsequently reports aborted/failed;
-- local mode remains the constructor default, so current daemon/CLI behavior is not silently migrated to Hub.
+- actual SDK read/patch payloads are adapted and every patch source/destination path is checked before execution;
+- final executors re-evaluate Unit 2 policy immediately before filesystem delegation;
+- shell, web fetch, skills, question, ungoverned MCP/plugin settings, spawn-agent, agent-teams and unreviewed provider surfaces remain disabled;
+- durable human escalation remains `waiting_for_human` even if Cline later reports aborted/failed;
+- local mode remains the default for the existing daemon/CLI.
 
-### Unit 3 tests
+Evidence: runtime seam `1152c58ba2422d755072b480128c8def4c37a324`; shared enforcement export `063a8276a855879c51f9679f3c3067888cae7483`; Hub safety builder `82a85be99915b92b279886c0f8ce297e87ec88c0`; runner integration `21f627d17f2b745ddcd6380ec6e938e2337c3bc7`; tests through `32c057d30bc70533233477e87f7e01ec09b2e04a`; accepted CI push `#329` / `35723407897` and PR `#330` / `35723411583`, success.
 
-- factory options prove local vs Hub selection and absence of an orchestrator Hub auth token;
-- canonical alias acceptance, wrong-workspace rejection, and missing session-lookup capability fail-closed behavior;
-- actual SDK-shaped `read_files` inputs pass the hook while shell/network fail closed;
-- owner executor set is exactly readFile/search/editor/applyPatch;
-- multi-file patch preview persists durable out-of-scope escalation before execution;
-- editor executor re-checks scope immediately before mutation;
-- unreviewed provider profile rejection;
-- fake-Hub `ClineRunner` integration proves start/send/completion lifecycle, owner safety contributions and restricted config on session start;
-- wrong-workspace persisted session is rejected before `send`;
-- Hub `session_not_found` preserves the existing structured durable handoff/recovery path;
-- full existing test suite remains green, exercising watchdog/context rotation/recovery/validation/diff-safety regressions through the unchanged runner lifecycle.
+## Unit 4 — Machine-level ChatGPT MCP / Plugin Gateway
 
-### Unit 3 evidence
+**COMPLETE — cloud/fake-runtime proof only; no live shared runtime mutation.**
 
-- Runtime factory seam: `1152c58ba2422d755072b480128c8def4c37a324`.
-- Shared Unit 2 enforcement primitive exported for Hub adapter reuse: `063a8276a855879c51f9679f3c3067888cae7483`.
-- Owner-targeted Hub safety contribution builder: `82a85be99915b92b279886c0f8ce297e87ec88c0`.
-- `ClineRunner` Hub-capable runtime seam + workspace verification + escalation preservation: `21f627d17f2b745ddcd6380ec6e938e2337c3bc7`.
-- Factory/workspace identity tests: `f3ff6f5b23fd2a62fd4ffa1fc27bab738ebd2c14`.
-- Hub safety contribution tests: `fa46c19a1680d58a5f9fa872f8a81f1ad2e0508a`.
-- Hub lifecycle/recovery integration tests: `f1e65cc1c51cb690bb4bda1a406d891a8d0833de`.
-- Pinned patch-preview typing correction: `32c057d30bc70533233477e87f7e01ec09b2e04a`.
-- Initial CI `#328` / `35723276006` failed at typecheck only because `Object.entries()` inferred pinned patch changes as `unknown`; no tests ran. The type boundary was corrected without relaxing the runtime safety checks.
-- Accepted implementation CI: push `#329` / `35723407897`, success; PR `#330` / `35723411583`, success. Typecheck and full test suite passed.
-- No live Cline Hub, VS Code, Ollama, shared workspace, deployment, push, or external-system runtime mutation was performed.
+Implemented:
+
+- `MachineOrchestratorService` composes the existing registry, Safety Plan service, `TaskStore`, Hub-mode `ClineRunner`, provider preflight, validation/repair, diff safety and rollback rather than creating a parallel authority path;
+- per-workspace controllers serialize execution and route approved writes through `runtimeMode: "hub"`;
+- public discovery/status/task/event/diff views resolve registered opaque IDs and deliberately omit canonical workspace roots, Hub/Cline session IDs, raw prompts/output, provider/Hub credentials and checkpoint backup refs/paths;
+- task-event output omits raw `data`; task-diff output exposes bounded changed-path metadata and safety findings only, never file contents;
+- `preview_task` is read-only and accepts only registered `workspace_id`, goal and bounded requested scope;
+- `start_task` accepts only the opaque single-use plan token; workspace/path/policy/model overrides are impossible at the MCP boundary;
+- `continue_task` accepts only task ID + instruction, revalidates the durable registry/profile binding and cannot broaden the approved envelope;
+- `approve_escalation` records explicit approval but never converts it into broader old-task authority: the original task is closed and a fresh Safety Preview is required;
+- `reject_escalation` closes the paused task without granting authority;
+- rollback requires the task ID plus a derived opaque checkpoint ID rather than exposing private checkpoint paths/refs;
+- untrusted project/workspace/task/escalation identifiers are validated as opaque UUIDs before storage lookup;
+- the MCP v2 surface contains only task-level discovery/status/preview/start/continue/abort/escalation/rollback operations; no generic filesystem, shell, raw Hub attach/commands, credentials or unrestricted daemon/process control is exposed;
+- the production MCP HTTP entrypoint is loopback-only, bearer authenticated with timing-safe comparison, and applies localhost Host/Origin validation before protocol handling;
+- optional public tunnel URL configuration is metadata only and must be HTTPS; the orchestrator neither launches nor controls tunnel credentials;
+- `npm run mcp` / `start:mcp` entrypoints and explicit local worker-profile matching are present; model command/edit auto-approval environment flags are not honored by the gateway worker profile;
+- task-state JSON persistence is now same-directory temp-file + atomic rename so active MCP polling cannot observe a half-written task document.
+
+### Unit 4 tests
+
+- fake Hub runtime + temporary Git workspace proves Safety Preview -> token start -> Hub-mode execution -> completed status without a live Hub/Ollama connection;
+- public task/event/diff results exclude raw workspace path, fake Hub session ID and worker output;
+- continuation executes within the existing approved envelope;
+- escalation approval preserves the old scope and requires a new preview;
+- rollback rejects a mismatched checkpoint ID and task-ID traversal is rejected before storage lookup;
+- exact MCP tool list and read/write/destructive annotations are asserted;
+- forbidden generic shell/filesystem/Hub/daemon tool names and raw-authority schema fields are absent;
+- configuration rejects non-loopback binding, weak bearer secrets and non-HTTPS tunnel metadata;
+- ephemeral loopback HTTP proof asserts unauthenticated `401`, wrong-path `404`, and authenticated modern MCP `tools/list` success;
+- modern MCP test requests carry the required current protocol metadata/method header rather than weakening server validation;
+- active status polling remains valid across concurrent task saves after atomic persistence correction;
+- all existing lifecycle, Git safety, validation, context/recovery, memory and Unit 1–3 tests remain green.
+
+### Unit 4 evidence
+
+- Machine orchestration service: `425b1a58aba2571d09912d8fec27ad61d5bcc0cc`.
+- MCP v2 task-level gateway: `8b87fc9357db891c575c4d684c0448a21067985b`.
+- Production MCP entrypoint: `d5b96b999e19256f74c6fbd8a6c3dfaf1c77254d`.
+- MCP v2 dependencies/scripts: `8eb7bb9cd5587e6706ddcab47bfa28df2700cc1b`.
+- Machine-service tests and MCP surface/auth tests: implementation sequence through `dd02a30db403156d9949a718d4e0adef0c717d83`.
+- Modern MCP test-client correction: `437d754b84ff2c1a689b4d67a5ed75bb64b0b452`.
+- Atomic task-state persistence prerequisite fix: `ee47237d6ca7e1571f064923c909fdfe9bc07e65`.
+- Initial Unit 4 CI exposed two test-client `400` responses because the hand-written client omitted required modern MCP request metadata; this was corrected without adding a production compatibility bypass.
+- The next CI exposed a real active-polling race in direct task JSON overwrite (`Unexpected end of JSON input`); task saves were changed to atomic replacement rather than masking the defect with read retries.
+- Accepted implementation CI: push `#351` / `35726113138`, success; PR `#352` / `35726117694`, success. Typecheck and all 115 tests passed.
+- No live Cline Hub, VS Code, Ollama, shared workspace, public tunnel, deployment target, push, or external-system runtime mutation was performed.
 
 ## Milestone 5 Status
 
-**IN PROGRESS — technical spike and implementation Units 1–3 complete; machine MCP/plugin gateway and explicit runtime proof remain.**
+**IN PROGRESS — technical spike and implementation Units 1–4 complete; only the explicitly authorized isolated shared-runtime proof remains.**
 
 ---
 
@@ -373,14 +395,17 @@ Implemented:
 | Durable approved-task safety binding | Implemented + cloud tested |
 | Pre-execution policy + durable escalation | Implemented + cloud tested |
 | Local safe executor boundary | Implemented + cloud tested |
-| Hub-backed `ClineCore` runtime factory seam | **Implemented + cloud tested** |
-| Hub owner `beforeTool` contribution wiring | **Implemented + fake-Hub/cloud tested** |
-| Hub owner read/search/editor/apply-patch executors | **Implemented + fake-Hub/cloud tested** |
-| Restricted first-pilot Hub worker/runtime surfaces | **Implemented + cloud tested** |
-| Hub resume workspace identity validation | **Implemented + fake-Hub/cloud tested** |
-| Hub session-loss durable recovery | **Implemented + fake-Hub/cloud tested** |
-| Machine-level ChatGPT MCP/plugin gateway | Implementation pending |
-| Live shared VS Code/Hub write proof | Not yet authorized / pending |
+| Hub-backed `ClineCore` runtime factory seam | Implemented + cloud tested |
+| Hub owner `beforeTool` contribution wiring | Implemented + fake-Hub/cloud tested |
+| Hub owner read/search/editor/apply-patch executors | Implemented + fake-Hub/cloud tested |
+| Restricted first-pilot Hub worker/runtime surfaces | Implemented + cloud tested |
+| Hub resume workspace identity validation | Implemented + fake-Hub/cloud tested |
+| Hub session-loss durable recovery | Implemented + fake-Hub/cloud tested |
+| Machine-level task-oriented MCP/plugin gateway | **Implemented + cloud tested** |
+| Loopback MCP bearer/Host/Origin boundary | **Implemented + cloud tested** |
+| Sanitized MCP task/event/diff views | **Implemented + cloud tested** |
+| Atomic task-state persistence for active polling | **Implemented + cloud tested** |
+| Live shared VS Code/Hub write proof | **Not yet authorized / pending** |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
 
@@ -394,15 +419,17 @@ Implemented:
 4. Hub work must stay pinned to the verified `0.0.83` public SDK surface unless a deliberate dependency decision is recorded.
 5. Dirty worktrees must retain pre-run user state and distinguish it from task-created changes.
 6. Validation commands are trusted local configuration and remain explicit/bounded outside model execution.
-7. Event/state persistence remains lightweight JSON/JSONL.
+7. Event/state persistence remains lightweight JSON/JSONL. Task JSON replacement is atomic; event JSONL append remains the existing durability model.
 8. Hub discovery/auth credentials are runtime secrets and must not enter tasks, project memory, handoffs, logs, Git, or ChatGPT/MCP output.
-9. Authorization comes only from the machine-local registry and approved task envelope, never from raw paths, fuzzy names, repository instructions, or Hub participation.
-10. Attaching to a Hub session does not transfer client-local capability ownership.
-11. Native Hub approval is UX/defense-in-depth only; the orchestrator hook/executor boundary is authoritative.
-12. Owner disconnect cancels creator-targeted live capabilities; recovery must use durable handoff/replacement ownership.
-13. Arbitrary model shell, ungoverned network/MCP/plugin execution, subagents/teams, and unreviewed provider-owned execution remain disabled in the first pilot.
-14. Safety Preview matching is not the filesystem gate; Unit 2/3 executor enforcement remains authoritative immediately before side effects.
-15. Unit 3 proves the local/Hub contract using pinned-source analysis plus fake/mock Hub behavior. Actual shared Hub/VS Code visibility, owner disconnect over a real socket, and live enforcement remain intentionally unproven until the explicitly authorized disposable-workspace proof.
+9. MCP bearer/tunnel credentials are also machine-local runtime secrets and must not enter repository/project memory, handoffs or MCP results.
+10. Authorization comes only from the machine-local registry and approved task envelope, never from raw paths, fuzzy names, repository instructions, or Hub participation.
+11. Attaching to a Hub session does not transfer client-local capability ownership.
+12. Native Hub approval is UX/defense-in-depth only; the orchestrator hook/executor boundary is authoritative.
+13. Owner disconnect cancels creator-targeted live capabilities; recovery must use durable handoff/replacement ownership.
+14. Arbitrary model shell, ungoverned network/MCP/plugin execution, subagents/teams, and unreviewed provider-owned execution remain disabled in the first pilot.
+15. Safety Preview matching is not the filesystem gate; Unit 2/3 executor enforcement remains authoritative immediately before side effects.
+16. Unit 3/4 prove the local/Hub/MCP contract using pinned-source analysis, fake/mock Hub behavior and ephemeral loopback protocol tests. Actual shared Hub/VS Code visibility, real owner disconnect, and live enforcement remain intentionally unproven until the explicitly authorized disposable-workspace proof.
+17. The MCP listener is intentionally loopback-only; remote ChatGPT connectivity requires a separately managed secure tunnel and must not weaken the local bearer/task authority boundary.
 
 ---
 
@@ -413,14 +440,18 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 1. **COMPLETE — machine-local registry + Safety Preview / plan-token boundary.**
 2. **COMPLETE — pre-execution policy + local safe executor boundary.**
 3. **COMPLETE — Hub-backed Cline runtime adapter/factory + owner-targeted safety wiring (mock/fake Hub proof).**
-4. **Implement the machine-level ChatGPT MCP/plugin gateway** with task-level operations only:
-   - resolve registered project/workspace IDs through the machine registry;
-   - expose read-only discovery/status/task/event/diff/Safety Preview operations;
-   - expose bounded writes such as plan-token task start, continue, abort, escalation decision, and rollback;
-   - never expose raw path read/write, generic shell, raw Hub attach/commands, credentials, or unrestricted daemon control;
-   - route write tasks to the approved Hub runtime path without broadening their durable safety envelope;
-   - add cloud tests first; do not run live shared-runtime writes.
-5. **Run the isolated shared-runtime proof** only after explicit user authorization, using a disposable registered workspace and without automatic shared-Ollama mutation.
+4. **COMPLETE — machine-level ChatGPT MCP/plugin gateway.**
+   - opaque registered-ID discovery/status/task/diff surface;
+   - read-only Safety Preview + plan-token-only start;
+   - immutable-envelope continuation, abort, escalation decisions and checkpoint-bound rollback;
+   - no raw path/shell/Hub/credential/daemon authority;
+   - loopback bearer/Host/Origin HTTP boundary;
+   - fake-Hub + modern MCP + active-polling cloud tests.
+5. **WAITING FOR EXPLICIT USER AUTHORIZATION — isolated shared-runtime proof.**
+   - use a disposable registered workspace only;
+   - prove VS Code/Hub visibility, allowed edit, out-of-scope escalation, secret denial, shell unavailable, owner/policy loss fail-closed, external validation/diff safety and rollback;
+   - do not stop/restart/pre-warm/switch Ollama or mutate unrelated shared VS Code/Cline sessions;
+   - do not begin this proof from an implicit “continue”; obtain explicit authorization for the live shared-runtime test window.
 
 ---
 
@@ -432,13 +463,14 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - 2026-09-22: Milestone 5 technical spike/migration design closed — `d51a85585c831b24da9cd7129d34d74488ec2750`, CI `#282` / `35668708848`.
 - 2026-09-22: Unit 1 registry/Safety Preview boundary closed through `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`, CI `#295` / `35679414455`.
 - 2026-09-22: Unit 2 local pre-execution boundary closed through `46da20d18cd703018c54207258d4fb2422e71eeb`, CI push `#311` / `35699517817`, PR `#312` / `35699521432`.
-- 2026-09-22: Unit 3 Hub runtime/safety wiring implemented through `32c057d30bc70533233477e87f7e01ec09b2e04a`; accepted CI push `#329` / `35723407897` and PR `#330` / `35723411583`, both success. Unit 3 used only mocks/fakes and pinned SDK inspection; no live shared runtime was touched.
+- 2026-09-22: Unit 3 Hub runtime/safety wiring implemented through `32c057d30bc70533233477e87f7e01ec09b2e04a`; accepted CI push `#329` / `35723407897` and PR `#330` / `35723411583`, both success. No live shared runtime was touched.
+- 2026-09-22: Unit 4 machine MCP/plugin gateway implemented through `ee47237d6ca7e1571f064923c909fdfe9bc07e65`; accepted CI push `#351` / `35726113138` and PR `#352` / `35726117694`, both success with typecheck + 115 tests. The implementation added task-level MCP authority, loopback bearer/Host/Origin protection, sanitized result views, immutable-envelope continuation/escalation/rollback semantics, and atomic task-state persistence for concurrent polling. No live shared runtime was touched.
 
 ---
 
 # Current Next Step
 
-Begin Milestone 5 implementation Unit 4: **machine-level task-oriented ChatGPT MCP/plugin gateway**. Use registered IDs and the existing Safety Preview/plan-token boundary; expose no raw filesystem/shell/Hub authority. Use cloud tests only and stop before the live shared-runtime proof.
+**Milestone 5 Unit 5 is blocked on explicit user authorization.** The next implementation action is the isolated live shared-runtime proof in a disposable registered workspace. Do not start live Cline Hub/VS Code/Ollama/shared-runtime writes until the user explicitly authorizes that test window.
 
 ---
 
