@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { checkpointLimitsFromEnvironment } from "./checkpoint-config.js";
 import { diffSafetyPolicyFromEnvironment } from "./diff-safety-config.js";
@@ -24,6 +24,17 @@ function diffSafetyFailureMessage(task: OrchestratorTask): string {
   const failures = task.lastDiffSafety?.failures ?? [];
   if (failures.length === 0) return "Diff safety policy failed";
   return `Diff safety policy failed: ${failures.map((item) => item.message).join("; ")}`;
+}
+
+async function atomicWriteUtf8(targetPath: string, content: string): Promise<void> {
+  const tempPath = `${targetPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    await writeFile(tempPath, content, { encoding: "utf8", flag: "wx" });
+    await rename(tempPath, targetPath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export class TaskNotFoundError extends Error {
@@ -138,7 +149,7 @@ export class TaskStore {
     }
 
     task.updatedAt = new Date().toISOString();
-    await writeFile(this.taskPath(task.id), JSON.stringify(task, null, 2) + "\n", "utf8");
+    await atomicWriteUtf8(this.taskPath(task.id), JSON.stringify(task, null, 2) + "\n");
     await this.inferEvents(previous, task);
     await this.projectMemory.recordTask(task);
   }
