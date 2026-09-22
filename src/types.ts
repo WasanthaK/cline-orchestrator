@@ -2,6 +2,7 @@ export type TaskStatus =
   | "created"
   | "running"
   | "waiting"
+  | "waiting_for_human"
   | "stalled"
   | "validating"
   | "repairing"
@@ -292,6 +293,18 @@ export interface ContextHandoffReference {
 
 export type RetryReason = "watchdog_stall";
 
+export interface HumanEscalation {
+  escalationId: string;
+  taskId: string;
+  requestedAt: string;
+  reason: string;
+  actionKind: "read" | "search" | "edit" | "patch" | "command" | "network" | "unknown";
+  actionFingerprint: string;
+  safetyPolicyVersion?: string;
+  status: "pending" | "approved" | "rejected";
+  reversible: boolean;
+}
+
 export type TaskEventType =
   | "queued"
   | "resume_queued"
@@ -305,6 +318,9 @@ export type TaskEventType =
   | "context_rotating"
   | "stalled"
   | "retrying"
+  | "human_escalation_requested"
+  | "human_escalation_approved"
+  | "human_escalation_rejected"
   | "validation_started"
   | "validation_passed"
   | "validation_failed"
@@ -369,6 +385,7 @@ export interface OrchestratorTask {
   lastOutput?: string;
   finishReason?: string;
   error?: string;
+  pendingEscalation?: HumanEscalation;
   runCount?: number;
   lastRunMetrics?: RunMetrics;
   lastRunGit?: RunGitState;
