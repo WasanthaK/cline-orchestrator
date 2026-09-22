@@ -113,11 +113,13 @@ function networkUrlsFromSdkInput(input: unknown): string[] {
   });
 }
 
+type PatchPreviewChange = { type: unknown; movePath?: string };
+
 async function previewPatchAction(patchText: string, workspaceRoot: string): Promise<ActionDescriptor> {
   const { changes } = await computePatchChanges(patchText, workspaceRoot);
   const paths: string[] = [];
   const operations: string[] = [];
-  for (const [sourcePath, change] of Object.entries(changes)) {
+  for (const [sourcePath, change] of Object.entries(changes as Record<string, PatchPreviewChange>)) {
     paths.push(sourcePath);
     operations.push(String(change.type));
     if (change.movePath) {
