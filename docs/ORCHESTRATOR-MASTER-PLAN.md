@@ -379,7 +379,7 @@ This complements the focused unit/integration coverage already present for proje
 
 ## Current Next Step
 
-Begin Milestone 5 implementation Unit 1: **machine-local project/workspace registry + read-only Safety Preview + opaque single-use plan-token store + stale-state rejection**. Do not implement live Hub write control yet.
+Begin Milestone 5 implementation Unit 2: **pre-execution policy engine + owner-targeted safe executors**. Do not implement live Hub write control yet.
 
 ---
 
@@ -441,9 +441,9 @@ The safe migration is now documented in `docs/MILESTONE-5-MIGRATION-DESIGN.md`:
 
 ## Implementation Acceptance Criteria
 
-- [ ] Machine-local user-configured project/workspace registry with canonical-root validation, opaque IDs, and revisioned safety profiles.
-- [ ] Read-only Safety Preview + immutable server-side Safety Plan + opaque single-use/expiring plan token; task start rejects stale registry/Git/policy fingerprints.
-- [ ] Durable tasks bind to approved project/workspace/safety-plan identity so `continue_task` cannot silently broaden authority.
+- [x] Machine-local user-configured project/workspace registry with canonical-root validation, opaque IDs, and revisioned safety profiles.
+- [x] Read-only Safety Preview + immutable server-side Safety Plan + opaque single-use/expiring plan token; task start rejects stale registry/Git/policy fingerprints.
+- [x] Durable tasks bind to approved project/workspace/safety-plan identity so `continue_task` cannot silently broaden authority.
 - [ ] Pre-execution policy engine with fail-closed action normalization, secret/protected/allowed path checks, traversal/symlink containment, and durable human escalation.
 - [ ] Owner-targeted `beforeTool` contribution plus owner-targeted read/search/editor/apply-patch executors; unknown/unsupported tools fail closed.
 - [ ] First-pilot worker safety profile disables arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams, and provider-owned execution surfaces.
@@ -451,6 +451,19 @@ The safe migration is now documented in `docs/MILESTONE-5-MIGRATION-DESIGN.md`:
 - [ ] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
 - [ ] Cloud tests cover registry/plan replay/staleness, containment, secret/protected scope, patch all-or-nothing policy, disabled surfaces, Hub owner targeting/failure, and all existing lifecycle safety regressions.
 - [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating the shared Ollama runtime.
+
+## Unit 1 — Registry + Safety Preview / Plan-token Boundary
+
+Unit 1 is implemented without Hub/Cline runtime mutation.
+
+- The registry is stored in a per-user machine-local configuration path outside repositories and assigns opaque project/workspace IDs.
+- Workspace registration resolves canonical paths, rejects filesystem/system-sensitive roots, detects alias/symlink duplicate registrations, and stores revisioned safety profiles.
+- Read-only discovery exposes registered identity and a display/root alias rather than accepting or returning raw write authority.
+- Safety Preview captures the approved goal/scope plus Git branch, HEAD, and dirty fingerprint, then creates an immutable in-memory server-side plan.
+- Plan tokens contain 256 bits of randomness, are represented only by a hash in the server-side store, expire after a short TTL (15 minutes by default), and are single use.
+- Task start accepts only the opaque plan token. Before consuming it, the service revalidates the registered canonical root, workspace/profile revisions, policy/worker profile, branch, HEAD, and dirty fingerprint.
+- The resulting durable task stores the approved project/workspace/safety-plan/policy/profile identity and approved path envelope; the opaque token itself is not persisted in `.orchestrator` state.
+- No Hub session is created by this unit. The actual pre-execution filesystem/tool gate remains Unit 2.
 
 ## Evidence
 
@@ -460,10 +473,14 @@ The safe migration is now documented in `docs/MILESTONE-5-MIGRATION-DESIGN.md`:
 - ChatGPT plugin UX/safety contract: `docs/MILESTONE-5-CHATGPT-PLUGIN-UX-SAFETY.md`, commit `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276`, workflow `35614305961`, success.
 - Workspace/session identity + multi-client safety: `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md`, commit `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278`, workflow `35618180127`, success.
 - Safe Hub/plugin migration design: `docs/MILESTONE-5-MIGRATION-DESIGN.md`, commit `d51a85585c831b24da9cd7129d34d74488ec2750`; CI `#282`, workflow `35668708848`, success. Static pinned-source inspection proved the `beforeTool` ordering, owner-targeted Hub client contributions/tool executors, and the ClineCore Hub runtime seam; no live Hub, VS Code runtime, workspace, or shared Ollama process was mutated.
+- Unit 1 registry implementation: `7f02b471dcada322c2b7cb740e8a552486634b16`; Safety Plan boundary: `29910e4d3bfedf23707697332d62c99a9e0a1e5a`; durable task safety fields: `d8fe91a9779022aeab73e6bb2d0b03525de86a41`; focused registry/plan tests: `f4c09aa6c67094ae209d69e67b6c61dd550236a6`.
+- Plan-token-only durable task start: `3e49442e923ade2282377153838cbc390aa48178`; focused persistence/replay tests: `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`; cloud CI `#295`, workflow `35679414455`, success.
+- Unit 1 tests cover canonical registration, opaque IDs, alias/root rejection, scope non-expansion, token expiry/replay, registry/policy staleness, Git dirty/HEAD staleness, plan-token-only task creation, durable safety identity, and token non-persistence.
+- No live Cline Hub, VS Code runtime, Ollama runtime, shared workspace, push, deploy, or external-system mutation was performed.
 
 ## Status
 
-**TECHNICAL SPIKE COMPLETE — implementation pending**
+**IN PROGRESS — technical spike complete; implementation Unit 1 complete**
 
 ---
 
@@ -556,6 +573,10 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Hub workspace/session + multi-client safety | **Documented + cloud tested** |
 | Safe Hub/plugin migration architecture | **Documented + cloud tested** |
 | Milestone 5 technical spike | **Complete / proven** |
+| Machine-local workspace registry | **Implemented + cloud tested** |
+| Safety Preview + single-use plan-token boundary | **Implemented + cloud tested** |
+| Durable approved-task safety binding | **Implemented + cloud tested** |
+| Pre-execution policy engine / safe executors | Implementation pending |
 | Shared VS Code/Hub write session | Implementation pending |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
@@ -582,6 +603,7 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 16. **Pre-execution enforcement** — the first write pilot requires both an owner-targeted `beforeTool` gate and owner-targeted filesystem executors; a failure in policy/capability handling must fail closed before side effects.
 17. **Restricted pilot surfaces** — arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams, and provider-owned execution tools remain disabled until each has an enforceable policy boundary and focused tests.
 18. **Safety Plan tokens** — task approval uses opaque, short-lived, single-use tokens backed by immutable server-side plans; tokens and local credential material must not enter repository/project memory.
+19. **Safety Preview scope matching is not the filesystem execution gate** — Unit 1 only prevents requested-scope broadening relative to the registered profile. Unit 2 must perform authoritative path normalization, containment, secret/protected checks, symlink/reparse-point handling, and per-operation enforcement immediately before execution.
 
 ---
 
@@ -589,14 +611,9 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
-1. **Implement machine-local registry + Safety Preview / plan-token boundary.**
-   - store user-configured project/workspace authorization outside repositories;
-   - canonicalize/reject unsafe roots and assign opaque project/workspace IDs;
-   - add revisioned local safety profiles and read-only workspace discovery/status;
-   - add immutable server-side Safety Plans with opaque random single-use TTL plan tokens;
-   - revalidate workspace registry revision, canonical root, branch/HEAD, dirty fingerprint, policy version, and worker safety profile atomically at task start;
-   - bind the durable task to the approved project/workspace/safety-plan identity;
-   - cloud-test expiry/replay/staleness/alias/unsafe-root behavior.
+1. **COMPLETE — machine-local registry + Safety Preview / plan-token boundary.**
+   - user-configured project/workspace authorization is stored outside repositories;
+   - canonical roots, opaque IDs, revisioned safety profiles, read-only discovery, immutable Safety Plans, single-use TTL tokens, stale-state rejection, and durable task binding are implemented and cloud tested.
 
 2. **Implement pre-execution policy engine + owner-targeted safe executors.**
    - normalize tool actions;
@@ -786,6 +803,15 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Milestone 5 technical spike COMPLETE; implementation remains pending**.
 - Known limitation: no write-capable Hub adapter/MCP gateway or live shared-session proof has been implemented or run.
 - Next action: implement Unit 1 — machine-local project/workspace registry + read-only Safety Preview + opaque single-use plan-token store + stale-state rejection. Do not start live Hub writes yet.
+
+## 2026-09-22 — Milestone 5 Unit 1 registry and Safety Preview boundary completed
+
+- Change: implemented the per-user machine-local project/workspace registry, canonical/unsafe-root checks, opaque IDs, revisioned safety profiles, read-only discovery, immutable server-side Safety Plans, 256-bit single-use TTL tokens, stale registry/Git/policy/worker rejection, and a plan-token-only durable task-start primitive.
+- Tests: canonical registration, alias/symlink duplicate rejection, filesystem-root rejection, scope non-expansion, expiry/replay, registry/profile staleness, dirty-state and HEAD staleness, durable task persistence, and proof that the opaque token is absent from durable task JSON.
+- Evidence: registry `7f02b471dcada322c2b7cb740e8a552486634b16`; Safety Plan `29910e4d3bfedf23707697332d62c99a9e0a1e5a`; task fields `d8fe91a9779022aeab73e6bb2d0b03525de86a41`; focused tests `f4c09aa6c67094ae209d69e67b6c61dd550236a6`; plan-token-only start `3e49442e923ade2282377153838cbc390aa48178`; start tests `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`; CI `#295` / `35679414455` passed.
+- Milestone impact: **Milestone 5 implementation Unit 1 COMPLETE; first three implementation criteria complete**.
+- Known limitation: pre-execution path/tool enforcement, owner-targeted executors, Hub runtime adapter, MCP gateway, and shared-runtime proof remain unimplemented. Safety Preview scope matching is not the final filesystem security gate.
+- Next action: implement Unit 2 — pre-execution policy engine + owner-targeted safe executors. Do not start live Hub writes yet.
 
 ---
 
