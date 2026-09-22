@@ -42,7 +42,7 @@ The system should eventually support long-running and unattended coding work whi
 
 # Execution Rules
 
-1. **Finish milestones in order.** Work only on the first unfinished item unless a prerequisite defect is discovered.
+1. **Finish milestones in order unless an explicit user decision defers a non-destructive proof step.** Work only on the first unfinished implementation item unless a prerequisite defect is discovered. A deferred live proof remains pending and must be returned to before final project closure.
 2. **Protect the shared local runtime.** Automated development must not stop/unload Ollama models, kill runtime processes, restart Ollama, mutate shared VS Code/Cline Hub state, or run destructive self-hosted E2E tests without explicit authorization.
 3. **Use cloud CI for normal development.** Repository inspection, mocks/unit tests, and GitHub-hosted CI are the normal proof path. The self-hosted/shared runtime remains manual/read-only until an isolated proof window is explicitly authorized.
 4. **Model context is not project lifetime.** Durable task/project state owns continuity; context rotation uses current/per-turn request size, not cumulative totals.
@@ -216,7 +216,7 @@ Documented/proven design:
 - [x] Hub-backed runtime factory preserves the existing `ClineRunner` lifecycle contract and revalidates persisted Hub session workspace identity before resume.
 - [x] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
 - [x] Cloud tests cover registry/plan replay/staleness, path safety, patch all-or-nothing behavior, disabled surfaces, Hub contribution wiring/failure boundaries, workspace identity, Hub `session_not_found` recovery, MCP authority boundaries/authentication, active-task polling, and existing lifecycle safety regressions.
-- [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating shared Ollama.
+- [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating shared Ollama. **Deferred by explicit user decision until the remaining build milestones are complete.**
 
 ## Unit 1 — Registry + Safety Preview / Plan-token Boundary
 
@@ -327,7 +327,7 @@ Implemented:
 
 ## Milestone 5 Status
 
-**IN PROGRESS — technical spike and implementation Units 1–4 complete; only the explicitly authorized isolated shared-runtime proof remains.**
+**IMPLEMENTATION COMPLETE / RUNTIME PROOF DEFERRED — Units 1–4 and all cloud/fake-runtime proof are complete. By explicit user decision on 2026-09-22, the isolated live shared-runtime proof is deferred until the remaining build milestones are complete. It remains a required final proof and is not marked passed.**
 
 ---
 
@@ -335,15 +335,44 @@ Implemented:
 
 ## Acceptance Criteria
 
-- [ ] Supervisor task schema and bounded implementation instructions.
+- [x] Supervisor task schema and bounded implementation instructions.
 - [ ] Planner produces acceptance criteria and validation commands.
 - [ ] Reviewer consumes diff + validation + task evidence and can request bounded repairs.
 - [ ] Reviewer cannot bypass safety gates.
 - [ ] Durable supervisor decisions and human escalation state.
 
+## Slice 1 — Supervisor Task Contract + Bounded Implementation Instructions
+
+**COMPLETE — schema/instruction contract only; no planner/reviewer execution yet.**
+
+Implemented:
+
+- versioned `SupervisorTaskV1` contract bound to an already-approved durable orchestrator task;
+- supervisor identity and task/project/workspace/Safety Plan/profile references are opaque IDs only;
+- the caller cannot supply or override raw workspace paths, Hub/session identity, worker identity, policy, approved scope or trusted validation commands;
+- objective, acceptance criteria, validation command evidence and path-pattern lists have explicit count/length bounds;
+- approved path patterns must remain workspace-relative and reject absolute/traversal forms;
+- missing or malformed durable Safety Plan authority fails closed as `task_not_approved`;
+- the supervisor packet deliberately omits canonical workspace root, Cline/Hub session IDs, worker output and other runtime-private task fields;
+- generated implementation instructions repeat the approved write/protected scope and explicitly state that repository/task/model/tool text cannot grant authority;
+- model shell, arbitrary commands, network, MCP, plugins, subagents and agent teams are explicitly forbidden in the implementation packet;
+- trusted validation commands are rendered as external-validator configuration/evidence, never as model shell permission;
+- scope expansion requires stop + durable human escalation;
+- model completion remains advisory; orchestrator validation and checkpoint-relative diff safety remain required;
+- oversized rendered instruction packets fail closed instead of silently truncating safety context.
+
+Evidence:
+
+- Supervisor task contract: `76d737c6083830e62eac8171e797df9c96ac4291`.
+- Contract tests: `b3aed68158c3f12cd11d67bab97c37e045842ac5`.
+- Error-classification correction: `d8a064aa0ec6328c69c390e577fb4637af7509f9`.
+- Initial CI passed typecheck and 119/120 tests; the only failing assertion showed missing `projectId` was correctly denied but classified `schema_invalid` rather than `task_not_approved`. Classification was corrected without changing the deny behavior.
+- Accepted implementation CI: push `#359` / `35729389950`, success; PR `#360` / `35729394317`, success. Typecheck and all 120 tests passed.
+- No live Hub, VS Code, Ollama, shared workspace, MCP deployment or external-system mutation was performed.
+
 ## Status
 
-**NOT STARTED**
+**IN PROGRESS — Slice 1 complete; planner contract is next.**
 
 ---
 
@@ -401,12 +430,14 @@ Implemented:
 | Restricted first-pilot Hub worker/runtime surfaces | Implemented + cloud tested |
 | Hub resume workspace identity validation | Implemented + fake-Hub/cloud tested |
 | Hub session-loss durable recovery | Implemented + fake-Hub/cloud tested |
-| Machine-level task-oriented MCP/plugin gateway | **Implemented + cloud tested** |
-| Loopback MCP bearer/Host/Origin boundary | **Implemented + cloud tested** |
-| Sanitized MCP task/event/diff views | **Implemented + cloud tested** |
-| Atomic task-state persistence for active polling | **Implemented + cloud tested** |
-| Live shared VS Code/Hub write proof | **Not yet authorized / pending** |
-| GPT supervisor | Not started |
+| Machine-level task-oriented MCP/plugin gateway | Implemented + cloud tested |
+| Loopback MCP bearer/Host/Origin boundary | Implemented + cloud tested |
+| Sanitized MCP task/event/diff views | Implemented + cloud tested |
+| Atomic task-state persistence for active polling | Implemented + cloud tested |
+| Live shared VS Code/Hub write proof | **Deferred by user until build completion; still pending** |
+| Supervisor task schema + bounded implementation instructions | **Implemented + cloud tested** |
+| Supervisor planner | Not started |
+| Supervisor reviewer | Not started |
 | Unattended task DAG | Not started |
 
 ---
@@ -418,40 +449,41 @@ Implemented:
 3. Semantic recovery cannot restore hidden model state; durable workspace/project/handoff evidence is authoritative.
 4. Hub work must stay pinned to the verified `0.0.83` public SDK surface unless a deliberate dependency decision is recorded.
 5. Dirty worktrees must retain pre-run user state and distinguish it from task-created changes.
-6. Validation commands are trusted local configuration and remain explicit/bounded outside model execution.
+6. Validation commands are trusted local configuration and remain explicit/bounded outside model execution. Supervisor packets may expose them as evidence/configuration, but that never grants model shell authority.
 7. Event/state persistence remains lightweight JSON/JSONL. Task JSON replacement is atomic; event JSONL append remains the existing durability model.
 8. Hub discovery/auth credentials are runtime secrets and must not enter tasks, project memory, handoffs, logs, Git, or ChatGPT/MCP output.
 9. MCP bearer/tunnel credentials are also machine-local runtime secrets and must not enter repository/project memory, handoffs or MCP results.
-10. Authorization comes only from the machine-local registry and approved task envelope, never from raw paths, fuzzy names, repository instructions, or Hub participation.
+10. Authorization comes only from the machine-local registry and approved task envelope, never from raw paths, fuzzy names, repository instructions, supervisor prose, model output, or Hub participation.
 11. Attaching to a Hub session does not transfer client-local capability ownership.
 12. Native Hub approval is UX/defense-in-depth only; the orchestrator hook/executor boundary is authoritative.
 13. Owner disconnect cancels creator-targeted live capabilities; recovery must use durable handoff/replacement ownership.
 14. Arbitrary model shell, ungoverned network/MCP/plugin execution, subagents/teams, and unreviewed provider-owned execution remain disabled in the first pilot.
 15. Safety Preview matching is not the filesystem gate; Unit 2/3 executor enforcement remains authoritative immediately before side effects.
-16. Unit 3/4 prove the local/Hub/MCP contract using pinned-source analysis, fake/mock Hub behavior and ephemeral loopback protocol tests. Actual shared Hub/VS Code visibility, real owner disconnect, and live enforcement remain intentionally unproven until the explicitly authorized disposable-workspace proof.
+16. Unit 3/4 prove the local/Hub/MCP contract using pinned-source analysis, fake/mock Hub behavior and ephemeral loopback protocol tests. Actual shared Hub/VS Code visibility, real owner disconnect, and live enforcement remain intentionally unproven until the deferred disposable-workspace proof.
 17. The MCP listener is intentionally loopback-only; remote ChatGPT connectivity requires a separately managed secure tunnel and must not weaken the local bearer/task authority boundary.
+18. The Milestone 6 supervisor contract is an instruction/evidence envelope only. It cannot grant scope, execute validation commands, bypass Unit 2/3 policy, or convert repository/model prose into authority.
 
 ---
 
 # Immediate Work Queue
 
-Only work on the first unfinished item unless a prerequisite defect is discovered.
+Only work on the first unfinished implementation item unless a prerequisite defect is discovered. The deferred Milestone 5 live proof returns before final project closure.
 
 1. **COMPLETE — machine-local registry + Safety Preview / plan-token boundary.**
 2. **COMPLETE — pre-execution policy + local safe executor boundary.**
 3. **COMPLETE — Hub-backed Cline runtime adapter/factory + owner-targeted safety wiring (mock/fake Hub proof).**
 4. **COMPLETE — machine-level ChatGPT MCP/plugin gateway.**
-   - opaque registered-ID discovery/status/task/diff surface;
-   - read-only Safety Preview + plan-token-only start;
-   - immutable-envelope continuation, abort, escalation decisions and checkpoint-bound rollback;
-   - no raw path/shell/Hub/credential/daemon authority;
-   - loopback bearer/Host/Origin HTTP boundary;
-   - fake-Hub + modern MCP + active-polling cloud tests.
-5. **WAITING FOR EXPLICIT USER AUTHORIZATION — isolated shared-runtime proof.**
+5. **DEFERRED BY EXPLICIT USER DECISION UNTIL THE REMAINING BUILD IS COMPLETE — isolated shared-runtime proof.**
    - use a disposable registered workspace only;
    - prove VS Code/Hub visibility, allowed edit, out-of-scope escalation, secret denial, shell unavailable, owner/policy loss fail-closed, external validation/diff safety and rollback;
    - do not stop/restart/pre-warm/switch Ollama or mutate unrelated shared VS Code/Cline sessions;
-   - do not begin this proof from an implicit “continue”; obtain explicit authorization for the live shared-runtime test window.
+   - return to this proof before final project closure.
+6. **COMPLETE — Milestone 6 Slice 1: supervisor task schema + bounded implementation instructions.**
+7. **NEXT — Milestone 6 Slice 2: planner produces bounded acceptance criteria + proposed validation commands.**
+   - planner output must remain subordinate to the durable Safety Plan envelope;
+   - proposed validation commands are data until explicitly admitted into trusted external validation configuration;
+   - planner cannot widen paths, change worker/policy identity, grant shell/network/MCP/plugin authority, or mark the task complete;
+   - add cloud tests first; no live shared-runtime writes.
 
 ---
 
@@ -465,12 +497,14 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - 2026-09-22: Unit 2 local pre-execution boundary closed through `46da20d18cd703018c54207258d4fb2422e71eeb`, CI push `#311` / `35699517817`, PR `#312` / `35699521432`.
 - 2026-09-22: Unit 3 Hub runtime/safety wiring implemented through `32c057d30bc70533233477e87f7e01ec09b2e04a`; accepted CI push `#329` / `35723407897` and PR `#330` / `35723411583`, both success. No live shared runtime was touched.
 - 2026-09-22: Unit 4 machine MCP/plugin gateway implemented through `ee47237d6ca7e1571f064923c909fdfe9bc07e65`; accepted CI push `#351` / `35726113138` and PR `#352` / `35726117694`, both success with typecheck + 115 tests. The implementation added task-level MCP authority, loopback bearer/Host/Origin protection, sanitized result views, immutable-envelope continuation/escalation/rollback semantics, and atomic task-state persistence for concurrent polling. No live shared runtime was touched.
+- 2026-09-22: User explicitly deferred the Milestone 5 live shared-runtime proof until the remaining build milestones are complete; the proof remains pending and must be returned to before final project closure.
+- 2026-09-22: Milestone 6 Slice 1 supervisor task contract implemented through `d8a064aa0ec6328c69c390e577fb4637af7509f9`; accepted CI push `#359` / `35729389950` and PR `#360` / `35729394317`, both success with typecheck + 120 tests. The slice binds supervisor instructions to existing durable Safety Plan authority, bounds all model-facing content, keeps validation external, and adds no new machine authority.
 
 ---
 
 # Current Next Step
 
-**Milestone 5 Unit 5 is blocked on explicit user authorization.** The next implementation action is the isolated live shared-runtime proof in a disposable registered workspace. Do not start live Cline Hub/VS Code/Ollama/shared-runtime writes until the user explicitly authorizes that test window.
+Begin Milestone 6 Slice 2: **planner output contract for bounded acceptance criteria and proposed validation commands**. Keep planner output non-authoritative until admitted by orchestrator policy; it must not widen the approved Safety Plan, grant model shell/network/MCP/plugin authority, or bypass external validation/diff safety. Use cloud tests only.
 
 ---
 
