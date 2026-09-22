@@ -24,13 +24,17 @@ export interface ClineRuntimeFactory {
 }
 
 export type ClineCoreCreator = (options: Record<string, unknown>) => Promise<ClineRuntime>;
+export type HubRuntimePreparer = () => Promise<unknown>;
 
 function defaultCreator(options: Record<string, unknown>): Promise<ClineRuntime> {
   return ClineCore.create(options as any) as Promise<ClineRuntime>;
 }
 
 export class SdkClineRuntimeFactory implements ClineRuntimeFactory {
-  constructor(private readonly createCore: ClineCoreCreator = defaultCreator) {}
+  constructor(
+    private readonly createCore: ClineCoreCreator = defaultCreator,
+    private readonly prepareHubRuntime: HubRuntimePreparer = ensureClineHubDaemonEntryCompatibility,
+  ) {}
 
   async create(request: ClineRuntimeCreateRequest): Promise<ClineRuntime> {
     if (request.mode === "local") {
@@ -44,7 +48,7 @@ export class SdkClineRuntimeFactory implements ClineRuntimeFactory {
     // launcher resolves a missing dist/entry.js. Prepare the exact pinned
     // compatibility entry before Cline performs its own Hub discovery, locking,
     // compatibility checks, and safe retirement logic.
-    await ensureClineHubDaemonEntryCompatibility();
+    await this.prepareHubRuntime();
 
     return await this.createCore({
       clientName: "cline-orchestrator",
