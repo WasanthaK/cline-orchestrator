@@ -1,4 +1,3 @@
-import { ClineCore } from "@cline/sdk";
 import {
   buildContextHandoffPrompt,
   createContextHandoff,
@@ -7,6 +6,14 @@ import {
   ContextSupervisor,
   type ContextRotationDecision,
 } from "./context-supervisor.js";
+import {
+  SdkClineRuntimeFactory,
+  type ClineRuntime,
+  type ClineRuntimeFactory,
+  type ClineRuntimeMode,
+  verifyRuntimeSessionWorkspace,
+} from "./cline-runtime.js";
+import { createHubSafetySessionContributions } from "./hub-safety-runtime.js";
 import type {
   OrchestratorTask,
   RunIterationMetrics,
@@ -26,6 +33,11 @@ const EDIT_TOOLS = new Set([
   "write_to_file",
   "delete_file",
 ]);
+
+export interface ClineRunnerOptions {
+  runtimeMode?: ClineRuntimeMode;
+  runtimeFactory?: ClineRuntimeFactory;
+}
 
 class WatchdogStallError extends Error {
   readonly code = "watchdog_stall";
@@ -70,9 +82,11 @@ function sleep(ms: number): Promise<void> {
 export class ClineRunner {
   private readonly store: TaskStore;
   private readonly contextSupervisor: ContextSupervisor;
+  private readonly runtimeMode: ClineRuntimeMode;
+  private readonly runtimeFactory: ClineRuntimeFactory;
   private lastActivityAt = Date.now();
   private streamedText = "";
-  private cline: any | undefined;
+  private cline: ClineRuntime | undefined;
   private currentRunMetrics: RunMetrics | undefined;
   private currentIteration = 0;
   private currentAttempt = 0;
@@ -86,11 +100,14 @@ export class ClineRunner {
   constructor(
     private readonly workspace: string,
     private readonly worker: WorkerConfig,
+    options: ClineRunnerOptions = {},
   ) {
     this.store = new TaskStore(workspace);
     this.contextSupervisor = new ContextSupervisor(
       worker.maxContextRotations > 0 ? worker.contextRotateAtTokens : 0,
     );
+    this.runtimeMode = options.runtimeMode ?? "local";
+    this.runtimeFactory = options.runtimeFactory ?? new SdkClineRuntimeFactory();
   }
 
   private getTurn(iteration: number): RunIterationMetrics | undefined {
@@ -177,12 +194,12 @@ export class ClineRunner {
     );
   }
 
-  private async getCore() {
+  private async getCore(): Promise<ClineRuntime> {
     if (this.cline) return this.cline;
 
-    const cline = await ClineCore.create({
-      clientName: "cline-orchestrator",
-      backendMode: "local",
+    const cline = await this.runtimeFactory.create({
+      mode: this.runtimeMode,
+      workspaceRoot: this.workspace,
     });
 
     cline.subscribe((event: any) => {
@@ -376,7 +393,7 @@ export class ClineRunner {
     return latest;
   }
 
-  private modelConfig() {
+  private modelConfig(task: OrchestratorTask) {
     const capabilities: Array<"tools" | "streaming" | "reasoning" | "reasoning-effort"> = [
       "tools",
       "streaming",
@@ -384,7 +401,7 @@ export class ClineRunner {
       "reasoning-effort",
     ];
 
-    return {
+    const base = {
       providerId: this.worker.providerId,
       modelId: this.worker.modelId,
       apiKey: this.worker.apiKey ?? "",
@@ -410,9 +427,16 @@ export class ClineRunner {
       enableSpawnAgent: false,
       enableAgentTeams: false,
     };
+
+    if (this.runtimeMode !== "hub") return base;
+    const safety = createHubSafetySessionContributions(task, this.workspace, this.worker);
+    return { ...base, ...safety.configOverrides };
   }
 
-  private toolPolicies() {
+  private toolPolicies(task: OrchestratorTask) {
+    if (this.runtimeMode === "hub") {
+      return createHubSafetySessionContributions(task, this.workspace, this.worker).toolPolicies;
+    }
     return {
       "*": { autoApprove: false },
       read_files: { enabled: true, autoApprove: true },
@@ -449,7 +473,10 @@ export class ClineRunner {
     };
   }
 
-  private capabilities() {
+  private capabilities(task: OrchestratorTask) {
+    if (this.runtimeMode === "hub") {
+      return createHubSafetySessionContributions(task, this.workspace, this.worker).capabilities;
+    }
     return {
       requestToolApproval: async (request: any) => {
         const toolName = String(request?.toolName ?? "");
@@ -480,13 +507,17 @@ export class ClineRunner {
     return "failed";
   }
 
-  private async startInteractiveSession(cline: any) {
+  private async startInteractiveSession(cline: ClineRuntime, task: OrchestratorTask) {
+    const hubSafety = this.runtimeMode === "hub"
+      ? createHubSafetySessionContributions(task, this.workspace, this.worker)
+      : undefined;
     return cline.start({
-      config: this.modelConfig(),
+      config: this.modelConfig(task),
       prompt: undefined,
       interactive: true,
-      toolPolicies: this.toolPolicies(),
-      capabilities: this.capabilities(),
+      toolPolicies: hubSafety?.toolPolicies ?? this.toolPolicies(task),
+      capabilities: hubSafety?.capabilities ?? this.capabilities(task),
+      ...(hubSafety ? { localRuntime: hubSafety.localRuntime } : {}),
     });
   }
 
@@ -504,7 +535,7 @@ export class ClineRunner {
   }
 
   private async recoverSession(
-    cline: any,
+    cline: ClineRuntime,
     task: OrchestratorTask,
     continuation: string,
     previousPrompt: string | undefined,
@@ -539,7 +570,7 @@ export class ClineRunner {
       },
     });
 
-    const session = await this.startInteractiveSession(cline);
+    const session = await this.startInteractiveSession(cline, task);
     task.lastRecoveredFromSessionId = previousSessionId;
     task.clineSessionId = session.sessionId;
     task.sessionGeneration = targetGeneration;
@@ -612,7 +643,7 @@ export class ClineRunner {
   }
 
   private async sendWithWatchdog(
-    cline: any,
+    cline: ClineRuntime,
     task: OrchestratorTask,
     sessionId: string,
     prompt: string,
@@ -691,7 +722,7 @@ export class ClineRunner {
   }
 
   private async executePrompt(
-    cline: any,
+    cline: ClineRuntime,
     task: OrchestratorTask,
     prompt: string,
     initialSessionId: string | undefined,
@@ -808,7 +839,24 @@ export class ClineRunner {
     }
   }
 
+  private async persistedHumanEscalation(taskId: string): Promise<OrchestratorTask | undefined> {
+    const latest = await this.store.load(taskId);
+    if (latest.status === "waiting_for_human" && latest.pendingEscalation?.status === "pending") {
+      return latest;
+    }
+    return undefined;
+  }
+
   private async applyResult(task: OrchestratorTask, result: any): Promise<OrchestratorTask> {
+    const escalated = await this.persistedHumanEscalation(task.id);
+    if (escalated) {
+      escalated.lastOutput = typeof result?.text === "string" ? result.text : task.lastOutput;
+      escalated.finishReason = "human_escalation";
+      this.finishRunMetrics(escalated);
+      await this.store.save(escalated);
+      return escalated;
+    }
+
     task.finishReason = result?.finishReason;
     task.lastOutput = typeof result?.text === "string" ? result.text : undefined;
     task.status = this.statusFromFinishReason(task.finishReason);
@@ -821,6 +869,16 @@ export class ClineRunner {
     process.stdout.write(`\n[cline result: ${task.finishReason ?? "unknown"}]\n`);
     await this.store.save(task);
     return task;
+  }
+
+  private async handleRunError(task: OrchestratorTask, error: unknown): Promise<OrchestratorTask | undefined> {
+    const escalated = await this.persistedHumanEscalation(task.id);
+    if (!escalated) return undefined;
+    escalated.finishReason = "human_escalation";
+    escalated.error = undefined;
+    this.finishRunMetrics(escalated);
+    await this.store.save(escalated);
+    return escalated;
   }
 
   async start(task: OrchestratorTask): Promise<OrchestratorTask> {
@@ -838,7 +896,7 @@ export class ClineRunner {
       await this.store.save(task);
 
       try {
-        const session = await this.startInteractiveSession(cline);
+        const session = await this.startInteractiveSession(cline, task);
         task.clineSessionId = session.sessionId;
         task.sessionGeneration = (task.sessionGeneration ?? 0) + 1;
         await this.store.save(task);
@@ -861,6 +919,9 @@ export class ClineRunner {
           clearInterval(heartbeat);
         }
       } catch (error) {
+        const escalated = await this.handleRunError(task, error);
+        if (escalated) return escalated;
+
         if (this.abortRequestedTaskIds.has(task.id) || task.status === "aborted") {
           task.status = "aborted";
           task.finishReason = "aborted";
@@ -897,6 +958,13 @@ export class ClineRunner {
 
     try {
       const cline = await this.getCore();
+      if (this.runtimeMode === "hub" && previousSessionId) {
+        try {
+          await verifyRuntimeSessionWorkspace(cline, previousSessionId, this.workspace);
+        } catch (error) {
+          if (!this.isSessionNotFound(error)) throw error;
+        }
+      }
       this.beginRun(task, prompt);
       await this.store.save(task);
 
@@ -916,6 +984,9 @@ export class ClineRunner {
           clearInterval(heartbeat);
         }
       } catch (error) {
+        const escalated = await this.handleRunError(task, error);
+        if (escalated) return escalated;
+
         if (this.abortRequestedTaskIds.has(task.id) || task.status === "aborted") {
           task.status = "aborted";
           task.finishReason = "aborted";
