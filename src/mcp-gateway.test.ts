@@ -8,6 +8,7 @@ import {
 } from "./mcp-gateway.js";
 import type { MachineOrchestratorService } from "./machine-orchestrator.js";
 
+const PROTOCOL_VERSION = "2026-07-28";
 const EXPECTED_TOOLS = [
   "abort_task",
   "approve_escalation",
@@ -29,6 +30,20 @@ function fakeService(): MachineOrchestratorService {
   return {} as MachineOrchestratorService;
 }
 
+function modernParams(params: Record<string, unknown> = {}) {
+  return {
+    ...params,
+    _meta: {
+      "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+      "io.modelcontextprotocol/clientInfo": {
+        name: "cline-orchestrator-test",
+        version: "1.0.0",
+      },
+      "io.modelcontextprotocol/clientCapabilities": {},
+    },
+  };
+}
+
 async function mcpFetch(
   handler: ReturnType<typeof createMachineMcpHandler>,
   method: string,
@@ -40,13 +55,14 @@ async function mcpFetch(
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
-        "mcp-protocol-version": "2026-07-28",
+        "mcp-protocol-version": PROTOCOL_VERSION,
+        "mcp-method": method,
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: 1,
         method,
-        params,
+        params: modernParams(params),
       }),
     }),
   );
@@ -156,16 +172,18 @@ test("plain HTTP MCP endpoint rejects unauthenticated requests before protocol h
       jsonrpc: "2.0",
       id: 1,
       method: "tools/list",
-      params: {},
+      params: modernParams(),
     });
+    const protocolHeaders = {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      "mcp-protocol-version": PROTOCOL_VERSION,
+      "mcp-method": "tools/list",
+    };
 
     const unauthenticated = await fetch(url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-        "mcp-protocol-version": "2026-07-28",
-      },
+      headers: protocolHeaders,
       body,
     });
     assert.equal(unauthenticated.status, 401);
@@ -181,9 +199,7 @@ test("plain HTTP MCP endpoint rejects unauthenticated requests before protocol h
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-        "mcp-protocol-version": "2026-07-28",
+        ...protocolHeaders,
       },
       body,
     });
