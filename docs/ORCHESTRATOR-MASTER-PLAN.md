@@ -379,7 +379,7 @@ This complements the focused unit/integration coverage already present for proje
 
 ## Current Next Step
 
-Begin Milestone 5 implementation Unit 2: **pre-execution policy engine + owner-targeted safe executors**. Do not implement live Hub write control yet.
+Begin Milestone 5 implementation Unit 3: **Hub-backed Cline runtime adapter/factory with owner-targeted policy/executor wiring**. Use mocked/fake Hub tests first; do not run live shared-runtime writes yet.
 
 ---
 
@@ -444,8 +444,8 @@ The safe migration is now documented in `docs/MILESTONE-5-MIGRATION-DESIGN.md`:
 - [x] Machine-local user-configured project/workspace registry with canonical-root validation, opaque IDs, and revisioned safety profiles.
 - [x] Read-only Safety Preview + immutable server-side Safety Plan + opaque single-use/expiring plan token; task start rejects stale registry/Git/policy fingerprints.
 - [x] Durable tasks bind to approved project/workspace/safety-plan identity so `continue_task` cannot silently broaden authority.
-- [ ] Pre-execution policy engine with fail-closed action normalization, secret/protected/allowed path checks, traversal/symlink containment, and durable human escalation.
-- [ ] Owner-targeted `beforeTool` contribution plus owner-targeted read/search/editor/apply-patch executors; unknown/unsupported tools fail closed.
+- [x] Pre-execution policy engine with fail-closed action normalization, secret/protected/allowed path checks, traversal/symlink containment, and durable human escalation.
+- [ ] Owner-targeted `beforeTool` contribution plus owner-targeted read/search/editor/apply-patch executors; local fail-closed gate/executor primitives are complete, but Hub owner-targeted wiring remains Unit 3.
 - [ ] First-pilot worker safety profile disables arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams, and provider-owned execution surfaces.
 - [ ] Hub-backed runtime factory preserves existing start/send/abort/events/watchdog/context-rotation/recovery/validation/diff-safety behavior and revalidates workspace/session identity on resume.
 - [ ] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
@@ -465,6 +465,22 @@ Unit 1 is implemented without Hub/Cline runtime mutation.
 - The resulting durable task stores the approved project/workspace/safety-plan/policy/profile identity and approved path envelope; the opaque token itself is not persisted in `.orchestrator` state.
 - No Hub session is created by this unit. The actual pre-execution filesystem/tool gate remains Unit 2.
 
+## Unit 2 — Pre-execution Policy + Safe Executor Boundary
+
+Unit 2 is implemented and cloud tested without live Hub/Cline runtime mutation.
+
+- Tool requests normalize into bounded action descriptors for read, search, edit, patch, command, network, or unknown actions.
+- The policy returns only `ALLOW`, `DENY`, or `ESCALATE_AND_STOP`; malformed/unknown policy state fails closed.
+- Existing paths use real-path semantics; new paths resolve through the nearest existing ancestor; traversal outside the canonical registered root is denied.
+- Write operations reject symlink/reparse-point path components in the first pilot.
+- Secret/credential patterns and configured protected paths are denied before approved-scope matching.
+- Out-of-scope writes produce `ESCALATE_AND_STOP` and can persist a durable `waiting_for_human` task state with a pending escalation record, action fingerprint, policy version, and event provenance.
+- The `beforeTool` gate returns allow/skip/stop semantics and fails closed if escalation persistence is unavailable.
+- `SafeWorkspaceExecutors` re-evaluate the durable safety envelope immediately before read/search/editor/apply-patch delegates execute.
+- Multi-file patch preview checks every affected path before the apply delegate is called; any denied/escalated path blocks the whole patch.
+- Arbitrary model shell and ungoverned network calls are explicitly denied; unknown MCP/plugin-style tools fail closed. Hub-level subagent/team/provider-owned surface suppression remains part of the Unit 3 safe worker/runtime wiring.
+- Unit 2 does not claim Hub capability ownership by itself; the actual owner-targeted `beforeTool`/executor registration is the first Unit 3 integration step.
+
 ## Evidence
 
 - Hub discovery/authentication spike: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264`, workflow `35607213364`, success.
@@ -476,11 +492,14 @@ Unit 1 is implemented without Hub/Cline runtime mutation.
 - Unit 1 registry implementation: `7f02b471dcada322c2b7cb740e8a552486634b16`; Safety Plan boundary: `29910e4d3bfedf23707697332d62c99a9e0a1e5a`; durable task safety fields: `d8fe91a9779022aeab73e6bb2d0b03525de86a41`; focused registry/plan tests: `f4c09aa6c67094ae209d69e67b6c61dd550236a6`.
 - Plan-token-only durable task start: `3e49442e923ade2282377153838cbc390aa48178`; focused persistence/replay tests: `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`; cloud CI `#295`, workflow `35679414455`, success.
 - Unit 1 tests cover canonical registration, opaque IDs, alias/root rejection, scope non-expansion, token expiry/replay, registry/policy staleness, Git dirty/HEAD staleness, plan-token-only task creation, durable safety identity, and token non-persistence.
+- Unit 2 durable escalation task state: `b2bf06b9f59fedfb588dd36c66d3dc3c33d8f29a`; pre-execution policy engine: `d6e0d93460bfcf4d382fec7a8a7b6be298d3c6c4`; durable escalation service: `300060db73f3f40a860543fcf4416372c63e6a9c`; fail-closed gate/safe executor boundary: `89610fccef145d05504a90a797d35646cf0b3804`; policy tests: `6f655537e24e6bcf732fb99670ade579ef666ff3`; executor tests: `464268aea4fae40047853dfd5ac39b6ec2c74aca`; durable escalation tests: `46da20d18cd703018c54207258d4fb2422e71eeb`.
+- Unit 2 cloud CI: push run `#311`, workflow `35699517817`, success; PR run `#312`, workflow `35699521432`, success. Typecheck and full test suite passed.
+- Unit 2 tests cover safe read/write, secret/protected denial, out-of-scope escalation, traversal rejection, symlink write escape denial, shell/network/unknown denial, fail-closed escalation persistence, executor re-checks, multi-file patch all-or-nothing behavior, and durable `waiting_for_human` escalation persistence/idempotence.
 - No live Cline Hub, VS Code runtime, Ollama runtime, shared workspace, push, deploy, or external-system mutation was performed.
 
 ## Status
 
-**IN PROGRESS — technical spike complete; implementation Unit 1 complete**
+**IN PROGRESS — technical spike complete; implementation Units 1–2 local safety boundary complete; Hub integration pending**
 
 ---
 
@@ -576,7 +595,9 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Machine-local workspace registry | **Implemented + cloud tested** |
 | Safety Preview + single-use plan-token boundary | **Implemented + cloud tested** |
 | Durable approved-task safety binding | **Implemented + cloud tested** |
-| Pre-execution policy engine / safe executors | Implementation pending |
+| Pre-execution policy engine + local safe executor boundary | **Implemented + cloud tested** |
+| Durable pre-execution human escalation | **Implemented + cloud tested** |
+| Hub owner-targeted policy/executor wiring | Implementation pending |
 | Shared VS Code/Hub write session | Implementation pending |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
@@ -603,7 +624,8 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 16. **Pre-execution enforcement** — the first write pilot requires both an owner-targeted `beforeTool` gate and owner-targeted filesystem executors; a failure in policy/capability handling must fail closed before side effects.
 17. **Restricted pilot surfaces** — arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams, and provider-owned execution tools remain disabled until each has an enforceable policy boundary and focused tests.
 18. **Safety Plan tokens** — task approval uses opaque, short-lived, single-use tokens backed by immutable server-side plans; tokens and local credential material must not enter repository/project memory.
-19. **Safety Preview scope matching is not the filesystem execution gate** — Unit 1 only prevents requested-scope broadening relative to the registered profile. Unit 2 must perform authoritative path normalization, containment, secret/protected checks, symlink/reparse-point handling, and per-operation enforcement immediately before execution.
+19. **Safety Preview scope matching is not the filesystem execution gate** — Unit 1 only prevents requested-scope broadening relative to the registered profile. Unit 2 performs authoritative path normalization, containment, secret/protected checks, symlink/reparse-point handling, and per-operation enforcement immediately before local executor delegation.
+20. **Local executor primitives are not Hub ownership proof** — Unit 2 proves fail-closed policy and executor behavior in isolation. Unit 3 must wire those primitives as creator/owner-targeted Hub contributions/executors and prove owner disconnect/wrong-client behavior with mocks before any live runtime proof.
 
 ---
 
@@ -615,14 +637,14 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
    - user-configured project/workspace authorization is stored outside repositories;
    - canonical roots, opaque IDs, revisioned safety profiles, read-only discovery, immutable Safety Plans, single-use TTL tokens, stale-state rejection, and durable task binding are implemented and cloud tested.
 
-2. **Implement pre-execution policy engine + owner-targeted safe executors.**
-   - normalize tool actions;
-   - enforce path/secret/protected/symlink/traversal rules;
-   - add fail-closed `beforeTool` policy contribution;
-   - route read/search/editor/apply-patch through owner-targeted executors;
-   - prove multi-file patch all-or-nothing policy and disabled shell/network/MCP/plugin surfaces.
+2. **COMPLETE — pre-execution policy engine + local safe executor boundary.**
+   - tool actions normalize to bounded descriptors and unknown/malformed actions fail closed;
+   - path containment, secret/protected policy, symlink/traversal checks, approved write scope, and durable escalation are implemented;
+   - fail-closed `beforeTool` gate and read/search/editor/apply-patch executor re-check primitives are implemented;
+   - multi-file patch all-or-nothing behavior and disabled shell/network/unknown surfaces are cloud tested;
+   - actual Hub creator/owner targeting is intentionally deferred to Unit 3 rather than claimed by the local primitives.
 
-3. **Implement the Hub-backed Cline runtime adapter/factory** with mocked/fake Hub tests first; preserve current lifecycle/recovery/watchdog/context/validation/diff-safety semantics and verify workspace identity on resume.
+3. **Implement the Hub-backed Cline runtime adapter/factory** with mocked/fake Hub tests first; preserve current lifecycle/recovery/watchdog/context/validation/diff-safety semantics, wire the Unit 2 gate/executors as owner-targeted capabilities, enforce the safe worker profile, and verify workspace/session identity on resume.
 
 4. **Implement the machine-level ChatGPT MCP/plugin gateway** with task-level operations and no raw path/shell/Hub authority.
 
@@ -812,6 +834,15 @@ Only work on the first unfinished item unless a prerequisite defect is discovere
 - Milestone impact: **Milestone 5 implementation Unit 1 COMPLETE; first three implementation criteria complete**.
 - Known limitation: pre-execution path/tool enforcement, owner-targeted executors, Hub runtime adapter, MCP gateway, and shared-runtime proof remain unimplemented. Safety Preview scope matching is not the final filesystem security gate.
 - Next action: implement Unit 2 — pre-execution policy engine + owner-targeted safe executors. Do not start live Hub writes yet.
+
+## 2026-09-22 — Milestone 5 Unit 2 local pre-execution boundary completed
+
+- Change: implemented normalized action descriptors, fail-closed `ALLOW` / `DENY` / `ESCALATE_AND_STOP` policy, canonical path containment, nearest-existing-ancestor handling for new files, secret/protected checks, write-symlink rejection, approved-scope enforcement, durable human escalation, an early `beforeTool` gate primitive, and read/search/editor/apply-patch executor re-check primitives.
+- Tests: safe read/write, secret/protected denial, traversal and symlink escape rejection, out-of-scope escalation, shell/network/unknown denial, escalation persistence failure, immediate executor re-checks, multi-file patch all-or-nothing behavior, and durable/idempotent `waiting_for_human` escalation state.
+- Evidence: task state `b2bf06b9f59fedfb588dd36c66d3dc3c33d8f29a`; policy `d6e0d93460bfcf4d382fec7a8a7b6be298d3c6c4`; escalation `300060db73f3f40a860543fcf4416372c63e6a9c`; safe executors `89610fccef145d05504a90a797d35646cf0b3804`; tests `6f655537e24e6bcf732fb99670ade579ef666ff3`, `464268aea4fae40047853dfd5ac39b6ec2c74aca`, `46da20d18cd703018c54207258d4fb2422e71eeb`; cloud CI push `#311` / `35699517817` and PR `#312` / `35699521432`, both passed.
+- Milestone impact: **Milestone 5 implementation Unit 2 local safety boundary COMPLETE**; authoritative Hub owner-targeted wiring and safe worker profile remain Unit 3.
+- Known limitation: these local gate/executor primitives are not yet registered as creator/owner-targeted Hub capabilities, and no live Cline Hub/VS Code/Ollama runtime has been touched.
+- Next action: implement Unit 3 — Hub-backed `ClineCore` runtime adapter/factory with mocked/fake Hub tests, owner-targeted Unit 2 gate/executor wiring, safe worker profile, and workspace/session identity verification. Do not start live shared-runtime writes yet.
 
 ---
 
