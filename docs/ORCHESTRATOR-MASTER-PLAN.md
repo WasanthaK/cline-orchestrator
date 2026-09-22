@@ -9,6 +9,8 @@ This file is the canonical execution plan for `cline-orchestrator`.
 
 Before implementation work: read this file, confirm the branch/HEAD and current milestone, implement only the first unfinished item, use normal cloud CI rather than destructive shared-runtime testing, then update this file with evidence and the single next action.
 
+Detailed historical implementation narrative remains available in Git history; this tracker keeps the current architecture, acceptance state, evidence, constraints, and ordered next work authoritative.
+
 ## End Goal
 
 ```text
@@ -40,77 +42,31 @@ The system should eventually support long-running and unattended coding work whi
 
 # Execution Rules
 
-## Rule 1 — Finish milestones in order
-
-```text
-1. Foundation
-   ->
-2. Safety
-   ->
-3. Context Durability
-   ->
-4. Durable Project Memory
-   ->
-5. ChatGPT Plugin / Cline Hub Shared Runtime
-   ->
-6. GPT Supervisor
-   ->
-7. Unattended Execution
-   ->
-8. Advanced UI / Multi-worker
-```
-
-A milestone is complete only when its acceptance criteria are implemented, relevant automated tests exist, normal GitHub-hosted CI is green, required runtime behavior has evidence where appropriate, and this document records the result.
-
-## Rule 2 — Shared local Ollama runtime is protected
-
-The Windows/Ollama environment is a shared development runtime. Automated development must not stop/unload models, kill `llama-server.exe`, restart Ollama, pre-warm/switch models, or run destructive self-hosted E2E tests without explicit authorization.
-
-Use repository inspection, mocks/unit tests, and GitHub-hosted CI for normal development. The self-hosted runner remains manual/read-only unless an isolated runtime test window is explicitly authorized.
-
-## Rule 3 — Model context is not project lifetime
-
-Project continuity must live in durable orchestrator state, not in one model conversation. Context rotation must use current/per-turn request size, not cumulative token totals.
-
-## Rule 4 — Model completion is not task completion
-
-For coding tasks:
-
-```text
-model reports done
-      ->
-validation passes (when configured)
-      ->
-diff safety policy passes
-      ->
-completed is persisted
-```
-
-A hard diff-policy failure prevents `completed`.
-
-## Rule 5 — ChatGPT receives task authority, not machine authority
-
-The ChatGPT integration must expose project/workspace/task-level operations, not unrestricted shell/filesystem/Hub primitives. User-configured local project/workspace registration is the authority boundary. Raw paths supplied by ChatGPT, repository text, fuzzy name matching, and Hub participation cannot grant additional write authority.
-
-A write-capable task begins only after a user-visible Safety Preview and a server-verifiable bounded task envelope. Any scope expansion or high-risk action must fail closed into durable human escalation rather than being silently approved by another model or Hub client.
+1. **Finish milestones in order.** Work only on the first unfinished item unless a prerequisite defect is discovered.
+2. **Protect the shared local runtime.** Automated development must not stop/unload Ollama models, kill runtime processes, restart Ollama, mutate shared VS Code/Cline Hub state, or run destructive self-hosted E2E tests without explicit authorization.
+3. **Use cloud CI for normal development.** Repository inspection, mocks/unit tests, and GitHub-hosted CI are the normal proof path. The self-hosted/shared runtime remains manual/read-only until an isolated proof window is explicitly authorized.
+4. **Model context is not project lifetime.** Durable task/project state owns continuity; context rotation uses current/per-turn request size, not cumulative totals.
+5. **Model completion is not task completion.** Coding completion requires configured validation plus checkpoint-relative diff safety before `completed` persists.
+6. **ChatGPT receives task authority, not machine authority.** Registered opaque IDs and approved task envelopes grant authority; raw paths, repository text, fuzzy matches, Hub participation, or ChatGPT conversation identity do not.
+7. **Scope expansion fails closed.** Out-of-scope/high-risk actions become durable human escalation or a new Safety Preview, never silent authority expansion.
 
 ---
 
-# Milestone 1 — Foundation: Task Execution and Durability
+# Milestone 1 — Foundation
 
 ## Objective
 
-Reliably control Cline across task start, continuation, recovery, cancellation, and daemon lifecycle while preserving durable orchestration state.
+Reliable task start/resume, persistent daemon behavior, durable task state, bounded recovery, event evidence, explicit abort, and graceful shutdown.
 
 ## Acceptance Criteria
 
-- [x] Start/resume tasks with durable task state and Cline session IDs.
-- [x] Persistent daemon with same-daemon continuity and semantic recovery after session/runtime loss.
+- [x] Durable start/resume and session IDs.
+- [x] Persistent daemon and semantic recovery after runtime/session loss.
 - [x] Run-local token/tool/iteration metrics.
 - [x] Watchdog stall detection with bounded retry/recovery.
-- [x] Durable event timeline, explicit abort, and graceful shutdown/drain semantics.
+- [x] Durable event timeline, abort, graceful shutdown/drain.
 - [x] CLI persistence fallback during listener shutdown race.
-- [x] Metadata-only provider preflight before task state changes.
+- [x] Metadata-only provider preflight before task-state mutation.
 
 ## Status
 
@@ -118,56 +74,21 @@ Reliably control Cline across task start, continuation, recovery, cancellation, 
 
 ---
 
-# Milestone 2 — Safety: Make Autonomous Editing Reversible
-
-## Objective
-
-Before unattended editing, every coding task must have auditable Git state, a reversible checkpoint, explicit validation support, and a final policy check on the resulting workspace diff.
+# Milestone 2 — Safety: Reversible Autonomous Editing
 
 ## Acceptance Criteria
 
-### Git state and rollback
+- [x] Git branch/HEAD/dirty state before/after each run.
+- [x] Restorable checkpoint preserving pre-existing dirty tracked/untracked state.
+- [x] Durable checkpoint metadata and explicit rollback service/CLI/tests.
+- [x] External validation with bounded repair and durable evidence.
+- [x] Checkpoint-relative final diff summary.
+- [x] Expected-path/protected-path/branch-HEAD/excessive-diff enforcement.
+- [x] `completed` requires validation success when configured plus diff-safety success.
 
-- [x] Capture Git branch/HEAD/dirty state before and after run.
-- [x] Exclude `.orchestrator/` bookkeeping from workspace comparisons.
-- [x] Create restorable checkpoint before Cline changes the workspace.
-- [x] Preserve already-dirty tracked/untracked state.
-- [x] Persist checkpoint metadata/events.
-- [x] Explicit rollback service, serialized daemon endpoint, CLI, and tests.
+## Key Evidence
 
-### Validation
-
-- [x] Task stores `acceptanceCriteria[]` and `validationCommands[]`.
-- [x] Model completion enters `validating` when commands exist.
-- [x] Validation runs outside the model with persisted command evidence.
-- [x] Stop on first failure; terminal `validation_failed` state.
-- [x] Bounded automatic validation repair with lifecycle events/tests.
-
-### Diff safety policy
-
-- [x] Explicit final diff summary relative to the original pre-run checkpoint.
-- [x] Expected-path scope detection when configured.
-- [x] Protected-path hard failures and deployment-sensitive warnings.
-- [x] Unexpected branch/HEAD movement detection.
-- [x] Configurable excessive-diff threshold.
-- [x] Persist warnings/failures/results and policy events.
-- [x] `completed` requires validation success (when configured) and diff-safety success.
-
-## Diff Safety Configuration
-
-- `ORCH_DIFF_MAX_CHANGED_FILES` — hard threshold; default `100`; `0` disables it.
-- `ORCH_DIFF_PROTECTED_PATTERNS` — comma-separated hard-failure glob patterns.
-- `ORCH_DIFF_WARNING_PATTERNS` — comma-separated warning glob patterns.
-- `ORCH_DIFF_EXPECTED_PATHS` — optional allowed task-scope patterns.
-- Task `expectedChangedPaths[]` takes precedence over environment scope.
-
-The comparison uses the original run checkpoint, so validation repair does not reset the baseline and pre-run dirty state is distinguishable from task-created changes.
-
-## Evidence
-
-- Commit `56cecab14bf5719601d6801b5635a5b2ef2d0336` (`feat: add diff safety gate`).
-- GitHub-hosted CI run `#174`, workflow `35574026345`, success.
-- No self-hosted/Ollama runtime mutation was performed.
+- Diff-safety closure: `56cecab14bf5719601d6801b5635a5b2ef2d0336`; CI `#174` / `35574026345`, success.
 
 ## Status
 
@@ -177,63 +98,23 @@ The comparison uses the original run checkpoint, so validation repair does not r
 
 # Milestone 3 — Context Durability
 
-## Objective
-
-Allow long-running work without allowing one Cline conversation to grow until quality degrades or the provider context ceiling is reached.
-
 ## Acceptance Criteria
 
-- [x] Track per-turn input usage separately from cumulative usage.
-- [x] Configurable context-rotation threshold.
-- [x] Rotation decision based on current/per-turn request size, not cumulative run totals.
-- [x] Distinct planned context-rotation reason/event from watchdog failure.
-- [x] Planned rotation does not increment watchdog stall/retry counters.
-- [x] Rotation is requested after an iteration boundary rather than during an active tool call.
-- [x] Cloud tests cover threshold calculations.
-- [x] Replace primarily prose/previous-output recovery with a versioned structured durable handoff artifact.
-- [x] Handoff includes original goal, current task state, relevant workspace evidence, and pending action.
-- [x] Persist durable handoff evidence before session replacement and retain task/event provenance.
-- [x] Bound and test multiple planned rotations in one long task.
-- [x] Test interaction with `session_not_found` recovery.
-- [x] Test interaction with validation repair while preserving the original checkpoint baseline.
-- [x] Keep run metrics and lifecycle events attributable across multiple session generations.
+- [x] Per-turn input usage and configurable context-rotation threshold.
+- [x] Planned rotation distinct from watchdog retry/stall behavior.
+- [x] Versioned structured durable handoff written before session replacement.
+- [x] Bounded repeated rotations.
+- [x] `session_not_found` recovery interaction.
+- [x] Validation-repair recovery preserves original checkpoint baseline.
+- [x] Cross-generation metrics/events remain attributable and coherent.
 
-## Structured Handoff Design
+## Key Evidence
 
-Durable handoffs are stored under:
-
-```text
-.orchestrator/handoffs/<task-id>/<target-generation>-<handoff-id>.json
-```
-
-Each version-1 handoff records recovery/rotation reason, source/target generation, original goal, pending action, task lifecycle/configuration state, current Git snapshot, checkpoint identity/fingerprints, validation/diff-safety summaries, run metrics, and bounded supporting prose.
-
-The artifact is written **before** starting the replacement Cline session. The replacement prompt is rendered from structured durable data rather than reconstructed primarily from prior prose. Task state stores `lastContextHandoff` plus `contextHandoffCount`, and `context_handoff_created` events record provenance.
-
-## Bounded Rotation Behavior
-
-`maxContextRotations` is enforced per run. Integration coverage proves two allowed rotations produce generations 1 -> 2 -> 3, two distinct handoffs, and no third replacement when the configured budget is two.
-
-## Session-Loss Behavior
-
-A `session_not_found` result is distinct from planned rotation. Integration coverage proves one lost recorded session creates one handoff targeting the next generation, advances recovery/session-generation counters, resumes from the structured handoff, and does not increment planned-rotation counters.
-
-## Validation-Repair Behavior
-
-A validation-repair model turn reuses the original task checkpoint. If that repair turn loses its Cline session, the durable handoff captures the failed validation evidence, repair instruction, and original checkpoint identity/fingerprint. After the replacement model reports completion, the task returns to `validating`; it cannot persist `completed` until external validation actually passes.
-
-## Cross-Generation Evidence
-
-Repeated-rotation integration coverage proves run metrics remain coherent across replacement sessions: attempts and per-turn input/output/tool counts remain distinct and cumulative totals remain correct. Planned rotations do not increment watchdog retry/stall counters. `context_rotating`, `context_handoff_created`, and `session_recovered` events retain run-rotation count, reason, source generation, target generation, and distinct handoff IDs.
-
-## Evidence
-
-- Structured handoff: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI `#178`, workflow `35576669466`, success.
-- Repeated rotations: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI `#182`, workflow `35577093373`, success.
-- Session-not-found recovery: commit `26dbf0db896e83d160c1cf3f43f2ae7b0e813e2c`; CI `#186`, workflow `35577401081`, success.
-- Validation-repair recovery: commit `af9db66835c5dfc7a657e1c0291cdaef24668a2d`; CI `#190`, workflow `35577839253`, success.
-- Cross-generation metrics/event assertions: commit `7fa6abebbc00b801349d321a98efd626795e2d1f`; CI `#194`, workflow `35578149506`, success.
-- No self-hosted/Ollama runtime mutation was performed.
+- Structured handoff: `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI `#178` / `35576669466`.
+- Repeated rotations: `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI `#182` / `35577093373`.
+- Session-not-found recovery: `26dbf0db896e83d160c1cf3f43f2ae7b0e813e2c`; CI `#186` / `35577401081`.
+- Validation-repair recovery: `af9db66835c5dfc7a657e1c0291cdaef24668a2d`; CI `#190` / `35577839253`.
+- Cross-generation closure: `7fa6abebbc00b801349d321a98efd626795e2d1f`; CI `#194` / `35578149506`.
 
 ## Status
 
@@ -242,10 +123,6 @@ Repeated-rotation integration coverage proves run metrics remain coherent across
 ---
 
 # Milestone 4 — Durable Project Memory
-
-## Objective
-
-Make project continuity independent of any particular model context or Cline session.
 
 ## Target Structure
 
@@ -256,130 +133,46 @@ Make project continuity independent of any particular model context or Cline ses
   task-summaries/
   events/
   checkpoints/
+  handoffs/
   memory/
     architecture.md
     decisions.md
     code-map.md
     conventions.md
     known-issues.md
-  handoffs/
 ```
 
 ## Acceptance Criteria
 
-- [x] Durable project metadata.
+- [x] Durable project metadata and stable project identity.
 - [x] Architecture memory.
-- [x] Decision log with rationale and date/task provenance.
-- [x] Code map containing important modules/components only.
+- [x] Decision log with rationale/date/task provenance.
+- [x] Selective code map.
 - [x] Conventions memory.
-- [x] Known-issues memory.
-- [x] Per-task structured summary.
-- [x] Structured handoff artifact shared with context rotation/recovery.
-- [x] Selective retrieval so whole project memory is not dumped into every prompt.
-- [x] Memory updates are explicit/auditable.
-- [x] Tests for serialization, update, and selection logic.
+- [x] Known-issues lifecycle memory.
+- [x] Versioned bounded per-task summary.
+- [x] Structured handoff integration with bounded durable memory context.
+- [x] Deterministic selective retrieval.
+- [x] Explicit/auditable memory updates and verifier.
+- [x] Cross-store serialization/update/audit/selection closure.
 
-## Project Metadata and Storage Skeleton
+## Key Evidence
 
-The orchestrator now bootstraps project memory automatically on the first task-state save.
-
-`.orchestrator/project.json` is schema-versioned and persists a stable `projectId`, creation/update timestamps, current workspace root, memory-schema version, canonical relative paths for the five memory documents, and a latest-task pointer. Re-opening the project preserves project identity and creation time while task-state saves refresh the latest-task pointer.
-
-The storage skeleton creates these files once and never overwrites existing content:
-
-```text
-.orchestrator/memory/architecture.md
-.orchestrator/memory/decisions.md
-.orchestrator/memory/code-map.md
-.orchestrator/memory/conventions.md
-.orchestrator/memory/known-issues.md
-```
-
-Unknown/future `project.json` schema versions are rejected instead of silently rewritten. Existing human-authored memory-file content is preserved when the skeleton is re-ensured.
-
-## Architecture Memory
-
-Architecture memory now has an explicit append-only update primitive. Each durable entry carries a unique update ID, timestamp, originating task ID, rationale, title, and architecture content. A machine-readable provenance marker is written beside the human-readable entry, while `.orchestrator/project.json` records `memoryUpdateCount` and `lastMemoryUpdate` for fast audit/reference.
-
-Updates preserve existing architecture content rather than replacing the document. Required provenance/content fields are validated, timestamps must be valid, and multiple updates remain independently attributable and ordered.
-
-## Decision Memory
-
-Decision memory now uses the same append-only audit model. Each decision entry records a unique update ID, timestamp, originating task ID, title, explicit decision statement, and rationale. Machine-readable provenance is embedded beside the human-readable decision entry.
-
-Existing decision history is preserved. Project-level `memoryUpdateCount` spans architecture and decision updates together, and `lastMemoryUpdate` identifies the latest update regardless of document, keeping audit provenance coherent across memory types.
-
-## Code Map Memory
-
-Code-map memory now records one important module/component per append-only entry. Each update includes the component name, a concise responsibility, task/date/rationale provenance, and a bounded set of representative paths rather than a repository-wide inventory.
-
-The path list is deliberately constrained to 1–12 unique entries. Empty, duplicate, or over-broad path sets are rejected. Machine-readable provenance includes the component and representative paths, while project-level `memoryUpdateCount` and `lastMemoryUpdate` remain coherent across architecture, decisions, and code-map updates.
-
-## Conventions Memory
-
-Conventions memory now records durable implementation/project rules that future work should preserve. Each append-only entry carries a title, explicit scope, convention text, unique update ID, timestamp, originating task ID, and rationale, with machine-readable provenance beside the human-readable entry.
-
-Existing convention content is preserved rather than replaced. Required title/scope/convention/provenance fields are validated, and project-level `memoryUpdateCount` plus `lastMemoryUpdate` remain coherent when convention updates follow other memory document types.
-
-## Known Issues Memory
-
-Known-issues memory now records durable risks/constraints as append-only lifecycle entries. Each update carries an explicit status (`open`, `mitigated`, `resolved`, or `accepted`), impact, description, unique update ID, timestamp, originating task ID, and rationale, with machine-readable provenance beside the human-readable entry.
-
-Existing issue history is preserved instead of being rewritten when status changes. Invalid statuses and missing status/impact/description/provenance fields are rejected, while project-level `memoryUpdateCount` and `lastMemoryUpdate` remain coherent when issue updates follow other memory types.
-
-## Per-task Structured Summary
-
-Each task can now produce a versioned latest-summary artifact at `.orchestrator/task-summaries/<task-id>.json`. The summary records revision and source-task timestamp provenance, task goal/status, lifecycle/configuration counts, selected validation/diff-safety/Git/handoff/run-metric evidence, and terminal outcome fields.
-
-Summary text is bounded to 2,000 characters per retained text field. Verbose/transient payloads such as worker prompts/output, validation stdout/stderr, Git status lines, full diff path lists, and per-turn metric arrays are deliberately excluded. Re-recording a task preserves the original summary creation timestamp while incrementing the revision and recording the latest source-task timestamp. Unsupported summary schemas and path-escaping task IDs are rejected.
-
-## Handoff / Project-Memory Integration
-
-New structured handoffs now carry an optional bounded `durableMemory` block while retaining schema version 1 for backward compatibility. That block contains the current bounded per-task summary plus a compact project-memory index: project ID/schema, canonical memory-file paths, project memory update count, and latest auditable memory-update reference.
-
-The handoff prompt includes that bounded block for replacement Cline sessions, so planned context rotation and recovery can continue from durable task/project provenance rather than reconstructed prose alone. Full architecture/decision/code-map/conventions/known-issues document bodies are deliberately not embedded; focused tests prove a sentinel stored in an unrelated durable entry does not appear in either the handoff artifact or generated recovery prompt. Legacy version-1 handoffs without `durableMemory` continue to load and render normally.
-
-## Selective Project-Memory Retrieval
-
-Selective retrieval now parses only orchestrator-authored entries that carry valid machine-readable memory provenance. The current goal, pending action, acceptance criteria, expected changed paths, and task ID form a bounded retrieval query; generic orchestration words such as `memory`, `project`, `durable`, and `task` are ignored so they cannot make unrelated records appear relevant.
-
-A non-task-local entry must match at least two meaningful query terms. Exact task provenance remains eligible even without lexical overlap. Selected results retain update ID, document, task ID, timestamp, rationale, source path, relevance score, and a bounded excerpt. Retrieval is capped at six entries total, two entries per memory document, 32 query terms, and 1,800 excerpt characters per selected entry. The selected set is embedded in the existing handoff `durableMemory` block; irrelevant durable records are not copied into the handoff or replacement prompt.
-
-## Explicit/Auditable Memory Verification
-
-Project memory now has a read-only audit verifier that walks all five durable memory documents and validates the machine-readable provenance written by every orchestrator update primitive. The audit checks required provenance fields, declared-vs-physical document identity, valid timestamps, duplicate update IDs, project-level `memoryUpdateCount`, and exact `lastMemoryUpdate` coherence.
-
-A clean audit returns the complete set of explicit update references with source paths and a passing result. Provenance corruption, duplicate update IDs, count drift, missing latest references, or latest-reference field mismatches produce explicit audit issues rather than being silently accepted. Focused tests exercise architecture, decision, code-map, convention, and known-issue update paths end-to-end and prove the verifier fails closed after deliberate durable-record or metadata tampering.
-
-## Final Serialization / Update / Selection Closure
-
-The final Milestone 4 integration matrix now proves the durable-memory lifecycle as one chain: write all five memory types, reload project metadata through a fresh store instance, append a later lifecycle update after reload, audit the serialized durable state, then run selective retrieval twice from disk and verify stable relevant update IDs while unrelated memory remains excluded.
-
-This complements the focused unit/integration coverage already present for project metadata, task summaries, handoffs, memory updates, audit verification, retrieval relevance, and bounded selection. The cross-cutting test ensures serialization, update, audit, and selection behavior remain compatible when composed rather than only when tested independently.
-
-## Evidence
-
-- Project metadata/skeleton implementation: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198`, workflow `35579239935`, success.
-- Architecture memory implementation: commit `0344c16cc843428af4dbe4247b9156a222e2bdb9` (`feat: add auditable architecture memory updates`); CI `#202`, workflow `35585222049`, success.
-- Decision memory implementation: commit `3a43401c80e6ebe3df6dc33c337d307cbeb38cee` (`feat: add auditable decision memory updates`); CI `#206`, workflow `35586243241`, success.
-- Code-map memory implementation: commit `3e064115c187783ec9fb86a3a732fca136e02140` (`feat: add selective code map memory`); CI `#212`, workflow `35590998279`, success.
-- Conventions memory implementation: commit `3efecb809b9679505f007d75bfd273d815fa2e55` (`feat: add auditable conventions memory`); CI `#220`, workflow `35593035452`, success.
-- Known-issues memory implementation: commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c` (`feat: add auditable known issues memory`); CI `#226`, workflow `35595083980`, success.
-- Per-task summary implementation: commit `d74f63618898291f42363bdd846459814820b4cd` (`feat: add durable per-task structured summaries`) plus focused tests in commit `0e8c2e57cfe382b792a4178de40ccbb453c1c080` (`test: cover durable task summaries`); CI `#232`, workflow `35597817935`, success.
-- Handoff/project-memory integration: commit `822125be3d7e0d81d44a20e503397b2b3a9014e1` (`feat: integrate durable memory into context handoffs`) plus compatibility tests in commit `7387489e360b851a726b42dcc6797ba48f29ed6a` (`test: cover durable memory handoff integration`); CI `#238`, workflow `35599286479`, success.
-- Selective retrieval implementation: commits `b0a4192058c9f541915220911903bd828f2515b0` (`feat: add selective project memory retrieval`) and `3ff385be69912f8a81f99a4a5ba4d2f976586240` (`feat: supply selective memory to context handoffs`), with focused tests `fa73ac07cb73a184cc3e1648758d0e7456d46d1e`, relevance tightening `148248103c4e153941240e2a9a83cafb63338463`, and corrected exclusion fixture `a8e34addbe3bacf56ce22cdf1d58e4ad166ca623`; CI `#250`, workflow `35602317107`, success. CI `#246` initially failed because generic terms admitted false-positive records and the prior handoff test assumed no selected content could appear; both issues were corrected before acceptance.
-- Explicit/auditable memory verification: implementation commit `43ca077d91ecf137b34db4d68b8d6a694c58cfe5` (`feat: add project memory audit verification`) plus focused tests in commit `f379272930f9fe9ffb71d70c6cc51f2eb4f1213e` (`test: cover project memory audit verification`); CI `#256`, workflow `35604217740`, success.
-- Final serialization/update/selection closure: commit `8cdb3b9da1b0de97d5d654636fab12992f4176e8` (`test: close project memory serialization update selection matrix`); CI `#260`, workflow `35604869492`, success.
-- Tests cover bootstrap/serialization/reload, stable project identity, latest-task metadata updates, `TaskStore` integration, non-overwrite behavior, architecture provenance/order, decision provenance/content, selective code-map entries, bounded/unique representative paths, conventions scope/provenance/content preservation, known-issue status/impact/lifecycle preservation, task-summary serialization/revision/bounding/schema/path safety, bounded handoff memory provenance, legacy handoff compatibility, selective relevance scoring, task-local provenance selection, global/per-document/excerpt caps, irrelevant-record exclusion from handoffs/prompts, five-document end-to-end provenance audit, duplicate-ID/count drift detection, latest-update metadata mismatch detection, project-wide cross-document update counting, invalid-input rejection, unsupported metadata schemas, and cross-store serialization/update/audit/selection composition.
-- No self-hosted/Ollama runtime mutation was performed.
+- Project skeleton: `32014431b54256d51f76626641350b08315afda9`; CI `#198` / `35579239935`.
+- Architecture: `0344c16cc843428af4dbe4247b9156a222e2bdb9`; CI `#202` / `35585222049`.
+- Decisions: `3a43401c80e6ebe3df6dc33c337d307cbeb38cee`; CI `#206` / `35586243241`.
+- Code map: `3e064115c187783ec9fb86a3a732fca136e02140`; CI `#212` / `35590998279`.
+- Conventions: `3efecb809b9679505f007d75bfd273d815fa2e55`; CI `#220` / `35593035452`.
+- Known issues: `90a9adf9147b7bbf63486b99ac605ded5cdc844c`; CI `#226` / `35595083980`.
+- Task summaries: `d74f63618898291f42363bdd846459814820b4cd` + `0e8c2e57cfe382b792a4178de40ccbb453c1c080`; CI `#232` / `35597817935`.
+- Handoff-memory integration: `822125be3d7e0d81d44a20e503397b2b3a9014e1` + `7387489e360b851a726b42dcc6797ba48f29ed6a`; CI `#238` / `35599286479`.
+- Selective retrieval closure: through `a8e34addbe3bacf56ce22cdf1d58e4ad166ca623`; CI `#250` / `35602317107`.
+- Audit verification: `43ca077d91ecf137b34db4d68b8d6a694c58cfe5` + `f379272930f9fe9ffb71d70c6cc51f2eb4f1213e`; CI `#256` / `35604217740`.
+- Final composition closure: `8cdb3b9da1b0de97d5d654636fab12992f4176e8`; CI `#260` / `35604869492`.
 
 ## Status
 
 **COMPLETE**
-
-## Current Next Step
-
-Begin Milestone 5 implementation Unit 3: **Hub-backed Cline runtime adapter/factory with owner-targeted policy/executor wiring**. Use mocked/fake Hub tests first; do not run live shared-runtime writes yet.
 
 ---
 
@@ -387,127 +180,136 @@ Begin Milestone 5 implementation Unit 3: **Hub-backed Cline runtime adapter/fact
 
 ## Objective
 
-Let the user invoke Cline Orchestrator from any ChatGPT conversation, with or without a ChatGPT Project, while keeping machine authority local. The user explicitly configures local projects/workspaces; ChatGPT receives task-level operations; the local orchestrator creates/controls a safety-bounded authoritative Cline Hub session that VS Code can observe or attach to without weakening the task policy.
+Let the user invoke the orchestrator from ChatGPT while machine authority stays local. Registered project/workspace IDs and Safety Plans bound each write task. The orchestrator creates/controls a safety-bounded Cline Hub session that VS Code may observe without weakening task policy.
 
-## UX / Safety Design Gate
+## Confirmed Technical Spike
 
-`docs/MILESTONE-5-CHATGPT-PLUGIN-UX-SAFETY.md` defines the required user experience and trust boundary:
+Pinned Cline generation: `@cline/sdk 0.0.83`.
 
-- ChatGPT uses a narrow plugin/MCP surface rather than raw shell, filesystem, or generic Hub commands;
-- local project/workspace registration is authoritative and independent of ChatGPT conversation/Project identity;
-- write tasks begin with a Safety Preview and immutable/server-verifiable plan token;
-- Hub credentials and tunnel credentials remain local and are never persisted in task/project memory or sent to ChatGPT;
-- scope expansion, commands with material side effects, protected paths, network side effects, Git push/deploy, migrations, and destructive actions fail closed into explicit human escalation;
-- MCP/ChatGPT confirmation UI is defense-in-depth, while the local orchestrator is the actual enforcement boundary.
+Documented/proven design:
 
-## Confirmed Research
+- managed Hub discovery owns the local auth token; the orchestrator consumes Cline discovery and does not persist a second Hub credential;
+- `@cline/sdk` is sufficient for the first Hub path;
+- `ClineCore` preserves the start/send/abort/subscribe programming model over Hub;
+- Hub client hooks and tool executors are creator/client-targeted; wrong-client capability responses are rejected by the pinned Hub implementation;
+- native Hub `approval.requested` is broader/broadcast and therefore is not the authorization boundary;
+- new ChatGPT write sessions are orchestrator-owned; existing VS Code-created sessions remain observational in the first pilot;
+- owner/client loss is recovered through durable handoff and replacement session rather than assuming attach transfers ownership.
 
-The pinned Cline generation is `0.0.83`. Discovery/authentication behavior for the pinned release is documented in `docs/MILESTONE-5-HUB-SPIKE.md`: managed discovery records carry a random local auth token; native WebSocket clients use the `cline-hub-auth.<token>` subprotocol; authenticated HTTP control endpoints use Bearer auth; the orchestrator must consume Cline's managed discovery credential rather than persist a second token.
+### Spike evidence
 
-The package/import boundary is confirmed for `0.0.83`: `@cline/sdk` is the user-facing alias for `@cline/core`; the SDK root re-exports the Core root and the Core root re-exports `./hub`. The existing `@cline/sdk: 0.0.83` dependency is sufficient for the first Hub path; if a future implementation deliberately imports a Core-only subpath, `@cline/core` must become an exact direct dependency.
-
-The session-control surface is mapped. `NodeHubClient` exposes list/get, stream subscription, explicit attach, send, abort, and detach. Cline's VS Code example subscribes before attaching. `HubRuntimeHost` is the pinned reference for Core-style event normalization.
-
-Workspace/session identity and multi-client ownership are documented in `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md`:
-
-- the user-configured machine-local registry owns opaque `project_id` / `workspace_id` mappings and canonical local roots;
-- durable task resume verifies the persisted Hub session's workspace against that registered root;
-- new ChatGPT write tasks create a fresh orchestrator-owned Hub session by default; existing VS Code-created sessions remain observational for the first pilot;
-- attachment does not transfer creator/client-local capability ownership;
-- client contribution/capability requests are creator-targeted and wrong-client responses are rejected;
-- native Hub tool approvals are broader and can race across subscribers, so native approval UI is not the security boundary.
-
-The safe migration is now documented in `docs/MILESTONE-5-MIGRATION-DESIGN.md`:
-
-- preserve `ClineRunner` and its existing durability/watchdog/context-rotation/recovery logic;
-- keep the `ClineCore` API and switch plugin workers to `backendMode: "hub"` through an internal runtime factory instead of rewriting Milestones 1–4 around raw Hub commands;
-- introduce a machine-local registry plus an immutable Safety Plan represented by an opaque, short-lived, single-use plan token;
-- create orchestrator-owned Hub sessions only after plan-token revalidation/consumption;
-- use an owner-targeted `beforeTool` contribution as the early fail-closed policy gate;
-- route `readFile`, `search`, `editor`, and `applyPatch` through owner-targeted client tool executors that re-enforce the durable safety envelope immediately before execution;
-- parse/check every file in a multi-file patch before applying it;
-- keep final checkpoint-relative diff safety as the post-execution backstop;
-- disable arbitrary model shell commands, ungoverned network/MCP/plugin execution, subagents/teams, and provider-owned execution tools in the first write-capable pilot;
-- continue running trusted validation commands outside the model;
-- use orchestrator `waiting_for_human` / escalation state rather than native Hub approval as the human authorization channel.
-
-## Technical Spike Acceptance Criteria
-
-- [x] Document Hub discovery and local authentication/token mechanism.
-- [x] Confirm exact imports at `0.0.83` and direct-dependency needs.
-- [x] Identify list/attach/send/abort/session-event APIs.
-- [x] Determine workspace session identity and multi-client approval/tool-executor behavior.
-- [x] Produce migration design from owned `ClineCore` to safe Hub-backed/plugin operation.
+- Hub discovery/authentication: `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264` / `35607213364`.
+- Import/dependency boundary: `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268` / `35609556979`.
+- Session-control API map: `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272` / `35611491671`.
+- ChatGPT UX/safety contract: `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276` / `35614305961`.
+- Workspace/session identity: `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278` / `35618180127`.
+- Safe migration design: `d51a85585c831b24da9cd7129d34d74488ec2750`; CI `#282` / `35668708848`.
 
 ## Implementation Acceptance Criteria
 
 - [x] Machine-local user-configured project/workspace registry with canonical-root validation, opaque IDs, and revisioned safety profiles.
-- [x] Read-only Safety Preview + immutable server-side Safety Plan + opaque single-use/expiring plan token; task start rejects stale registry/Git/policy fingerprints.
-- [x] Durable tasks bind to approved project/workspace/safety-plan identity so `continue_task` cannot silently broaden authority.
-- [x] Pre-execution policy engine with fail-closed action normalization, secret/protected/allowed path checks, traversal/symlink containment, and durable human escalation.
-- [ ] Owner-targeted `beforeTool` contribution plus owner-targeted read/search/editor/apply-patch executors; local fail-closed gate/executor primitives are complete, but Hub owner-targeted wiring remains Unit 3.
-- [ ] First-pilot worker safety profile disables arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams, and provider-owned execution surfaces.
-- [ ] Hub-backed runtime factory preserves existing start/send/abort/events/watchdog/context-rotation/recovery/validation/diff-safety behavior and revalidates workspace/session identity on resume.
+- [x] Read-only Safety Preview + immutable server-side Safety Plan + opaque single-use/expiring plan token; start rejects stale registry/Git/policy fingerprints.
+- [x] Durable tasks bind approved project/workspace/safety-plan identity so continuation cannot silently broaden authority.
+- [x] Pre-execution policy engine with fail-closed normalization, secret/protected/allowed-path checks, traversal/symlink containment, and durable escalation.
+- [x] Owner-targeted `beforeTool` contribution plus owner-targeted read/search/editor/apply-patch executors are supplied through the Hub start contract.
+- [x] First-pilot worker/runtime profile disables arbitrary model shell, ungoverned network/MCP/plugin configuration, subagents/teams, and unreviewed provider execution surfaces.
+- [x] Hub-backed runtime factory preserves the existing `ClineRunner` lifecycle contract and revalidates persisted Hub session workspace identity before resume.
 - [ ] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
-- [ ] Cloud tests cover registry/plan replay/staleness, containment, secret/protected scope, patch all-or-nothing policy, disabled surfaces, Hub owner targeting/failure, and all existing lifecycle safety regressions.
-- [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating the shared Ollama runtime.
+- [x] Cloud tests cover registry/plan replay/staleness, path safety, patch all-or-nothing behavior, disabled surfaces, Hub contribution wiring/failure boundaries, workspace identity, Hub `session_not_found` recovery, and existing lifecycle safety regressions.
+- [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating shared Ollama.
 
 ## Unit 1 — Registry + Safety Preview / Plan-token Boundary
 
-Unit 1 is implemented without Hub/Cline runtime mutation.
+**COMPLETE.**
 
-- The registry is stored in a per-user machine-local configuration path outside repositories and assigns opaque project/workspace IDs.
-- Workspace registration resolves canonical paths, rejects filesystem/system-sensitive roots, detects alias/symlink duplicate registrations, and stores revisioned safety profiles.
-- Read-only discovery exposes registered identity and a display/root alias rather than accepting or returning raw write authority.
-- Safety Preview captures the approved goal/scope plus Git branch, HEAD, and dirty fingerprint, then creates an immutable in-memory server-side plan.
-- Plan tokens contain 256 bits of randomness, are represented only by a hash in the server-side store, expire after a short TTL (15 minutes by default), and are single use.
-- Task start accepts only the opaque plan token. Before consuming it, the service revalidates the registered canonical root, workspace/profile revisions, policy/worker profile, branch, HEAD, and dirty fingerprint.
-- The resulting durable task stores the approved project/workspace/safety-plan/policy/profile identity and approved path envelope; the opaque token itself is not persisted in `.orchestrator` state.
-- No Hub session is created by this unit. The actual pre-execution filesystem/tool gate remains Unit 2.
+Implemented:
 
-## Unit 2 — Pre-execution Policy + Safe Executor Boundary
+- per-user machine-local registry outside repositories;
+- opaque project/workspace IDs and canonical-root validation;
+- revisioned safety profiles and safe discovery;
+- immutable in-memory Safety Plans;
+- 256-bit opaque tokens stored only by hash, short TTL, single use;
+- stale workspace/profile/policy/worker/Git branch/HEAD/dirty fingerprint rejection;
+- plan-token-only durable task start;
+- durable approved task identity/path envelope with no raw token persistence.
 
-Unit 2 is implemented and cloud tested without live Hub/Cline runtime mutation.
+Evidence: registry `7f02b471dcada322c2b7cb740e8a552486634b16`; Safety Plan `29910e4d3bfedf23707697332d62c99a9e0a1e5a`; durable fields `d8fe91a9779022aeab73e6bb2d0b03525de86a41`; tests through `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`; CI `#295` / `35679414455`, success.
 
-- Tool requests normalize into bounded action descriptors for read, search, edit, patch, command, network, or unknown actions.
-- The policy returns only `ALLOW`, `DENY`, or `ESCALATE_AND_STOP`; malformed/unknown policy state fails closed.
-- Existing paths use real-path semantics; new paths resolve through the nearest existing ancestor; traversal outside the canonical registered root is denied.
-- Write operations reject symlink/reparse-point path components in the first pilot.
-- Secret/credential patterns and configured protected paths are denied before approved-scope matching.
-- Out-of-scope writes produce `ESCALATE_AND_STOP` and can persist a durable `waiting_for_human` task state with a pending escalation record, action fingerprint, policy version, and event provenance.
-- The `beforeTool` gate returns allow/skip/stop semantics and fails closed if escalation persistence is unavailable.
-- `SafeWorkspaceExecutors` re-evaluate the durable safety envelope immediately before read/search/editor/apply-patch delegates execute.
-- Multi-file patch preview checks every affected path before the apply delegate is called; any denied/escalated path blocks the whole patch.
-- Arbitrary model shell and ungoverned network calls are explicitly denied; unknown MCP/plugin-style tools fail closed. Hub-level subagent/team/provider-owned surface suppression remains part of the Unit 3 safe worker/runtime wiring.
-- Unit 2 does not claim Hub capability ownership by itself; the actual owner-targeted `beforeTool`/executor registration is the first Unit 3 integration step.
+## Unit 2 — Pre-execution Policy + Local Safe Executor Boundary
 
-## Evidence
+**COMPLETE.**
 
-- Hub discovery/authentication spike: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264`, workflow `35607213364`, success.
-- Hub import/dependency boundary: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268`, workflow `35609556979`, success.
-- Hub session-control API map: `docs/MILESTONE-5-HUB-SPIKE.md`, commit `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272`, workflow `35611491671`, success.
-- ChatGPT plugin UX/safety contract: `docs/MILESTONE-5-CHATGPT-PLUGIN-UX-SAFETY.md`, commit `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276`, workflow `35614305961`, success.
-- Workspace/session identity + multi-client safety: `docs/MILESTONE-5-WORKSPACE-SESSION-IDENTITY.md`, commit `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278`, workflow `35618180127`, success.
-- Safe Hub/plugin migration design: `docs/MILESTONE-5-MIGRATION-DESIGN.md`, commit `d51a85585c831b24da9cd7129d34d74488ec2750`; CI `#282`, workflow `35668708848`, success. Static pinned-source inspection proved the `beforeTool` ordering, owner-targeted Hub client contributions/tool executors, and the ClineCore Hub runtime seam; no live Hub, VS Code runtime, workspace, or shared Ollama process was mutated.
-- Unit 1 registry implementation: `7f02b471dcada322c2b7cb740e8a552486634b16`; Safety Plan boundary: `29910e4d3bfedf23707697332d62c99a9e0a1e5a`; durable task safety fields: `d8fe91a9779022aeab73e6bb2d0b03525de86a41`; focused registry/plan tests: `f4c09aa6c67094ae209d69e67b6c61dd550236a6`.
-- Plan-token-only durable task start: `3e49442e923ade2282377153838cbc390aa48178`; focused persistence/replay tests: `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`; cloud CI `#295`, workflow `35679414455`, success.
-- Unit 1 tests cover canonical registration, opaque IDs, alias/root rejection, scope non-expansion, token expiry/replay, registry/policy staleness, Git dirty/HEAD staleness, plan-token-only task creation, durable safety identity, and token non-persistence.
-- Unit 2 durable escalation task state: `b2bf06b9f59fedfb588dd36c66d3dc3c33d8f29a`; pre-execution policy engine: `d6e0d93460bfcf4d382fec7a8a7b6be298d3c6c4`; durable escalation service: `300060db73f3f40a860543fcf4416372c63e6a9c`; fail-closed gate/safe executor boundary: `89610fccef145d05504a90a797d35646cf0b3804`; policy tests: `6f655537e24e6bcf732fb99670ade579ef666ff3`; executor tests: `464268aea4fae40047853dfd5ac39b6ec2c74aca`; durable escalation tests: `46da20d18cd703018c54207258d4fb2422e71eeb`.
-- Unit 2 cloud CI: push run `#311`, workflow `35699517817`, success; PR run `#312`, workflow `35699521432`, success. Typecheck and full test suite passed.
-- Unit 2 tests cover safe read/write, secret/protected denial, out-of-scope escalation, traversal rejection, symlink write escape denial, shell/network/unknown denial, fail-closed escalation persistence, executor re-checks, multi-file patch all-or-nothing behavior, and durable `waiting_for_human` escalation persistence/idempotence.
-- No live Cline Hub, VS Code runtime, Ollama runtime, shared workspace, push, deploy, or external-system mutation was performed.
+Implemented:
 
-## Status
+- bounded action descriptors and `ALLOW` / `DENY` / `ESCALATE_AND_STOP`;
+- canonical containment, nearest-existing-ancestor handling, traversal denial, write-symlink/reparse denial;
+- secret/protected path denial before allow-scope matching;
+- durable `waiting_for_human` escalation records/events;
+- fail-closed `beforeTool` gate primitive;
+- immediate read/search/editor/apply-patch executor re-checks;
+- all-or-nothing multi-file patch checks;
+- shell/network/unknown tool denial.
 
-**IN PROGRESS — technical spike complete; implementation Units 1–2 local safety boundary complete; Hub integration pending**
+Evidence: task state `b2bf06b9f59fedfb588dd36c66d3dc3c33d8f29a`; policy `d6e0d93460bfcf4d382fec7a8a7b6be298d3c6c4`; escalation `300060db73f3f40a860543fcf4416372c63e6a9c`; executor boundary `89610fccef145d05504a90a797d35646cf0b3804`; tests `6f655537e24e6bcf732fb99670ade579ef666ff3`, `464268aea4fae40047853dfd5ac39b6ec2c74aca`, `46da20d18cd703018c54207258d4fb2422e71eeb`; CI push `#311` / `35699517817` and PR `#312` / `35699521432`, success.
+
+## Unit 3 — Hub-backed Cline Runtime Adapter / Owner Safety Wiring
+
+**COMPLETE — mocked/fake Hub proof only; no live shared runtime mutation.**
+
+Implemented:
+
+- `ClineRuntime` / `ClineRuntimeFactory` seam while preserving `ClineRunner` as lifecycle owner;
+- SDK factory uses local mode for existing daemon behavior and Hub mode only when explicitly selected;
+- Hub creation uses `backendMode: "hub"` + `strategy: "require-hub"` with registered workspace root/cwd and no orchestrator-persisted Hub auth token;
+- persisted Hub session resume canonicalizes and verifies `workspaceRoot` before any send; missing lookup capability or mismatched workspace fails closed;
+- approved durable task safety envelope is required before a Hub write session can start;
+- pinned SDK `beforeTool` is wired through `localRuntime.hooks` so Hub registers the hook as a creator/client-owned contribution;
+- pinned SDK `RuntimeCapabilities.toolExecutors` supplies only readFile/search/editor/applyPatch owner executors;
+- SDK payload adaptation handles real `read_files` inputs and parses `apply_patch` with `computePatchChanges` before policy evaluation;
+- patch moves check source and destination paths before execution;
+- final executors re-evaluate Unit 2 policy immediately before delegating to pinned SDK default filesystem executors;
+- search/editor/applyPatch delegation is pinned to the approved registered workspace rather than caller-supplied cwd;
+- Hub tool policy enables only read/search/editor/apply-patch/completion mechanics; shell, fetch-web, skills, question and unknown surfaces remain disabled;
+- MCP settings tools are disabled; config extensions/plugin paths are empty; spawn-agent and agent-teams are disabled;
+- first-pilot provider surface is fail-closed to currently reviewed `ollama` / `openai-compatible` profiles; other providers are rejected until their provider-owned execution surfaces are separately reviewed;
+- a durable human escalation is preserved as `waiting_for_human` even if the Cline run subsequently reports aborted/failed;
+- local mode remains the constructor default, so current daemon/CLI behavior is not silently migrated to Hub.
+
+### Unit 3 tests
+
+- factory options prove local vs Hub selection and absence of an orchestrator Hub auth token;
+- canonical alias acceptance, wrong-workspace rejection, and missing session-lookup capability fail-closed behavior;
+- actual SDK-shaped `read_files` inputs pass the hook while shell/network fail closed;
+- owner executor set is exactly readFile/search/editor/applyPatch;
+- multi-file patch preview persists durable out-of-scope escalation before execution;
+- editor executor re-checks scope immediately before mutation;
+- unreviewed provider profile rejection;
+- fake-Hub `ClineRunner` integration proves start/send/completion lifecycle, owner safety contributions and restricted config on session start;
+- wrong-workspace persisted session is rejected before `send`;
+- Hub `session_not_found` preserves the existing structured durable handoff/recovery path;
+- full existing test suite remains green, exercising watchdog/context rotation/recovery/validation/diff-safety regressions through the unchanged runner lifecycle.
+
+### Unit 3 evidence
+
+- Runtime factory seam: `1152c58ba2422d755072b480128c8def4c37a324`.
+- Shared Unit 2 enforcement primitive exported for Hub adapter reuse: `063a8276a855879c51f9679f3c3067888cae7483`.
+- Owner-targeted Hub safety contribution builder: `82a85be99915b92b279886c0f8ce297e87ec88c0`.
+- `ClineRunner` Hub-capable runtime seam + workspace verification + escalation preservation: `21f627d17f2b745ddcd6380ec6e938e2337c3bc7`.
+- Factory/workspace identity tests: `f3ff6f5b23fd2a62fd4ffa1fc27bab738ebd2c14`.
+- Hub safety contribution tests: `fa46c19a1680d58a5f9fa872f8a81f1ad2e0508a`.
+- Hub lifecycle/recovery integration tests: `f1e65cc1c51cb690bb4bda1a406d891a8d0833de`.
+- Pinned patch-preview typing correction: `32c057d30bc70533233477e87f7e01ec09b2e04a`.
+- Initial CI `#328` / `35723276006` failed at typecheck only because `Object.entries()` inferred pinned patch changes as `unknown`; no tests ran. The type boundary was corrected without relaxing the runtime safety checks.
+- Accepted implementation CI: push `#329` / `35723407897`, success; PR `#330` / `35723411583`, success. Typecheck and full test suite passed.
+- No live Cline Hub, VS Code, Ollama, shared workspace, deployment, push, or external-system runtime mutation was performed.
+
+## Milestone 5 Status
+
+**IN PROGRESS — technical spike and implementation Units 1–3 complete; machine MCP/plugin gateway and explicit runtime proof remain.**
 
 ---
 
 # Milestone 6 — GPT Supervisor
-
-## Objective
-
-Add a supervisory intelligence layer that plans, defines evidence, sends bounded implementation work to local Cline, and reviews resulting evidence.
 
 ## Acceptance Criteria
 
@@ -525,10 +327,6 @@ Add a supervisory intelligence layer that plans, defines evidence, sends bounded
 
 # Milestone 7 — Unattended Execution
 
-## Objective
-
-Allow hours-long/overnight work with bounded autonomy, explicit failure handling, and no silent uncontrolled continuation.
-
 ## Acceptance Criteria
 
 - [ ] Task queue/DAG, dependencies, and automatic progression.
@@ -542,14 +340,14 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 ---
 
-# Milestone 8 — Advanced UI and Multi-worker
+# Milestone 8 — Advanced UI / Multi-worker
 
 ## Possible Scope
 
-- [ ] Rich VS Code orchestration panel and web/dashboard view beyond the Milestone 5 plugin UX.
-- [ ] Advanced MCP surfaces beyond the bounded task-level plugin gateway introduced in Milestone 5.
-- [ ] Sequential specialist roles and multiple workers when capacity permits.
-- [ ] Team-role handoffs and rich task/event/usage visualization.
+- [ ] Rich VS Code orchestration panel/web dashboard beyond Milestone 5 plugin UX.
+- [ ] Advanced MCP surfaces beyond the bounded task-level gateway.
+- [ ] Sequential specialist roles/multiple workers when capacity permits.
+- [ ] Team-role handoffs and richer task/event/usage visualization.
 
 ## Status
 
@@ -565,40 +363,24 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 | Provider metadata preflight | Implemented + cloud tested |
 | Git checkpoint + rollback | Implemented + tested |
 | Validation + bounded repair | Implemented + tested |
-| Diff safety gate | Implemented + cloud tested |
-| Completion requires validation + safety | Implemented + tested |
-| Per-turn context supervisor | Implemented + cloud tested |
-| Structured durable context handoff | Implemented + cloud tested |
-| Multiple planned rotation coverage | Implemented + cloud tested |
-| Session-not-found + handoff interaction | Implemented + cloud tested |
-| Validation-repair + handoff interaction | Implemented + cloud tested |
-| Cross-generation metrics/event evidence | Implemented + cloud tested |
-| Durable project metadata + memory skeleton | Implemented + cloud tested |
-| Architecture memory + provenance | Implemented + cloud tested |
-| Decision log + provenance | Implemented + cloud tested |
-| Selective code map + provenance | Implemented + cloud tested |
-| Conventions memory + provenance | Implemented + cloud tested |
-| Known issues memory + provenance | Implemented + cloud tested |
-| Per-task structured summary | Implemented + cloud tested |
-| Handoff + bounded durable memory context | Implemented + cloud tested |
-| Selective project-memory retrieval | Implemented + cloud tested |
-| Project-memory audit verification | Implemented + cloud tested |
-| Durable project memory content/retrieval | **Complete / proven** |
-| Hub discovery/authentication research | **Documented + cloud tested** |
-| Hub import/dependency boundary | **Documented + cloud tested** |
-| Hub session-control API research | **Documented + cloud tested** |
-| ChatGPT plugin UX/safety contract | **Documented + cloud tested** |
-| User-configured project/workspace authority | **Documented + cloud tested** |
-| Hub workspace/session + multi-client safety | **Documented + cloud tested** |
-| Safe Hub/plugin migration architecture | **Documented + cloud tested** |
-| Milestone 5 technical spike | **Complete / proven** |
-| Machine-local workspace registry | **Implemented + cloud tested** |
-| Safety Preview + single-use plan-token boundary | **Implemented + cloud tested** |
-| Durable approved-task safety binding | **Implemented + cloud tested** |
-| Pre-execution policy engine + local safe executor boundary | **Implemented + cloud tested** |
-| Durable pre-execution human escalation | **Implemented + cloud tested** |
-| Hub owner-targeted policy/executor wiring | Implementation pending |
-| Shared VS Code/Hub write session | Implementation pending |
+| Final diff safety + completion gate | Implemented + cloud tested |
+| Context supervisor + durable handoff/recovery | Complete / proven |
+| Durable project memory + selective retrieval/audit | Complete / proven |
+| Hub discovery/auth/package/session research | Documented + cloud tested |
+| ChatGPT plugin UX/safety contract | Documented + cloud tested |
+| Machine-local workspace registry | Implemented + cloud tested |
+| Safety Preview + single-use plan-token boundary | Implemented + cloud tested |
+| Durable approved-task safety binding | Implemented + cloud tested |
+| Pre-execution policy + durable escalation | Implemented + cloud tested |
+| Local safe executor boundary | Implemented + cloud tested |
+| Hub-backed `ClineCore` runtime factory seam | **Implemented + cloud tested** |
+| Hub owner `beforeTool` contribution wiring | **Implemented + fake-Hub/cloud tested** |
+| Hub owner read/search/editor/apply-patch executors | **Implemented + fake-Hub/cloud tested** |
+| Restricted first-pilot Hub worker/runtime surfaces | **Implemented + cloud tested** |
+| Hub resume workspace identity validation | **Implemented + fake-Hub/cloud tested** |
+| Hub session-loss durable recovery | **Implemented + fake-Hub/cloud tested** |
+| Machine-level ChatGPT MCP/plugin gateway | Implementation pending |
+| Live shared VS Code/Hub write proof | Not yet authorized / pending |
 | GPT supervisor | Not started |
 | Unattended task DAG | Not started |
 
@@ -606,26 +388,21 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 
 # Known Constraints and Risks
 
-1. **Shared Ollama runtime** — never mutate/kill it through automated tests without explicit authorization.
-2. **Context rotation** — never use cumulative token totals as the trigger.
-3. **Semantic recovery** — hidden model context cannot be restored after runtime loss; recovery must rely on durable workspace/project state.
-4. **Cline API evolution** — Hub work must use the exact pinned package/API surface.
-5. **Dirty worktrees** — safety/rollback must preserve pre-run changes and distinguish them from task changes.
-6. **Validation commands are trusted configuration** — they execute outside the model and must remain explicit/bounded.
-7. **Expected changed paths** — ordinary unrelated source paths require configured scope to be classified as unexpected.
-8. **Event/state persistence** — currently lightweight JSON/JSONL.
-9. **Handoff retention** — per-generation JSON is intentionally durable; retention/compaction remains a future policy concern rather than a Milestone 4 blocker.
-10. **Hub authentication credential** — Cline's local discovery token is a runtime credential and must not be copied into orchestrator task state, project memory, handoffs, logs, Git, or ChatGPT/MCP results.
-11. **Hub package boundary** — use the public `@cline/sdk` root for the first Hub adapter; if a Core-only subpath is intentionally adopted later, declare and version-pin `@cline/core` directly rather than relying on its transitive installation.
-12. **Project/workspace authorization** — authorization must come from a user-configured machine-local registry outside repositories. A ChatGPT-supplied raw path, repository instruction, fuzzy name match, or ChatGPT Project name cannot grant write access.
-13. **Session capability ownership** — attaching to a Hub session does not transfer the creator's client-local tool/capability ownership. First-pilot ChatGPT write tasks are orchestrator-created; third-party/VS Code-created sessions remain observational unless a future separately-proven transfer model exists.
-14. **Hub approval race** — native `approval.requested` is broadcast/replayed to matching subscribers and is not creator-targeted. Native Hub approval is UX/defense-in-depth only, never the security boundary.
-15. **Owner disconnect** — a disconnected capability-owner client loses live Hub ownership and pending targeted capability requests are cancelled. Recovery must use durable handoff/session replacement rather than assuming re-attach restored ownership.
-16. **Pre-execution enforcement** — the first write pilot requires both an owner-targeted `beforeTool` gate and owner-targeted filesystem executors; a failure in policy/capability handling must fail closed before side effects.
-17. **Restricted pilot surfaces** — arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams, and provider-owned execution tools remain disabled until each has an enforceable policy boundary and focused tests.
-18. **Safety Plan tokens** — task approval uses opaque, short-lived, single-use tokens backed by immutable server-side plans; tokens and local credential material must not enter repository/project memory.
-19. **Safety Preview scope matching is not the filesystem execution gate** — Unit 1 only prevents requested-scope broadening relative to the registered profile. Unit 2 performs authoritative path normalization, containment, secret/protected checks, symlink/reparse-point handling, and per-operation enforcement immediately before local executor delegation.
-20. **Local executor primitives are not Hub ownership proof** — Unit 2 proves fail-closed policy and executor behavior in isolation. Unit 3 must wire those primitives as creator/owner-targeted Hub contributions/executors and prove owner disconnect/wrong-client behavior with mocks before any live runtime proof.
+1. Shared Ollama/runtime state is protected; no automated mutation without explicit authorization.
+2. Context rotation must never use cumulative token totals as its trigger.
+3. Semantic recovery cannot restore hidden model state; durable workspace/project/handoff evidence is authoritative.
+4. Hub work must stay pinned to the verified `0.0.83` public SDK surface unless a deliberate dependency decision is recorded.
+5. Dirty worktrees must retain pre-run user state and distinguish it from task-created changes.
+6. Validation commands are trusted local configuration and remain explicit/bounded outside model execution.
+7. Event/state persistence remains lightweight JSON/JSONL.
+8. Hub discovery/auth credentials are runtime secrets and must not enter tasks, project memory, handoffs, logs, Git, or ChatGPT/MCP output.
+9. Authorization comes only from the machine-local registry and approved task envelope, never from raw paths, fuzzy names, repository instructions, or Hub participation.
+10. Attaching to a Hub session does not transfer client-local capability ownership.
+11. Native Hub approval is UX/defense-in-depth only; the orchestrator hook/executor boundary is authoritative.
+12. Owner disconnect cancels creator-targeted live capabilities; recovery must use durable handoff/replacement ownership.
+13. Arbitrary model shell, ungoverned network/MCP/plugin execution, subagents/teams, and unreviewed provider-owned execution remain disabled in the first pilot.
+14. Safety Preview matching is not the filesystem gate; Unit 2/3 executor enforcement remains authoritative immediately before side effects.
+15. Unit 3 proves the local/Hub contract using pinned-source analysis plus fake/mock Hub behavior. Actual shared Hub/VS Code visibility, owner disconnect over a real socket, and live enforcement remain intentionally unproven until the explicitly authorized disposable-workspace proof.
 
 ---
 
@@ -634,215 +411,34 @@ Allow hours-long/overnight work with bounded autonomy, explicit failure handling
 Only work on the first unfinished item unless a prerequisite defect is discovered.
 
 1. **COMPLETE — machine-local registry + Safety Preview / plan-token boundary.**
-   - user-configured project/workspace authorization is stored outside repositories;
-   - canonical roots, opaque IDs, revisioned safety profiles, read-only discovery, immutable Safety Plans, single-use TTL tokens, stale-state rejection, and durable task binding are implemented and cloud tested.
-
-2. **COMPLETE — pre-execution policy engine + local safe executor boundary.**
-   - tool actions normalize to bounded descriptors and unknown/malformed actions fail closed;
-   - path containment, secret/protected policy, symlink/traversal checks, approved write scope, and durable escalation are implemented;
-   - fail-closed `beforeTool` gate and read/search/editor/apply-patch executor re-check primitives are implemented;
-   - multi-file patch all-or-nothing behavior and disabled shell/network/unknown surfaces are cloud tested;
-   - actual Hub creator/owner targeting is intentionally deferred to Unit 3 rather than claimed by the local primitives.
-
-3. **Implement the Hub-backed Cline runtime adapter/factory** with mocked/fake Hub tests first; preserve current lifecycle/recovery/watchdog/context/validation/diff-safety semantics, wire the Unit 2 gate/executors as owner-targeted capabilities, enforce the safe worker profile, and verify workspace/session identity on resume.
-
-4. **Implement the machine-level ChatGPT MCP/plugin gateway** with task-level operations and no raw path/shell/Hub authority.
-
+2. **COMPLETE — pre-execution policy + local safe executor boundary.**
+3. **COMPLETE — Hub-backed Cline runtime adapter/factory + owner-targeted safety wiring (mock/fake Hub proof).**
+4. **Implement the machine-level ChatGPT MCP/plugin gateway** with task-level operations only:
+   - resolve registered project/workspace IDs through the machine registry;
+   - expose read-only discovery/status/task/event/diff/Safety Preview operations;
+   - expose bounded writes such as plan-token task start, continue, abort, escalation decision, and rollback;
+   - never expose raw path read/write, generic shell, raw Hub attach/commands, credentials, or unrestricted daemon control;
+   - route write tasks to the approved Hub runtime path without broadening their durable safety envelope;
+   - add cloud tests first; do not run live shared-runtime writes.
 5. **Run the isolated shared-runtime proof** only after explicit user authorization, using a disposable registered workspace and without automatic shared-Ollama mutation.
 
 ---
 
-# Progress Log
+# Progress Log — Key Closures
 
-## 2026-09-21 — Plan baseline established
+- 2026-09-21: Milestone 2 diff-safety closure — `56cecab14bf5719601d6801b5635a5b2ef2d0336`, CI `#174` / `35574026345`.
+- 2026-09-21: Milestone 3 context durability closed through `7fa6abebbc00b801349d321a98efd626795e2d1f`, CI `#194` / `35578149506`.
+- 2026-09-21: Milestone 4 durable project memory closed — `8cdb3b9da1b0de97d5d654636fab12992f4176e8`, CI `#260` / `35604869492`.
+- 2026-09-22: Milestone 5 technical spike/migration design closed — `d51a85585c831b24da9cd7129d34d74488ec2750`, CI `#282` / `35668708848`.
+- 2026-09-22: Unit 1 registry/Safety Preview boundary closed through `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`, CI `#295` / `35679414455`.
+- 2026-09-22: Unit 2 local pre-execution boundary closed through `46da20d18cd703018c54207258d4fb2422e71eeb`, CI push `#311` / `35699517817`, PR `#312` / `35699521432`.
+- 2026-09-22: Unit 3 Hub runtime/safety wiring implemented through `32c057d30bc70533233477e87f7e01ec09b2e04a`; accepted CI push `#329` / `35723407897` and PR `#330` / `35723411583`, both success. Unit 3 used only mocks/fakes and pinned SDK inspection; no live shared runtime was touched.
 
-- Consolidated eight ordered milestones and protected the shared Ollama runtime.
-- Next action was the Milestone 2 diff safety gate.
+---
 
-## 2026-09-21 — Milestone 2 diff safety gate completed
+# Current Next Step
 
-- Change: implemented checkpoint-relative diff policy, protected/warning paths, scope enforcement, branch/HEAD checks, excessive-diff threshold, durable evidence, and central completion gating.
-- Tests: safety decisions, dirty pre-run state, persistence, and completion blocking.
-- Evidence: commit `56cecab14bf5719601d6801b5635a5b2ef2d0336`; CI `#174` / `35574026345` passed.
-- Milestone impact: **Milestone 2 COMPLETE**.
-- Next action: structured durable context handoff.
-
-## 2026-09-21 — Milestone 3 structured durable handoff implemented
-
-- Change: versioned `.orchestrator/handoffs/` artifacts, task references/counters, structured recovery prompts, and durable handoff events.
-- Tests: serialization/loading, task/workspace/pending-action evidence, bounded supporting prose, prompt rendering, and path containment.
-- Evidence: commit `15adf9f9dd87a45544d2a6fc3985dc278be9284d`; CI `#178` / `35576669466` passed.
-- Next action: bounded repeated rotations.
-
-## 2026-09-21 — Milestone 3 bounded repeated rotations proven
-
-- Tests: three threshold-crossing sends with `maxContextRotations=2` prove exactly two replacements, generations 1->2->3, two distinct handoffs, and budget exhaustion without a third replacement.
-- Evidence: commit `84fc26df4d2dd6b7ad1c45e02c9846e264593d25`; CI `#182` / `35577093373` passed.
-- Next action: `session_not_found` interaction.
-
-## 2026-09-21 — Milestone 3 session-not-found recovery proven
-
-- Tests: first send returns `session_not_found`; orchestrator creates one durable handoff, starts generation 2, resumes from it, and completes without consuming planned-rotation budget.
-- Evidence: commit `26dbf0db896e83d160c1cf3f43f2ae7b0e813e2c`; CI `#186` / `35577401081` passed.
-- Next action: validation-repair interaction.
-
-## 2026-09-21 — Milestone 3 validation-repair recovery proven
-
-- Tests: a repair task with a real pre-repair checkpoint and failed validation loses its Cline session; recovery writes a durable handoff containing the repair instruction, failed-validation summary, and original checkpoint fingerprint.
-- Tests: the repair run does not replace the original checkpoint; after replacement model completion, task state returns to `validating` and no `completed` event is emitted.
-- Evidence: commit `af9db66835c5dfc7a657e1c0291cdaef24668a2d`; CI `#190` / `35577839253` passed.
-- Next action: cross-generation metrics/event evidence.
-
-## 2026-09-21 — Milestone 3 context durability completed
-
-- Tests: expanded repeated-rotation coverage to assert attempts `1/2/3`, per-attempt token/tool metrics, cumulative token/tool totals, zero retry/stall inflation, rotation counts, generation-tagged handoff/recovery events, and distinct durable handoff IDs.
-- Evidence: commit `7fa6abebbc00b801349d321a98efd626795e2d1f`; CI `#194` / `35578149506` passed.
-- Milestone impact: **Milestone 3 COMPLETE**.
-- Known limitation: durable handoff retention/compaction is deliberately deferred to Milestone 4 project-memory policy.
-- Next action: begin Milestone 4 with durable project metadata and the `.orchestrator/memory/` storage skeleton. Hub/RPC remains deferred.
-
-## 2026-09-21 — Milestone 4 project metadata and memory skeleton implemented
-
-- Change: added schema-versioned `.orchestrator/project.json` with stable project identity, workspace root, memory-file map, timestamps, and latest-task pointer.
-- Change: task-state saves now automatically bootstrap project memory and refresh the latest-task pointer.
-- Change: added one-time creation of `architecture.md`, `decisions.md`, `code-map.md`, `conventions.md`, and `known-issues.md` without overwriting existing memory content.
-- Tests: bootstrap/serialization/reload, stable identity, task-pointer updates, `TaskStore` integration, non-overwrite behavior, and unsupported-schema rejection.
-- Evidence: commit `32014431b54256d51f76626641350b08315afda9`; CI `#198` / `35579239935` passed.
-- Milestone impact: durable project metadata criterion complete; Milestone 4 remains in progress.
-- Known limitation: the five documents are storage skeletons only; semantic update/retrieval/provenance behavior is not implemented yet.
-- Next action: implement architecture memory with an explicit/auditable update primitive and provenance. Hub/RPC remains deferred.
-
-## 2026-09-21 — Milestone 4 architecture memory implemented
-
-- Change: added append-only architecture-memory updates with unique update IDs, validated timestamp/task/rationale provenance, machine-readable provenance markers, and human-readable architecture entries.
-- Change: project metadata now records memory-update count and the latest memory-update reference without replacing existing architecture content.
-- Tests: existing content preservation, explicit provenance, metadata audit references, multiple-update ordering/uniqueness, and invalid provenance/content/timestamp rejection.
-- Evidence: commit `0344c16cc843428af4dbe4247b9156a222e2bdb9`; CI `#202` / `35585222049` passed.
-- Milestone impact: **Architecture memory criterion complete**; Milestone 4 remains in progress.
-- Next action: implement decision-log entries with rationale and date/task provenance.
-
-## 2026-09-21 — Milestone 4 decision log implemented
-
-- Change: added append-only decision entries with explicit decision text, unique update IDs, validated timestamp/task/rationale provenance, and machine-readable audit markers.
-- Tests: existing history preservation, decision/rationale/date/task provenance, cross-document audit counting, and invalid provenance rejection.
-- Evidence: commit `3a43401c80e6ebe3df6dc33c337d307cbeb38cee`; CI `#206` / `35586243241` passed.
-- Milestone impact: **Decision log criterion complete**.
-
-## 2026-09-21 — Milestone 4 selective code map implemented
-
-- Change: added append-only code-map entries with bounded representative paths and provenance.
-- Tests: content preservation, provenance, path bounds/uniqueness, invalid input/timestamp, and cross-document audit counting.
-- Evidence: commit `3e064115c187783ec9fb86a3a732fca136e02140`; CI `#212` / `35590998279` passed.
-- Milestone impact: **Code map criterion complete**.
-
-## 2026-09-21 — Milestone 4 conventions memory implemented
-
-- Change: added append-only convention entries with explicit scope/convention and task/date/rationale provenance.
-- Tests: content preservation, provenance, required fields/timestamp, and audit counting.
-- Evidence: commit `3efecb809b9679505f007d75bfd273d815fa2e55`; CI `#220` / `35593035452` passed.
-- Milestone impact: **Conventions memory criterion complete**.
-
-## 2026-09-21 — Milestone 4 known-issues memory implemented
-
-- Change: added append-only known-issue lifecycle entries with status, impact, description, and provenance.
-- Tests: content/lifecycle preservation, status/impact provenance, invalid status/input/timestamp, and audit counting.
-- Evidence: commit `90a9adf9147b7bbf63486b99ac605ded5cdc844c`; CI `#226` / `35595083980` passed.
-- Milestone impact: **Known-issues memory criterion complete**.
-
-## 2026-09-21 — Milestone 4 per-task structured summary implemented
-
-- Change: added versioned bounded `.orchestrator/task-summaries/<task-id>.json` artifacts with lifecycle/configuration/evidence/outcome provenance.
-- Tests: serialization, bounding, transient-data exclusion, revision/reload/path/schema safety.
-- Evidence: implementation `d74f63618898291f42363bdd846459814820b4cd`; focused tests `0e8c2e57cfe382b792a4178de40ccbb453c1c080`; CI `#232` / `35597817935` passed.
-- Milestone impact: **Per-task structured summary criterion complete**.
-
-## 2026-09-21 — Milestone 4 handoff/project-memory integration implemented
-
-- Change: structured handoffs now include bounded task summary + compact project-memory index while full memory bodies remain out of prompts.
-- Tests: provenance/index presence, unrelated sentinel exclusion, and legacy v1 compatibility.
-- Evidence: implementation `822125be3d7e0d81d44a20e503397b2b3a9014e1`; compatibility tests `7387489e360b851a726b42dcc6797ba48f29ed6a`; CI `#238` / `35599286479` passed.
-- Milestone impact: **Structured handoff/project-memory integration criterion complete**.
-
-## 2026-09-21 — Milestone 4 selective project-memory retrieval implemented
-
-- Change: deterministic bounded retrieval over orchestrator-authored provenance entries with relevance/task preference and prompt integration.
-- Tests: relevant/unrelated selection, task-local provenance, global/per-document/excerpt bounds, invalid limits, handoff inclusion/exclusion.
-- Evidence: `b0a4192058c9f541915220911903bd828f2515b0`, `3ff385be69912f8a81f99a4a5ba4d2f976586240`, tests `fa73ac07cb73a184cc3e1648758d0e7456d46d1e`, fixes `148248103c4e153941240e2a9a83cafb63338463` / `a8e34addbe3bacf56ce22cdf1d58e4ad166ca623`; CI `#250` / `35602317107` passed.
-- Milestone impact: **Selective retrieval criterion complete**.
-
-## 2026-09-21 — Milestone 4 explicit/auditable memory updates verified
-
-- Change: added read-only project-memory audit verifier across all five documents.
-- Tests: all update primitives audit cleanly; duplicate/count drift and tampered latest metadata fail closed.
-- Evidence: implementation `43ca077d91ecf137b34db4d68b8d6a694c58cfe5`; tests `f379272930f9fe9ffb71d70c6cc51f2eb4f1213e`; CI `#256` / `35604217740` passed.
-- Milestone impact: **Memory updates are explicit/auditable criterion complete**.
-
-## 2026-09-21 — Milestone 4 durable project memory completed
-
-- Change: cross-cutting closure test writes all memory types, reloads a fresh store, appends a lifecycle update, audits state, and repeats selective retrieval.
-- Tests: stable identity/count/revision, coherent latest update, six unique audited updates, deterministic relevant selection and unrelated exclusion.
-- Evidence: commit `8cdb3b9da1b0de97d5d654636fab12992f4176e8`; CI `#260` / `35604869492` passed.
-- Milestone impact: **Milestone 4 COMPLETE**.
-- Next action: Milestone 5 research.
-
-## 2026-09-21 — Milestone 5 Hub discovery/authentication documented
-
-- Change: documented pinned `0.0.83` discovery ownership, endpoint overrides, token publication/authentication, authenticated HTTP controls, and local-browser semantics.
-- Evidence: `de6846cb1bbc3e847865b735a2a3b045bc7b72ea`; CI `#264` / `35607213364` passed.
-- Milestone impact: first M5 research criterion complete.
-
-## 2026-09-21 — Milestone 5 Hub import/dependency boundary confirmed
-
-- Change: documented package export chain and confirmed the existing exact `@cline/sdk: 0.0.83` dependency is sufficient for the first path.
-- Evidence: `40e9e1938e7b5005b82bdec3d717a576d766e225`; CI `#268` / `35609556979` passed.
-- Milestone impact: second M5 research criterion complete.
-
-## 2026-09-21 — Milestone 5 Hub session-control API map documented
-
-- Change: mapped list/get/subscribe/attach/send/abort/detach and event semantics.
-- Evidence: `b8e3f7e742e34e21bbc6043b7aaa68f84457caa4`; CI `#272` / `35611491671` passed.
-- Milestone impact: third M5 research criterion complete.
-
-## 2026-09-21 — Milestone 5 ChatGPT plugin UX/safety contract documented
-
-- Change: added task-level ChatGPT plugin/MCP UX, Safety Preview + immutable plan-token boundary, local credential isolation, durable escalation, and no raw shell/filesystem/Hub authority.
-- Evidence: `060eca0d39c5d2019b4705229963fc36c5bae40d`; CI `#276` / `35614305961` passed.
-- Milestone impact: mandatory design gate established.
-
-## 2026-09-21 — Milestone 5 workspace/session identity and multi-client safety documented
-
-- Change: added user-configured machine-local project/workspace registry, deterministic session verification, orchestrator-owned write sessions, and multi-client capability/approval analysis.
-- Research: creator-owned capability responses are targeted; native approval events are broadcast/raceable and cannot be the security boundary.
-- Evidence: `d93fb57355ddb889ebf1388488be8904b301fe68`; CI `#278` / `35618180127` passed.
-- Milestone impact: fourth M5 research criterion complete.
-
-## 2026-09-22 — Milestone 5 safe migration design completed
-
-- Change: added `docs/MILESTONE-5-MIGRATION-DESIGN.md` with the machine-local registry, immutable Safety Plan/token, ClineCore Hub runtime seam, owner-targeted pre-execution hook/executors, restricted first-pilot tool surfaces, escalation model, MCP boundary, migration units, and required test matrix.
-- Research: pinned `0.0.83` proves `beforeTool` runs before approval/tool execution; Hub proxies client hooks and tool executors to the creator/owner client and rejects wrong-client responses; `ClineCore` preserves its start/send/abort/subscribe contract over a Hub `RuntimeHost`.
-- Decision: keep `ClineRunner`/`ClineCore`; move plugin tasks to `backendMode: "hub"` through a runtime factory; use dual pre-execution enforcement (`beforeTool` + owner-targeted filesystem executors); keep arbitrary model shell/network/MCP/plugins/subagents/teams/provider-owned tools disabled in the first write pilot; retain external validation and final diff safety.
-- Evidence: commit `d51a85585c831b24da9cd7129d34d74488ec2750`; CI `#282` / `35668708848` passed.
-- Milestone impact: **Milestone 5 technical spike COMPLETE; implementation remains pending**.
-- Known limitation: no write-capable Hub adapter/MCP gateway or live shared-session proof has been implemented or run.
-- Next action: implement Unit 1 — machine-local project/workspace registry + read-only Safety Preview + opaque single-use plan-token store + stale-state rejection. Do not start live Hub writes yet.
-
-## 2026-09-22 — Milestone 5 Unit 1 registry and Safety Preview boundary completed
-
-- Change: implemented the per-user machine-local project/workspace registry, canonical/unsafe-root checks, opaque IDs, revisioned safety profiles, read-only discovery, immutable server-side Safety Plans, 256-bit single-use TTL tokens, stale registry/Git/policy/worker rejection, and a plan-token-only durable task-start primitive.
-- Tests: canonical registration, alias/symlink duplicate rejection, filesystem-root rejection, scope non-expansion, expiry/replay, registry/profile staleness, dirty-state and HEAD staleness, durable task persistence, and proof that the opaque token is absent from durable task JSON.
-- Evidence: registry `7f02b471dcada322c2b7cb740e8a552486634b16`; Safety Plan `29910e4d3bfedf23707697332d62c99a9e0a1e5a`; task fields `d8fe91a9779022aeab73e6bb2d0b03525de86a41`; focused tests `f4c09aa6c67094ae209d69e67b6c61dd550236a6`; plan-token-only start `3e49442e923ade2282377153838cbc390aa48178`; start tests `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`; CI `#295` / `35679414455` passed.
-- Milestone impact: **Milestone 5 implementation Unit 1 COMPLETE; first three implementation criteria complete**.
-- Known limitation: pre-execution path/tool enforcement, owner-targeted executors, Hub runtime adapter, MCP gateway, and shared-runtime proof remain unimplemented. Safety Preview scope matching is not the final filesystem security gate.
-- Next action: implement Unit 2 — pre-execution policy engine + owner-targeted safe executors. Do not start live Hub writes yet.
-
-## 2026-09-22 — Milestone 5 Unit 2 local pre-execution boundary completed
-
-- Change: implemented normalized action descriptors, fail-closed `ALLOW` / `DENY` / `ESCALATE_AND_STOP` policy, canonical path containment, nearest-existing-ancestor handling for new files, secret/protected checks, write-symlink rejection, approved-scope enforcement, durable human escalation, an early `beforeTool` gate primitive, and read/search/editor/apply-patch executor re-check primitives.
-- Tests: safe read/write, secret/protected denial, traversal and symlink escape rejection, out-of-scope escalation, shell/network/unknown denial, escalation persistence failure, immediate executor re-checks, multi-file patch all-or-nothing behavior, and durable/idempotent `waiting_for_human` escalation state.
-- Evidence: task state `b2bf06b9f59fedfb588dd36c66d3dc3c33d8f29a`; policy `d6e0d93460bfcf4d382fec7a8a7b6be298d3c6c4`; escalation `300060db73f3f40a860543fcf4416372c63e6a9c`; safe executors `89610fccef145d05504a90a797d35646cf0b3804`; tests `6f655537e24e6bcf732fb99670ade579ef666ff3`, `464268aea4fae40047853dfd5ac39b6ec2c74aca`, `46da20d18cd703018c54207258d4fb2422e71eeb`; cloud CI push `#311` / `35699517817` and PR `#312` / `35699521432`, both passed.
-- Milestone impact: **Milestone 5 implementation Unit 2 local safety boundary COMPLETE**; authoritative Hub owner-targeted wiring and safe worker profile remain Unit 3.
-- Known limitation: these local gate/executor primitives are not yet registered as creator/owner-targeted Hub capabilities, and no live Cline Hub/VS Code/Ollama runtime has been touched.
-- Next action: implement Unit 3 — Hub-backed `ClineCore` runtime adapter/factory with mocked/fake Hub tests, owner-targeted Unit 2 gate/executor wiring, safe worker profile, and workspace/session identity verification. Do not start live shared-runtime writes yet.
+Begin Milestone 5 implementation Unit 4: **machine-level task-oriented ChatGPT MCP/plugin gateway**. Use registered IDs and the existing Safety Preview/plan-token boundary; expose no raw filesystem/shell/Hub authority. Use cloud tests only and stop before the live shared-runtime proof.
 
 ---
 
