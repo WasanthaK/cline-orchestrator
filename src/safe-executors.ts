@@ -34,7 +34,7 @@ export class SafeExecutorError extends Error {
   }
 }
 
-async function enforce(
+export async function enforceSafeAction(
   action: ActionDescriptor,
   context: PreExecutionPolicyContext,
   onEscalation?: EscalationHandler,
@@ -111,17 +111,17 @@ export class SafeWorkspaceExecutors<ReadResult = unknown, SearchResult = unknown
   ) {}
 
   async readFile(path: string): Promise<ReadResult> {
-    await enforce({ kind: "read", paths: [path] }, this.context, this.onEscalation);
+    await enforceSafeAction({ kind: "read", paths: [path] }, this.context, this.onEscalation);
     return await this.delegates.readFile(path);
   }
 
   async search(queries: string[]): Promise<SearchResult> {
-    await enforce({ kind: "search", workspaceRoot: this.context.workspaceRoot, queries }, this.context, this.onEscalation);
+    await enforceSafeAction({ kind: "search", workspaceRoot: this.context.workspaceRoot, queries }, this.context, this.onEscalation);
     return await this.delegates.search(queries);
   }
 
   async editor(path: string, operation: "create" | "modify", input: unknown): Promise<EditResult> {
-    await enforce({ kind: "edit", paths: [path], operation }, this.context, this.onEscalation);
+    await enforceSafeAction({ kind: "edit", paths: [path], operation }, this.context, this.onEscalation);
     return await this.delegates.editor(path, operation, input);
   }
 
@@ -139,7 +139,7 @@ export class SafeWorkspaceExecutors<ReadResult = unknown, SearchResult = unknown
       throw new SafeExecutorError("Patch preview did not produce a valid affected-path set", "DENY");
     }
 
-    await enforce(
+    await enforceSafeAction(
       {
         kind: "patch",
         paths: changes.map((change) => change.path),
