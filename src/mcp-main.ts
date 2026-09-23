@@ -1,10 +1,8 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { defaultContextRotateAtTokens } from "./context-supervisor.js";
-import {
-  MachineOrchestratorService,
-  type WorkerProfileResolver,
-} from "./machine-orchestrator.js";
+import { type WorkerProfileResolver } from "./machine-orchestrator.js";
+import { RestartAwareMachineOrchestratorService } from "./machine-recovery.js";
 import {
   readMcpGatewayConfig,
   startMachineMcpHttpServer,
@@ -127,14 +125,20 @@ export function isDirectEntryPoint(
 async function main(): Promise<void> {
   const registry = new WorkspaceRegistry();
   const safetyPlans = new SafetyPlanService(registry);
-  const service = new MachineOrchestratorService(
+  const service = new RestartAwareMachineOrchestratorService(
     registry,
     safetyPlans,
     environmentWorkerProfileResolver(),
   );
   const config = readMcpGatewayConfig();
+  const recovery = await service.recoverInterruptedTasks();
   const server = startMachineMcpHttpServer(service, config);
 
+  if (recovery.scanned > 0) {
+    process.stderr.write(
+      `[cline-orchestrator MCP: restart reconciliation scanned=${recovery.scanned}; queued=${recovery.queued}; failedClosed=${recovery.failedClosed}]\n`,
+    );
+  }
   process.stderr.write(
     `[cline-orchestrator MCP: listening on ${config.host}:${config.port}${config.path}; tunnel=${config.tunnelPublicUrl ? "configured" : "not configured"}]\n`,
   );
