@@ -92,7 +92,16 @@ async function waitForOwnerReady(
       return task;
     }
     if (TERMINAL_STATUSES.has(task.status)) {
-      fail(`first owner reached terminal state ${task.status} before it could be interrupted`);
+      const details = [
+        `status=${task.status}`,
+        task.finishReason ? `finishReason=${task.finishReason}` : undefined,
+        task.error ? `error=${task.error}` : undefined,
+        `runCount=${task.runCount ?? 0}`,
+        `sessionGeneration=${task.sessionGeneration ?? 0}`,
+        `hasHubSession=${Boolean(task.clineSessionId)}`,
+        `checkpointAvailable=${task.lastRunCheckpoint?.available === true}`,
+      ].filter(Boolean).join("; ");
+      fail(`first owner reached terminal state before it could be interrupted (${details})`);
     }
     await sleep(10);
   }
