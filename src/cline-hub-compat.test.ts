@@ -5,7 +5,7 @@ import {
   planClineHubDaemonEntryShim,
 } from "./cline-hub-compat.js";
 
-test("Cline Hub compatibility plan maps the pinned Windows package layout to the observed missing entry", () => {
+test("Cline Hub compatibility plan maps the pinned Windows package layout to both observed missing entries", () => {
   const plan = planClineHubDaemonEntryShim({
     coreVersion: "0.0.83",
     coreEntryPath: "C:\\repo\\node_modules\\@cline\\core\\dist\\index.js",
@@ -14,14 +14,20 @@ test("Cline Hub compatibility plan maps the pinned Windows package layout to the
   });
 
   assert.equal(
-    plan.expectedEntryPath,
-    "C:\\repo\\node_modules\\@cline\\core\\dist\\entry.js",
-  );
-  assert.equal(
     plan.daemonEntryPath,
     "C:\\repo\\node_modules\\@cline\\core\\dist\\hub\\daemon\\entry.js",
   );
-  assert.match(plan.shimSource, /import "\.\/hub\/daemon\/entry\.js";/);
+  assert.equal(plan.targets.length, 2);
+  assert.equal(
+    plan.targets[0]?.expectedEntryPath,
+    "C:\\repo\\node_modules\\@cline\\core\\dist\\entry.js",
+  );
+  assert.equal(
+    plan.targets[1]?.expectedEntryPath,
+    "C:\\repo\\node_modules\\@cline\\core\\dist\\hub\\entry.js",
+  );
+  assert.match(plan.targets[0]?.shimSource ?? "", /import "\.\/hub\/daemon\/entry\.js";/);
+  assert.match(plan.targets[1]?.shimSource ?? "", /import "\.\/daemon\/entry\.js";/);
 });
 
 test("Cline Hub compatibility plan is case-insensitive for canonical Windows package paths", () => {
@@ -32,7 +38,8 @@ test("Cline Hub compatibility plan is case-insensitive for canonical Windows pac
     pathFlavor: "win32",
   });
 
-  assert.equal(plan.expectedEntryPath.endsWith("dist\\entry.js"), true);
+  assert.equal(plan.targets[0]?.expectedEntryPath.endsWith("dist\\entry.js"), true);
+  assert.equal(plan.targets[1]?.expectedEntryPath.endsWith("dist\\hub\\entry.js"), true);
 });
 
 test("Cline Hub compatibility plan fails closed for an unreviewed core version", () => {
