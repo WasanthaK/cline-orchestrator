@@ -12,14 +12,16 @@ import {
 
 const execFile = promisify(execFileCallback);
 
-test("live proof isolation uses a private Cline root, data dir, registry, and non-default Hub", async () => {
+test("live proof isolation uses a private Cline root, data dir, registry, and pinned non-default Hub port", async () => {
   const isolation = await createLiveProofIsolation();
   try {
     assert.equal(isolation.environment.CLINE_DIR, isolation.clineDir);
     assert.equal(isolation.environment.CLINE_DATA_DIR, isolation.clineDataDir);
+    assert.equal(isolation.environment.CLINE_HUB_PORT, String(isolation.hubPort));
     assert.equal(isolation.environment.CLINE_HUB_ADDRESS, isolation.hubAddress);
     assert.equal(isolation.environment.CLINE_SESSION_BACKEND_MODE, "hub");
-    assert.notEqual(isolation.hubAddress, "127.0.0.1:25463");
+    assert.notEqual(isolation.hubPort, 25463);
+    assert.equal(isolation.hubAddress, `127.0.0.1:${isolation.hubPort}`);
     assert.match(isolation.hubAddress, /^127\.0\.0\.1:\d+$/);
     assert.equal(path.dirname(isolation.registryPath), isolation.root);
     assert.equal(path.dirname(isolation.clineDir), isolation.root);
