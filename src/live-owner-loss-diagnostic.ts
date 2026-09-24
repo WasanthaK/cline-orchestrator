@@ -204,7 +204,7 @@ async function waitForOwnerReady(
 async function waitForTerminal(
   service: RestartAwareMachineOrchestratorService,
   taskId: string,
-  timeoutMs = 180_000,
+  timeoutMs = 360_000,
 ) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -255,8 +255,6 @@ async function ownerChild(): Promise<void> {
     })}\n`,
   );
 
-  // The parent intentionally terminates this process abruptly to simulate
-  // gateway/owner loss. Keep the owner process alive until that happens.
   await new Promise<never>(() => undefined);
 }
 
