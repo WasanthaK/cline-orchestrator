@@ -1,7 +1,11 @@
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { execFile as execFileCallback } from "node:child_process";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
 
 export interface LiveProofIsolation {
   root: string;
@@ -31,6 +35,14 @@ async function allocateLoopbackPort(): Promise<number> {
   }
 }
 
+async function git(cwd: string, ...args: string[]): Promise<string> {
+  const result = await execFile("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  return result.stdout.trimEnd();
+}
+
 export function assertDisposableWorkspaceRoot(root: string): string {
   const resolved = path.resolve(root);
   const base = path.basename(resolved).toLowerCase();
@@ -40,6 +52,22 @@ export function assertDisposableWorkspaceRoot(root: string): string {
     );
   }
   return resolved;
+}
+
+export async function createDisposableProofWorkspace(): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "orchestrator-live-proof-"));
+  await mkdir(path.join(root, "src"), { recursive: true });
+  await writeFile(path.join(root, "src", "demo.ts"), "export const value = 1;\n", "utf8");
+  await writeFile(path.join(root, ".env"), "PROOF_SECRET=isolated-test-value\n", "utf8");
+  await writeFile(path.join(root, "outside.txt"), "protected baseline\n", "utf8");
+
+  await git(root, "init");
+  await git(root, "config", "user.name", "Cline Orchestrator Proof");
+  await git(root, "config", "user.email", "proof@example.invalid");
+  await git(root, "add", ".");
+  await git(root, "commit", "-m", "isolated owner-loss proof baseline");
+
+  return assertDisposableWorkspaceRoot(root);
 }
 
 export async function createLiveProofIsolation(): Promise<LiveProofIsolation> {
