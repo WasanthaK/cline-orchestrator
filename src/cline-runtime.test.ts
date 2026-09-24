@@ -20,9 +20,10 @@ class FakeRuntime implements ClineRuntime {
   async dispose() {}
 }
 
-test("SDK runtime factory keeps local mode local and prepares Hub mode without persisting credentials", async () => {
+test("SDK runtime factory keeps local mode local and passes Cline-managed Hub auth only in memory", async () => {
   const calls: Record<string, unknown>[] = [];
   let prepareCalls = 0;
+  const resolvedWorkspaces: string[] = [];
   const creator = async (options: Record<string, unknown>) => {
     calls.push(options);
     return new FakeRuntime();
@@ -32,13 +33,22 @@ test("SDK runtime factory keeps local mode local and prepares Hub mode without p
     async () => {
       prepareCalls += 1;
     },
+    async (workspaceRoot) => {
+      resolvedWorkspaces.push(workspaceRoot);
+      return {
+        url: "ws://127.0.0.1:43123/hub",
+        authToken: "ephemeral-proof-token",
+      };
+    },
   );
 
   await factory.create({ mode: "local", workspaceRoot: "/tmp/workspace" });
   assert.equal(prepareCalls, 0);
+  assert.deepEqual(resolvedWorkspaces, []);
 
   await factory.create({ mode: "hub", workspaceRoot: "/tmp/workspace" });
   assert.equal(prepareCalls, 1);
+  assert.deepEqual(resolvedWorkspaces, ["/tmp/workspace"]);
 
   assert.deepEqual(calls[0], {
     clientName: "cline-orchestrator",
@@ -48,6 +58,8 @@ test("SDK runtime factory keeps local mode local and prepares Hub mode without p
     clientName: "cline-orchestrator",
     backendMode: "hub",
     hub: {
+      endpoint: "ws://127.0.0.1:43123/hub",
+      authToken: "ephemeral-proof-token",
       strategy: "require-hub",
       clientType: "cline-orchestrator",
       displayName: "Cline Orchestrator",
@@ -55,7 +67,27 @@ test("SDK runtime factory keeps local mode local and prepares Hub mode without p
       cwd: "/tmp/workspace",
     },
   });
-  assert.equal(JSON.stringify(calls).includes("authToken"), false);
+});
+
+test("SDK Hub runtime factory fails closed when Cline resolution lacks endpoint credentials", async () => {
+  let creatorCalls = 0;
+  const factory = new SdkClineRuntimeFactory(
+    async () => {
+      creatorCalls += 1;
+      return new FakeRuntime();
+    },
+    async () => undefined,
+    async () => ({
+      url: "ws://127.0.0.1:43123/hub",
+      authToken: "",
+    }),
+  );
+
+  await assert.rejects(
+    () => factory.create({ mode: "hub", workspaceRoot: "/tmp/workspace" }),
+    /authenticated endpoint/,
+  );
+  assert.equal(creatorCalls, 0);
 });
 
 test("Hub resume workspace verification accepts canonical aliases and rejects a different root", async () => {
