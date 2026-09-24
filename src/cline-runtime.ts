@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
-import { ClineCore, ensureDetachedHubServer } from "@cline/sdk";
+import { ClineCore } from "@cline/sdk";
+import { ensureDetachedHubServer } from "@cline/core/hub";
 import { ensureClineHubDaemonEntryCompatibility } from "./cline-hub-compat.js";
 
 export type ClineRuntimeMode = "local" | "hub";
