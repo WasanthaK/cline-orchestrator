@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { ClineCore } from "@cline/sdk";
-import { ensureDetachedHubServer } from "@cline/core/hub";
+import * as ClineHub from "@cline/core/hub";
 import { ensureClineHubDaemonEntryCompatibility } from "./cline-hub-compat.js";
 
 export type ClineRuntimeMode = "local" | "hub";
@@ -32,11 +32,22 @@ export type HubRuntimeResolution = {
 };
 export type HubRuntimeResolver = (workspaceRoot: string) => Promise<HubRuntimeResolution>;
 
+type ClineHubRuntimeSurface = {
+  ensureDetachedHubServer?: (workspaceRoot: string) => Promise<HubRuntimeResolution>;
+};
+
 function defaultCreator(options: Record<string, unknown>): Promise<ClineRuntime> {
   return ClineCore.create(options as any) as Promise<ClineRuntime>;
 }
 
 async function defaultHubRuntimeResolver(workspaceRoot: string): Promise<HubRuntimeResolution> {
+  const ensureDetachedHubServer = (ClineHub as unknown as ClineHubRuntimeSurface)
+    .ensureDetachedHubServer;
+  if (typeof ensureDetachedHubServer !== "function") {
+    throw new Error(
+      "Pinned @cline/core Hub surface does not expose ensureDetachedHubServer.",
+    );
+  }
   return await ensureDetachedHubServer(workspaceRoot);
 }
 
