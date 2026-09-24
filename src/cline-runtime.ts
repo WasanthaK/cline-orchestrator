@@ -1,6 +1,6 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
-import { ClineCore } from "@cline/sdk";
+import { ClineCore, ensureDetachedHubServer } from "@cline/sdk";
 import { ensureClineHubDaemonEntryCompatibility } from "./cline-hub-compat.js";
 
 export type ClineRuntimeMode = "local" | "hub";
@@ -25,15 +25,25 @@ export interface ClineRuntimeFactory {
 
 export type ClineCoreCreator = (options: Record<string, unknown>) => Promise<ClineRuntime>;
 export type HubRuntimePreparer = () => Promise<unknown>;
+export type HubRuntimeResolution = {
+  url: string;
+  authToken: string;
+};
+export type HubRuntimeResolver = (workspaceRoot: string) => Promise<HubRuntimeResolution>;
 
 function defaultCreator(options: Record<string, unknown>): Promise<ClineRuntime> {
   return ClineCore.create(options as any) as Promise<ClineRuntime>;
+}
+
+async function defaultHubRuntimeResolver(workspaceRoot: string): Promise<HubRuntimeResolution> {
+  return await ensureDetachedHubServer(workspaceRoot);
 }
 
 export class SdkClineRuntimeFactory implements ClineRuntimeFactory {
   constructor(
     private readonly createCore: ClineCoreCreator = defaultCreator,
     private readonly prepareHubRuntime: HubRuntimePreparer = ensureClineHubDaemonEntryCompatibility,
+    private readonly resolveHubRuntime: HubRuntimeResolver = defaultHubRuntimeResolver,
   ) {}
 
   async create(request: ClineRuntimeCreateRequest): Promise<ClineRuntime> {
@@ -46,14 +56,28 @@ export class SdkClineRuntimeFactory implements ClineRuntimeFactory {
 
     // @cline/core 0.0.83 publishes the daemon entry correctly but its bundled
     // launcher resolves a missing dist/entry.js. Prepare the exact pinned
-    // compatibility entry before Cline performs its own Hub discovery, locking,
-    // compatibility checks, and safe retirement logic.
+    // compatibility entry before asking Cline to discover/start the Hub.
     await this.prepareHubRuntime();
+
+    // Resolve the Hub through Cline's own managed-daemon boundary and retain
+    // the returned auth token only in memory. This is required for explicitly
+    // pinned Hub endpoints (for example isolated proof ports): @cline/core
+    // intentionally does not put those credentials in its managed local-token
+    // registry, so passing only the URL can make the later runtime WebSocket
+    // fail authentication even though the daemon health check succeeded.
+    const resolvedHub = await this.resolveHubRuntime(request.workspaceRoot);
+    const endpoint = resolvedHub.url?.trim();
+    const authToken = resolvedHub.authToken?.trim();
+    if (!endpoint || !authToken) {
+      throw new Error("Cline Hub resolution did not return an authenticated endpoint.");
+    }
 
     return await this.createCore({
       clientName: "cline-orchestrator",
       backendMode: "hub",
       hub: {
+        endpoint,
+        authToken,
         strategy: "require-hub",
         clientType: "cline-orchestrator",
         displayName: "Cline Orchestrator",
