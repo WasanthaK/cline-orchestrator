@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -143,7 +143,7 @@ async function ownerChild(): Promise<void> {
   await new Promise<never>(() => undefined);
 }
 
-function waitForChildReady(child: ChildProcessWithoutNullStreams, timeoutMs = 120_000): Promise<{
+function waitForChildReady(child: ChildProcess, timeoutMs = 120_000): Promise<{
   taskId: string;
   status: string;
   runCount: number;
@@ -151,6 +151,13 @@ function waitForChildReady(child: ChildProcessWithoutNullStreams, timeoutMs = 12
   checkpointAvailable: boolean;
 }> {
   return new Promise((resolve, reject) => {
+    if (!child.stdout || !child.stderr) {
+      reject(new Error("owner child was not created with piped stdout/stderr"));
+      return;
+    }
+
+    const stdout = child.stdout;
+    const stderr = child.stderr;
     let buffer = "";
     let settled = false;
     const timer = setTimeout(() => {
@@ -166,10 +173,10 @@ function waitForChildReady(child: ChildProcessWithoutNullStreams, timeoutMs = 12
       fn();
     };
 
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => process.stderr.write(chunk));
-    child.stdout.on("data", (chunk: string) => {
+    stdout.setEncoding("utf8");
+    stderr.setEncoding("utf8");
+    stderr.on("data", (chunk: string) => process.stderr.write(chunk));
+    stdout.on("data", (chunk: string) => {
       process.stdout.write(chunk);
       buffer += chunk;
       const marker = buffer.indexOf(READY_PREFIX);
@@ -193,7 +200,7 @@ function waitForChildReady(child: ChildProcessWithoutNullStreams, timeoutMs = 12
   });
 }
 
-async function waitForChildExit(child: ChildProcessWithoutNullStreams, timeoutMs = 15_000): Promise<void> {
+async function waitForChildExit(child: ChildProcess, timeoutMs = 15_000): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
   await Promise.race([
     new Promise<void>((resolve) => child.once("exit", () => resolve())),
