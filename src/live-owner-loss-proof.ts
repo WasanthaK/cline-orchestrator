@@ -3,6 +3,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { captureGitSnapshot } from "./git-state.js";
+import {
+  assertDisposableWorkspaceRoot,
+  createLiveProofIsolation,
+} from "./live-proof-isolation.js";
 import { RestartAwareMachineOrchestratorService } from "./machine-recovery.js";
 import { environmentWorkerProfileResolver } from "./mcp-main.js";
 import { SafetyPlanService } from "./safety-plan.js";
@@ -14,6 +19,7 @@ const READY_PREFIX = "__ORCH_OWNER_READY__";
 const CHILD_ROLE = "ORCH_LIVE_PROOF_CHILD_ROLE";
 const CHILD_WORKSPACE_ID = "ORCH_LIVE_PROOF_WORKSPACE_ID";
 const CHILD_GOAL = "ORCH_LIVE_PROOF_GOAL";
+const CHILD_REGISTRY_PATH = "ORCH_LIVE_PROOF_REGISTRY_PATH";
 const ACTIVE_STATUSES = new Set<OrchestratorTask["status"]>([
   "waiting",
   "running",
@@ -34,25 +40,29 @@ function fail(message: string): never {
 }
 
 function assertDisposableProofWorkspace(workspace: RegisteredWorkspace): void {
-  const base = path.basename(workspace.canonicalRoot).toLowerCase();
-  if (!base.startsWith("orchestrator-live-proof-")) {
-    fail("workspace root is not named like the disposable orchestrator-live-proof-* workspace");
-  }
+  assertDisposableWorkspaceRoot(workspace.canonicalRoot);
 
   const allowed = new Set(workspace.safetyProfile.allowedPathPatterns);
-  if (!allowed.has("src/**") && !allowed.has("src/demo.ts")) {
-    fail("workspace safety profile does not authorize the disposable src/demo.ts proof target");
+  if (allowed.size !== 1 || !allowed.has("src/demo.ts")) {
+    fail("workspace safety profile must authorize only src/demo.ts for this proof");
   }
 
   const protectedPatterns = new Set(workspace.safetyProfile.protectedPathPatterns);
-  for (const required of [".env*", ".git/**"]) {
+  for (const required of [".env*", "outside.txt", ".git/**"]) {
     if (!protectedPatterns.has(required)) {
       fail(`workspace safety profile is missing required protected pattern ${required}`);
     }
   }
 
-  if (!workspace.safetyProfile.validationCommands.includes("git diff --check")) {
-    fail("workspace safety profile is missing the expected git diff --check validation");
+  if (
+    workspace.safetyProfile.validationCommands.length !== 1
+    || workspace.safetyProfile.validationCommands[0] !== "git diff --check"
+  ) {
+    fail("workspace safety profile must use only git diff --check validation");
+  }
+
+  if (workspace.safetyProfile.maxChangedFiles !== 1) {
+    fail("workspace safety profile must limit the proof to one changed file");
   }
 }
 
@@ -105,9 +115,12 @@ async function waitForTerminal(
 async function ownerChild(): Promise<void> {
   const workspaceId = process.env[CHILD_WORKSPACE_ID]?.trim();
   const goal = process.env[CHILD_GOAL]?.trim();
-  if (!workspaceId || !goal) fail("owner child is missing workspace or goal input");
+  const registryPath = process.env[CHILD_REGISTRY_PATH]?.trim();
+  if (!workspaceId || !goal || !registryPath) {
+    fail("owner child is missing isolated registry, workspace, or goal input");
+  }
 
-  const registry = new WorkspaceRegistry();
+  const registry = new WorkspaceRegistry(registryPath);
   const workspace = await registry.resolveVerifiedWorkspace(workspaceId);
   assertDisposableProofWorkspace(workspace);
   const store = new TaskStore(workspace.canonicalRoot);
@@ -210,14 +223,49 @@ async function waitForChildExit(child: ChildProcess, timeoutMs = 15_000): Promis
   ]);
 }
 
+async function registerIsolatedProofWorkspace(
+  registry: WorkspaceRegistry,
+  workspaceRoot: string,
+): Promise<RegisteredWorkspace> {
+  const project = await registry.registerProject("Isolated Owner-Loss Proof");
+  const workerProfileId = (process.env.ORCH_WORKER_PROFILE_ID ?? "default").trim() || "default";
+  return await registry.registerWorkspace({
+    projectId: project.projectId,
+    displayName: "Isolated Owner-Loss Proof Workspace",
+    root: workspaceRoot,
+    safetyProfile: {
+      policyVersion: "owner-loss-proof-v1",
+      allowedPathPatterns: ["src/demo.ts"],
+      protectedPathPatterns: [".env*", "outside.txt", ".git/**"],
+      validationCommands: ["git diff --check"],
+      workerProfileId,
+      maxChangedFiles: 1,
+    },
+  });
+}
+
 async function parentMain(): Promise<void> {
-  const workspaceId = process.argv[2]?.trim();
-  if (!workspaceId) {
-    throw new Error("Usage: npm run proof:owner-loss -- <workspace-id>");
+  const requestedRoot = process.argv[2]?.trim();
+  if (!requestedRoot) {
+    throw new Error(
+      "Usage: npm run proof:owner-loss -- <disposable-workspace-root>",
+    );
   }
 
-  const registry = new WorkspaceRegistry();
-  const workspace = await registry.resolveVerifiedWorkspace(workspaceId);
+  const workspaceRoot = assertDisposableWorkspaceRoot(requestedRoot);
+  const git = await captureGitSnapshot(workspaceRoot);
+  if (!git.available) {
+    fail(`disposable workspace is not a usable Git repository: ${git.error ?? "unknown Git error"}`);
+  }
+  if (git.dirty) {
+    fail(`disposable workspace must be clean before proof; changedFiles=${git.changedFiles ?? 0}`);
+  }
+
+  const isolation = await createLiveProofIsolation();
+  Object.assign(process.env, isolation.environment);
+
+  const registry = new WorkspaceRegistry(isolation.registryPath);
+  const workspace = await registerIsolatedProofWorkspace(registry, workspaceRoot);
   assertDisposableProofWorkspace(workspace);
   const store = new TaskStore(workspace.canonicalRoot);
   await assertNoActiveTasks(store);
@@ -232,14 +280,20 @@ async function parentMain(): Promise<void> {
     "Re-read src/demo.ts after the edit and report completion.",
   ].join(" ");
 
+  process.stdout.write(
+    `[isolated live proof: workspace=${path.basename(workspace.canonicalRoot)}; clineRoot=${isolation.clineDir}; hub=${isolation.hubAddress}; registry=isolated]\n`,
+  );
+
   const scriptPath = fileURLToPath(import.meta.url);
   const child = spawn(process.execPath, ["--import", "tsx", scriptPath], {
     cwd: process.cwd(),
     env: {
       ...process.env,
+      ...isolation.environment,
       [CHILD_ROLE]: "owner",
-      [CHILD_WORKSPACE_ID]: workspaceId,
+      [CHILD_WORKSPACE_ID]: workspace.workspaceId,
       [CHILD_GOAL]: goal,
+      [CHILD_REGISTRY_PATH]: isolation.registryPath,
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -328,6 +382,11 @@ async function parentMain(): Promise<void> {
         proof: "owner-loss-restart",
         passed: true,
         taskId,
+        isolation: {
+          clineRoot: isolation.clineDir,
+          hubAddress: isolation.hubAddress,
+          registry: "isolated",
+        },
         firstOwner: {
           status: ready.status,
           runCount: ready.runCount,
