@@ -30,21 +30,29 @@ export interface ClineHubShimPlanInput {
   pathFlavor?: PathFlavor;
 }
 
-export interface ClineHubShimPlan {
-  coreRoot: string;
+export interface ClineHubShimTarget {
   expectedEntryPath: string;
-  daemonEntryPath: string;
   shimSource: string;
 }
 
+export interface ClineHubShimPlan {
+  coreRoot: string;
+  daemonEntryPath: string;
+  targets: ClineHubShimTarget[];
+}
+
 /**
- * @cline/core 0.0.83 bundles src/hub/daemon/index.ts into dist/index.js while
- * its daemon launcher resolves ./entry.js relative to import.meta.url. In the
- * published bundle that incorrectly points at dist/entry.js; the exported
- * daemon actually lives at dist/hub/daemon/entry.js.
+ * @cline/core 0.0.83 bundles hub/daemon/index.ts into two public bundles:
+ * dist/index.js (used through @cline/sdk/@cline/core) and dist/hub/index.js
+ * (used through @cline/core/hub). In both bundles its daemon launcher resolves
+ * ./entry.js relative to import.meta.url, producing two missing paths:
  *
- * Keep this workaround exact and fail closed. A future core version or a
- * different package layout must be reviewed rather than silently patched.
+ *   dist/entry.js
+ *   dist/hub/entry.js
+ *
+ * The exported daemon actually lives at dist/hub/daemon/entry.js. Keep this
+ * workaround exact and fail closed. A future core version or a different
+ * package layout must be reviewed rather than silently patched.
  */
 export function planClineHubDaemonEntryShim(
   input: ClineHubShimPlanInput,
@@ -83,14 +91,27 @@ export function planClineHubDaemonEntryShim(
 
   return {
     coreRoot,
-    expectedEntryPath: api.join(distDir, "entry.js"),
     daemonEntryPath: input.daemonEntryPath,
-    shimSource: [
-      "// cline-orchestrator compatibility shim for @cline/core 0.0.83.",
-      "// The published hub launcher resolves this path after bundling.",
-      'import "./hub/daemon/entry.js";',
-      "",
-    ].join("\n"),
+    targets: [
+      {
+        expectedEntryPath: api.join(distDir, "entry.js"),
+        shimSource: [
+          "// cline-orchestrator compatibility shim for @cline/core 0.0.83.",
+          "// The published root bundle resolves this path after bundling.",
+          'import "./hub/daemon/entry.js";',
+          "",
+        ].join("\n"),
+      },
+      {
+        expectedEntryPath: api.join(distDir, "hub", "entry.js"),
+        shimSource: [
+          "// cline-orchestrator compatibility shim for @cline/core 0.0.83.",
+          "// The published @cline/core/hub bundle resolves this path after bundling.",
+          'import "./daemon/entry.js";',
+          "",
+        ].join("\n"),
+      },
+    ],
   };
 }
 
@@ -106,7 +127,7 @@ async function exists(filePath: string): Promise<boolean> {
 export type ClineHubCompatibilityResult = "native" | "shimmed" | "raced";
 
 /**
- * Prepare the pinned SDK's published Hub launcher without starting, stopping,
+ * Prepare the pinned SDK's published Hub launchers without starting, stopping,
  * or replacing any Hub process. The actual runtime discovery/locking and safe
  * retirement behavior remains owned by Cline itself.
  */
@@ -128,24 +149,34 @@ export async function ensureClineHubDaemonEntryCompatibility(): Promise<ClineHub
     daemonEntryPath,
   });
 
-  if (await exists(plan.expectedEntryPath)) {
-    return "native";
+  let created = false;
+  let raced = false;
+  for (const target of plan.targets) {
+    if (await exists(target.expectedEntryPath)) {
+      continue;
+    }
+
+    try {
+      await writeFile(target.expectedEntryPath, target.shimSource, {
+        encoding: "utf8",
+        flag: "wx",
+      });
+      created = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === "EEXIST") {
+        raced = true;
+        continue;
+      }
+      throw new ClineHubCompatibilityError(
+        `Unable to prepare @cline/core Hub daemon compatibility entry ${target.expectedEntryPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
-  try {
-    await writeFile(plan.expectedEntryPath, plan.shimSource, {
-      encoding: "utf8",
-      flag: "wx",
-    });
+  if (created) {
     return "shimmed";
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code === "EEXIST") {
-      return "raced";
-    }
-    throw new ClineHubCompatibilityError(
-      `Unable to prepare @cline/core Hub daemon compatibility entry: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
   }
+  return raced ? "raced" : "native";
 }
