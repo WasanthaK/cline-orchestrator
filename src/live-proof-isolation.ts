@@ -12,6 +12,7 @@ export interface LiveProofIsolation {
   registryPath: string;
   clineDir: string;
   clineDataDir: string;
+  hubPort: number;
   hubAddress: string;
   environment: Record<string, string>;
 }
@@ -77,10 +78,10 @@ export async function createLiveProofIsolation(): Promise<LiveProofIsolation> {
   const registryPath = path.join(root, "workspace-registry.json");
   await mkdir(clineDataDir, { recursive: true });
 
-  const port = await allocateLoopbackPort();
-  const hubAddress = `127.0.0.1:${port}`;
-  if (hubAddress === "127.0.0.1:25463") {
-    throw new Error("Refusing to use Cline's default Hub address for an isolated proof");
+  const hubPort = await allocateLoopbackPort();
+  const hubAddress = `127.0.0.1:${hubPort}`;
+  if (hubPort === 25463) {
+    throw new Error("Refusing to use Cline's default Hub port for an isolated proof");
   }
 
   return {
@@ -88,10 +89,12 @@ export async function createLiveProofIsolation(): Promise<LiveProofIsolation> {
     registryPath,
     clineDir,
     clineDataDir,
+    hubPort,
     hubAddress,
     environment: {
       CLINE_DIR: clineDir,
       CLINE_DATA_DIR: clineDataDir,
+      CLINE_HUB_PORT: String(hubPort),
       CLINE_HUB_ADDRESS: hubAddress,
       CLINE_SESSION_BACKEND_MODE: "hub",
     },
