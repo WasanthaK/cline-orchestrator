@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { captureGitSnapshot } from "./git-state.js";
 import {
   assertDisposableWorkspaceRoot,
+  createDisposableProofWorkspace,
   createLiveProofIsolation,
 } from "./live-proof-isolation.js";
 import { RestartAwareMachineOrchestratorService } from "./machine-recovery.js";
@@ -245,20 +246,13 @@ async function registerIsolatedProofWorkspace(
 }
 
 async function parentMain(): Promise<void> {
-  const requestedRoot = process.argv[2]?.trim();
-  if (!requestedRoot) {
-    throw new Error(
-      "Usage: npm run proof:owner-loss -- <disposable-workspace-root>",
-    );
-  }
-
-  const workspaceRoot = assertDisposableWorkspaceRoot(requestedRoot);
+  const workspaceRoot = await createDisposableProofWorkspace();
   const git = await captureGitSnapshot(workspaceRoot);
   if (!git.available) {
-    fail(`disposable workspace is not a usable Git repository: ${git.error ?? "unknown Git error"}`);
+    fail(`generated disposable workspace is not a usable Git repository: ${git.error ?? "unknown Git error"}`);
   }
   if (git.dirty) {
-    fail(`disposable workspace must be clean before proof; changedFiles=${git.changedFiles ?? 0}`);
+    fail(`generated disposable workspace must be clean before proof; changedFiles=${git.changedFiles ?? 0}`);
   }
 
   const isolation = await createLiveProofIsolation();
@@ -281,7 +275,7 @@ async function parentMain(): Promise<void> {
   ].join(" ");
 
   process.stdout.write(
-    `[isolated live proof: workspace=${path.basename(workspace.canonicalRoot)}; clineRoot=${isolation.clineDir}; hub=${isolation.hubAddress}; registry=isolated]\n`,
+    `[isolated live proof: workspace=${workspace.canonicalRoot}; clineRoot=${isolation.clineDir}; hub=${isolation.hubAddress}; registry=isolated]\n`,
   );
 
   const scriptPath = fileURLToPath(import.meta.url);
@@ -383,6 +377,7 @@ async function parentMain(): Promise<void> {
         passed: true,
         taskId,
         isolation: {
+          workspaceRoot: workspace.canonicalRoot,
           clineRoot: isolation.clineDir,
           hubAddress: isolation.hubAddress,
           registry: "isolated",
