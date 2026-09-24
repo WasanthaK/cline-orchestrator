@@ -20,6 +20,11 @@ class FakeRuntime implements ClineRuntime {
   async dispose() {}
 }
 
+test("pinned Cline Hub public subpath exposes the detached runtime resolver", async () => {
+  const hub = await import("@cline/core/hub") as unknown as Record<string, unknown>;
+  assert.equal(typeof hub.ensureDetachedHubServer, "function");
+});
+
 test("SDK runtime factory keeps local mode local and passes Cline-managed Hub auth only in memory", async () => {
   const calls: Record<string, unknown>[] = [];
   let prepareCalls = 0;
