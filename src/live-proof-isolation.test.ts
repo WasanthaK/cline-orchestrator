@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
-import { rm } from "node:fs/promises";
+import { execFile as execFileCallback } from "node:child_process";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 import {
   assertDisposableWorkspaceRoot,
+  createDisposableProofWorkspace,
   createLiveProofIsolation,
 } from "./live-proof-isolation.js";
+
+const execFile = promisify(execFileCallback);
 
 test("live proof isolation uses a private Cline root, data dir, registry, and non-default Hub", async () => {
   const isolation = await createLiveProofIsolation();
@@ -21,6 +26,22 @@ test("live proof isolation uses a private Cline root, data dir, registry, and no
     assert.equal(path.dirname(isolation.clineDataDir), isolation.clineDir);
   } finally {
     await rm(isolation.root, { recursive: true, force: true });
+  }
+});
+
+test("disposable workspace builder creates a clean independent Git baseline", async () => {
+  const root = await createDisposableProofWorkspace();
+  try {
+    assert.match(path.basename(root).toLowerCase(), /^orchestrator-live-proof-/);
+    assert.equal(await readFile(path.join(root, "src", "demo.ts"), "utf8"), "export const value = 1;\n");
+    assert.equal(await readFile(path.join(root, "outside.txt"), "utf8"), "protected baseline\n");
+    const status = await execFile("git", ["-C", root, "status", "--porcelain=v1"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    assert.equal(status.stdout, "");
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
