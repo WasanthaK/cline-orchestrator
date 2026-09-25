@@ -14,6 +14,7 @@ import {
   MachineGatewayError,
   MachineOrchestratorService,
 } from "./machine-orchestrator.js";
+import { listRegisteredWorkspaceIncidents } from "./sentinel-query.js";
 import type { TaskStatus } from "./types.js";
 
 const TOOL_RESULT_MAX_CHARS = 120_000;
@@ -212,6 +213,26 @@ export function createMachineMcpServer(
   );
 
   server.registerTool(
+    "list_incidents",
+    {
+      title: "List orchestrator incidents",
+      description: "Refresh and return bounded, redacted Sentinel incidents for one registered workspace. This is read-only and exposes no process-control or filesystem authority.",
+      inputSchema: z.object({
+        workspace_id: z.string().uuid(),
+        include_resolved: z.boolean().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      }),
+      annotations: readAnnotations,
+    },
+    async ({ workspace_id, include_resolved, limit }) => guardedTool(() =>
+      listRegisteredWorkspaceIncidents(service.registry, workspace_id, {
+        includeResolved: include_resolved,
+        limit,
+      }),
+    ),
+  );
+
+  server.registerTool(
     "find_tasks",
     {
       title: "Find orchestrator tasks",
@@ -297,7 +318,7 @@ export function createMachineMcpServer(
     "start_task",
     {
       title: "Start approved task",
-      description: "Consume a short-lived Safety Plan token exactly once, persist the approved task envelope, and queue Hub-backed execution. No workspace/path/policy override parameters are accepted.",
+      description: "Consume a short-lived Safety Plan token exactly once, persist the approved task envelope, and queue Hub-backed execution. No workspace/path/policy/model override parameters are accepted.",
       inputSchema: z.object({ plan_token: z.string().min(32).max(256) }),
       annotations: writeAnnotations,
     },
