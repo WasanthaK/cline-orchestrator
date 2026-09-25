@@ -1,7 +1,12 @@
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { SdkClineRuntimeFactory } from "./cline-runtime.js";
+import {
+  SdkClineRuntimeFactory,
+  type ClineRuntime,
+  type ClineRuntimeCreateRequest,
+  type ClineRuntimeFactory,
+} from "./cline-runtime.js";
 import {
   assertDisposableWorkspaceRoot,
   assertLiveProofOptIn,
@@ -17,6 +22,7 @@ import { ScheduledHubWriterAuthorityRunner } from "./scheduled-hub-writer-runner
 import { TaskStore } from "./state.js";
 import type { OrchestratorTask } from "./types.js";
 import { WorkspaceLockStore } from "./workspace-lock-store.js";
+import type { WorkspaceLockOptions, WorkspaceWriterClaimV1 } from "./workspace-lock.js";
 import { WorkspaceRegistry, type RegisteredWorkspace } from "./workspace-registry.js";
 import { WriterConcurrencyScheduler } from "./writer-concurrency-scheduler.js";
 
@@ -138,13 +144,20 @@ async function assertCompletedTask(
   if (demo !== `export const value = ${replacementValue};\n`) {
     fail(`task ${taskId} did not produce the exact expected demo.ts contents`);
   }
+  await assertProtectedSentinels(workspace, taskId);
+  return task;
+}
+
+async function assertProtectedSentinels(
+  workspace: RegisteredWorkspace,
+  taskId: string,
+): Promise<void> {
   if (await readFile(path.join(workspace.canonicalRoot, ".env"), "utf8") !== PROTECTED_ENV) {
     fail(`task ${taskId} changed the protected .env sentinel`);
   }
   if (await readFile(path.join(workspace.canonicalRoot, "outside.txt"), "utf8") !== PROTECTED_OUTSIDE) {
     fail(`task ${taskId} changed the protected outside.txt sentinel`);
   }
-  return task;
 }
 
 async function rollbackAndAssertBaseline(
@@ -157,11 +170,116 @@ async function rollbackAndAssertBaseline(
   if (await readFile(path.join(workspace.canonicalRoot, "src", "demo.ts"), "utf8") !== BASE_DEMO) {
     fail(`rollback for ${taskId} did not restore exact demo.ts baseline`);
   }
-  if (await readFile(path.join(workspace.canonicalRoot, ".env"), "utf8") !== PROTECTED_ENV) {
-    fail(`rollback for ${taskId} did not preserve .env sentinel`);
+  await assertProtectedSentinels(workspace, taskId);
+}
+
+type CapturedEditor = (
+  input: unknown,
+  workspaceRoot: string,
+  context: { agentId: string; conversationId: string; iteration: number },
+) => Promise<unknown>;
+
+type SendSignal = {
+  promise: Promise<void>;
+  resolve: () => void;
+  started: boolean;
+};
+
+class ProofObservingRuntimeFactory implements ClineRuntimeFactory {
+  private readonly sendSignals = new Map<string, SendSignal>();
+  private readonly editors = new Map<string, CapturedEditor>();
+
+  constructor(private readonly base: ClineRuntimeFactory) {}
+
+  private signal(workspaceRoot: string): SendSignal {
+    let existing = this.sendSignals.get(workspaceRoot);
+    if (existing) return existing;
+    let resolve!: () => void;
+    const signal: SendSignal = {
+      promise: new Promise<void>((done) => { resolve = done; }),
+      resolve: () => resolve(),
+      started: false,
+    };
+    this.sendSignals.set(workspaceRoot, signal);
+    return signal;
   }
-  if (await readFile(path.join(workspace.canonicalRoot, "outside.txt"), "utf8") !== PROTECTED_OUTSIDE) {
-    fail(`rollback for ${taskId} did not preserve outside.txt sentinel`);
+
+  markSendStarted(workspaceRoot: string): void {
+    const signal = this.signal(workspaceRoot);
+    if (!signal.started) {
+      signal.started = true;
+      signal.resolve();
+    }
+  }
+
+  async waitForSendStarted(workspaceRoot: string): Promise<void> {
+    await this.signal(workspaceRoot).promise;
+  }
+
+  captureEditor(workspaceRoot: string, input: any): void {
+    const editor = input?.capabilities?.toolExecutors?.editor;
+    if (typeof editor === "function") this.editors.set(workspaceRoot, editor as CapturedEditor);
+  }
+
+  async attemptStaleEditor(workspaceRoot: string): Promise<void> {
+    const editor = this.editors.get(workspaceRoot);
+    if (!editor) fail(`no lease-aware editor was captured for ${workspaceRoot}`);
+    await editor(
+      {
+        path: path.join(workspaceRoot, "src", "demo.ts"),
+        old_text: "export const value = 1;",
+        new_text: "export const value = 999;",
+      },
+      workspaceRoot,
+      { agentId: "stale-proof-writer", conversationId: "stale-proof-session", iteration: 999 },
+    );
+  }
+
+  async create(request: ClineRuntimeCreateRequest): Promise<ClineRuntime> {
+    const base = await this.base.create(request);
+    const workspaceRoot = request.workspaceRoot;
+    return {
+      start: async (input) => {
+        this.captureEditor(workspaceRoot, input);
+        return await base.start(input);
+      },
+      send: async (input) => {
+        this.markSendStarted(workspaceRoot);
+        return await base.send(input);
+      },
+      abort: async (sessionId, reason) => await base.abort(sessionId, reason),
+      subscribe: (listener, options) => base.subscribe(listener, options),
+      get: typeof base.get === "function"
+        ? async (sessionId) => await base.get!(sessionId)
+        : undefined,
+      dispose: async (reason) => await base.dispose(reason),
+    };
+  }
+}
+
+class ProofFaultLockStore extends WorkspaceLockStore {
+  faultInjected = false;
+
+  constructor(
+    rootDir: string,
+    private readonly targetWorkspaceId: string,
+    private readonly targetWorkspaceRoot: string,
+    private readonly observer: ProofObservingRuntimeFactory,
+  ) {
+    super(rootDir);
+  }
+
+  override async renew(
+    claim: WorkspaceWriterClaimV1,
+    leaseMs: number,
+    options: WorkspaceLockOptions = {},
+  ) {
+    if (claim.workspaceId === this.targetWorkspaceId && !this.faultInjected) {
+      await this.observer.waitForSendStarted(this.targetWorkspaceRoot);
+      this.faultInjected = true;
+      throw new Error("forced disposable proof lease loss after real Hub send started");
+    }
+    return await super.renew(claim, leaseMs, options);
   }
 }
 
@@ -229,6 +347,9 @@ async function main(): Promise<void> {
 
     const completedA = await assertCompletedTask(workspaceA, taskA.id, 101);
     const completedB = await assertCompletedTask(workspaceB, taskB.id, 102);
+    if (!completedA.clineSessionId || !completedB.clineSessionId || completedA.clineSessionId === completedB.clineSessionId) {
+      fail("parallel tasks did not use distinct orchestrator-owned Hub sessions");
+    }
 
     await rollbackAndAssertBaseline(workspaceA, taskA.id);
     await rollbackAndAssertBaseline(workspaceB, taskB.id);
@@ -259,6 +380,74 @@ async function main(): Promise<void> {
     await assertCompletedTask(workspaceA, admittedTaskId, admittedExpected);
     await rollbackAndAssertBaseline(workspaceA, admittedTaskId);
 
+    // Physical fault-isolation proof. A proof-only observer waits until the real Hub
+    // send for workspace A has started. Its lock store then fails A's next heartbeat.
+    // The production runner must abort A, B must continue normally, and A's captured
+    // lease-aware editor must remain unusable after lease release.
+    const faultTaskA = await createApprovedProofTask(safetyPlans, workspaceA, 301);
+    const healthyTaskB = await createApprovedProofTask(safetyPlans, workspaceB, 302);
+    const observer = new ProofObservingRuntimeFactory(new SdkClineRuntimeFactory());
+    const faultLocks = new ProofFaultLockStore(
+      path.join(isolation.root, "fault-coordination"),
+      workspaceA.workspaceId,
+      workspaceA.canonicalRoot,
+      observer,
+    );
+    const faultRunner = new ScheduledHubWriterAuthorityRunner(
+      registry,
+      environmentWorkerProfileResolver(),
+      observer,
+    );
+    const faultScheduler = new WriterConcurrencyScheduler(
+      faultLocks,
+      {
+        schemaVersion: 1,
+        maxActiveWriters: 2,
+        maxStartsPerPass: 2,
+        maxActiveWritersPerWorkspace: 1,
+      },
+      faultRunner,
+      { leaseMs: 30_000, heartbeatMs: 10 },
+    );
+    const faultResult = await faultScheduler.schedule([faultTaskA.id, healthyTaskB.id]);
+    if (!faultLocks.faultInjected) fail("physical lease-loss fault was not injected");
+    if (!faultResult.failures.some((item) => item.taskId === faultTaskA.id && item.code === "worker_failed")) {
+      fail(`faulted workspace did not fail closed: ${JSON.stringify(faultResult)}`);
+    }
+    if (!faultResult.completedTaskIds.includes(healthyTaskB.id)) {
+      fail(`healthy workspace did not complete independently: ${JSON.stringify(faultResult)}`);
+    }
+    if (faultResult.completedTaskIds.includes(faultTaskA.id)) {
+      fail("faulted workspace incorrectly reported completion after lease loss");
+    }
+    if ((await faultLocks.listActive()).length !== 0) fail("fault proof left writer leases active");
+
+    const faultedA = await new TaskStore(workspaceA.canonicalRoot).load(faultTaskA.id);
+    if (faultedA.status !== "aborted") {
+      fail(`faulted task did not persist safe aborted state; status=${faultedA.status}`);
+    }
+    const healthyB = await assertCompletedTask(workspaceB, healthyTaskB.id, 302);
+    if (!faultedA.clineSessionId || !healthyB.clineSessionId || faultedA.clineSessionId === healthyB.clineSessionId) {
+      fail("fault/healthy tasks did not retain distinct Hub owner sessions");
+    }
+    await assertProtectedSentinels(workspaceA, faultTaskA.id);
+
+    const beforeStaleAttempt = await readFile(path.join(workspaceA.canonicalRoot, "src", "demo.ts"), "utf8");
+    let staleWriteBlocked = false;
+    try {
+      await observer.attemptStaleEditor(workspaceA.canonicalRoot);
+    } catch {
+      staleWriteBlocked = true;
+    }
+    if (!staleWriteBlocked) fail("stale lease-aware editor wrote after forced lease loss");
+    const afterStaleAttempt = await readFile(path.join(workspaceA.canonicalRoot, "src", "demo.ts"), "utf8");
+    if (afterStaleAttempt !== beforeStaleAttempt) {
+      fail("workspace changed during stale-editor attempt after lease loss");
+    }
+
+    await rollbackAndAssertBaseline(workspaceA, faultTaskA.id);
+    await rollbackAndAssertBaseline(workspaceB, healthyTaskB.id);
+
     process.stdout.write(`${JSON.stringify({
       proof: "disposable-multi-workspace",
       passed: true,
@@ -272,6 +461,7 @@ async function main(): Promise<void> {
         simultaneousLeasesObserved: overlap.length,
         distinctWorkspaceIds: new Set(overlap.map((item) => item.workspaceId)).size,
         distinctFenceTokens: new Set(overlap.map((item) => item.fenceToken)).size,
+        distinctHubOwnerSessions: completedA.clineSessionId !== completedB.clineSessionId,
         taskA: {
           validationPassed: completedA.lastValidation?.passed === true,
           diffSafetyPassed: completedA.lastDiffSafety?.passed === true,
@@ -289,6 +479,16 @@ async function main(): Promise<void> {
         deniedTaskId,
         deniedHadRuntimeAuthority: false,
         rolledBack: true,
+      },
+      leaseLossIsolation: {
+        faultedTaskId: faultTaskA.id,
+        healthyTaskId: healthyTaskB.id,
+        faultedStatus: faultedA.status,
+        healthyStatus: healthyB.status,
+        staleWriteBlocked,
+        healthyValidationPassed: healthyB.lastValidation?.passed === true,
+        healthyDiffSafetyPassed: healthyB.lastDiffSafety?.passed === true,
+        bothRolledBack: true,
       },
     }, null, 2)}\n`);
   } finally {
