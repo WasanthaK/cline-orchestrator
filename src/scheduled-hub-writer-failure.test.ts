@@ -10,7 +10,10 @@ import type {
   ClineRuntimeCreateRequest,
   ClineRuntimeFactory,
 } from "./cline-runtime.js";
-import { ScheduledHubWriterAuthorityRunner } from "./scheduled-hub-writer-runner.js";
+import {
+  ScheduledHubWriterAuthorityRunner,
+  ScheduledHubWriterError,
+} from "./scheduled-hub-writer-runner.js";
 import { TaskStore } from "./state.js";
 import type { OrchestratorTask, ProviderPreflightResult, WorkerConfig } from "./types.js";
 import { WorkspaceLockStore } from "./workspace-lock-store.js";
@@ -80,7 +83,7 @@ async function setupRegisteredWorkspace(
   initializeGitBaseline(root);
   return await registry.registerWorkspace({
     projectId,
-    displayName: "Lease loss workspace",
+    displayName: "Failure workspace",
     root,
     safetyProfile: {
       profileId: crypto.randomUUID(),
@@ -216,6 +219,59 @@ class FailingHeartbeatLockStore extends WorkspaceLockStore {
   }
 }
 
+class CrashFakeRuntime implements ClineRuntime {
+  private startInput: any;
+  private readonly sessionId = crypto.randomUUID();
+
+  constructor(
+    private readonly workspaceRoot: string,
+    private readonly harness: CrashFakeRuntimeFactory,
+  ) {}
+
+  async start(input: unknown): Promise<any> {
+    this.startInput = input;
+    return { sessionId: this.sessionId };
+  }
+
+  async send(): Promise<any> {
+    this.harness.editor = this.startInput?.capabilities?.toolExecutors?.editor;
+    this.harness.workspaceRoot = this.workspaceRoot;
+    this.harness.sessionId = this.sessionId;
+    throw new Error("forced worker crash");
+  }
+
+  async abort(): Promise<any> { return undefined; }
+  subscribe(): unknown { return undefined; }
+  async get(): Promise<any> { return { workspaceRoot: this.workspaceRoot }; }
+  async dispose(): Promise<void> { this.harness.disposeCalls += 1; }
+}
+
+class CrashFakeRuntimeFactory implements ClineRuntimeFactory {
+  editor: any;
+  workspaceRoot?: string;
+  sessionId?: string;
+  disposeCalls = 0;
+
+  async create(request: ClineRuntimeCreateRequest): Promise<ClineRuntime> {
+    return new CrashFakeRuntime(request.workspaceRoot, this);
+  }
+
+  async attemptStaleWrite(): Promise<void> {
+    assert.equal(typeof this.editor, "function");
+    assert.ok(this.workspaceRoot);
+    assert.ok(this.sessionId);
+    await this.editor(
+      {
+        path: path.join(this.workspaceRoot, "src", "a.txt"),
+        old_text: "a",
+        new_text: "b",
+      },
+      this.workspaceRoot,
+      { agentId: "crashed-stale", conversationId: this.sessionId, iteration: 2 },
+    );
+  }
+}
+
 test("heartbeat lease loss aborts an active scheduled Hub worker and blocks its stale write", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "orch-scheduled-lease-loss-"));
   try {
@@ -267,6 +323,72 @@ test("heartbeat lease loss aborts an active scheduled Hub worker and blocks its 
     assert.equal(persisted.finishReason, "aborted");
     assert.match(persisted.abortReason ?? "", /lease was lost/i);
     assert.ok(persisted.lastRunCheckpoint?.available);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("worker crash releases its lease and the crashed executor cannot write or restart the failed task", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "orch-scheduled-worker-crash-"));
+  try {
+    const registry = new WorkspaceRegistry(path.join(root, "registry.json"));
+    const project = await registry.registerProject("Project");
+    const workspace = await setupRegisteredWorkspace(
+      registry,
+      project.projectId,
+      path.join(root, "workspace"),
+    );
+    const task = await saveApprovedTask(workspace);
+
+    const runtime = new CrashFakeRuntimeFactory();
+    const runner = new ScheduledHubWriterAuthorityRunner(
+      registry,
+      async () => worker(),
+      runtime,
+      async () => preflightOk(),
+    );
+    const locks = new WorkspaceLockStore(path.join(root, "coordination"));
+    const scheduler = new WriterConcurrencyScheduler(
+      locks,
+      {
+        schemaVersion: 1,
+        maxActiveWriters: 1,
+        maxStartsPerPass: 1,
+        maxActiveWritersPerWorkspace: 1,
+      },
+      runner,
+      { leaseMs: 2_000, heartbeatMs: 500 },
+    );
+
+    const result = await scheduler.schedule([task.id]);
+    assert.deepEqual(result.reservedTaskIds, [task.id]);
+    assert.deepEqual(result.completedTaskIds, []);
+    assert.ok(result.failures.some((failure) => failure.taskId === task.id && failure.code === "worker_failed"));
+    assert.equal(runtime.disposeCalls, 1);
+    assert.equal((await locks.listActive()).length, 0);
+
+    const persisted = await new TaskStore(workspace.canonicalRoot).load(task.id);
+    assert.equal(persisted.status, "failed");
+    assert.match(persisted.error ?? "", /forced worker crash/i);
+    assert.ok(persisted.lastRunCheckpoint?.available);
+    assert.equal(await readFile(path.join(workspace.canonicalRoot, "src", "a.txt"), "utf8"), "a\n");
+
+    await assert.rejects(
+      () => runtime.attemptStaleWrite(),
+      /lease session is no longer active|lease/i,
+    );
+    assert.equal(await readFile(path.join(workspace.canonicalRoot, "src", "a.txt"), "utf8"), "a\n");
+
+    const restartedRunner = new ScheduledHubWriterAuthorityRunner(
+      registry,
+      async () => worker(),
+      new CrashFakeRuntimeFactory(),
+      async () => preflightOk(),
+    );
+    await assert.rejects(
+      () => restartedRunner.revalidateApprovedTask(task.id),
+      (error: unknown) => error instanceof ScheduledHubWriterError && error.code === "task_not_runnable",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
