@@ -298,7 +298,7 @@ export class SentinelStore {
       groups.set(observation.fingerprint, list);
     }
 
-    return [...groups.values()].map((group) => {
+    return [...groups.values()].map<SentinelIncidentV1>((group) => {
       group.sort((a, b) => a.observedAt.localeCompare(b.observedAt));
       const first = group[0]!;
       const last = group[group.length - 1]!;
