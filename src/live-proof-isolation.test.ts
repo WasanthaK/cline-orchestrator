@@ -9,6 +9,7 @@ import {
   assertLiveProofOptIn,
   createDisposableProofWorkspace,
   createLiveProofIsolation,
+  hasLiveProofHubShutdownSurface,
   LIVE_PROOF_OPT_IN_ENV,
   LIVE_PROOF_OPT_IN_VALUE,
 } from "./live-proof-isolation.js";
@@ -46,6 +47,10 @@ test("physical proof opt-in fails closed unless the exact disposable-only value 
   assert.doesNotThrow(() => assertLiveProofOptIn({
     [LIVE_PROOF_OPT_IN_ENV]: LIVE_PROOF_OPT_IN_VALUE,
   }));
+});
+
+test("pinned Cline Hub package exposes graceful local-Hub shutdown for isolated proof cleanup", () => {
+  assert.equal(hasLiveProofHubShutdownSurface(), true);
 });
 
 test("disposable workspace builder creates a clean independent Git baseline", async () => {
