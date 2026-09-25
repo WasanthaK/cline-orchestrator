@@ -54,6 +54,7 @@ The system should support long-running and unattended coding work while preservi
 10. **Workflow ordering is not workflow authority.** A DAG may coordinate independently approved tasks, but cannot grant paths, commands, worker identity, model capabilities, or Safety Plan scope. Automatic progression may pass only an opaque task ID to a starter that independently revalidates the task's existing authority.
 11. **Unattended budgets fail closed.** Missing historical usage evidence, exhausted limits, missing checkpoint evidence, or an untrusted starter checkpoint mechanism prevents another automatic node start; limits are never silently increased.
 12. **Workflow restart never replays stale position.** Resume reloads the immutable workflow plus current durable task/budget evidence, then selects only still-`created` nodes; active, terminal, escalated or unsafe nodes are never replayed from workflow state alone.
+13. **Specialist handoff is provenance, not authority.** A handoff can identify the next bounded role and durable evidence, but it grants no machine/write authority and cannot keep stale task/Safety Plan authority alive.
 
 ---
 
@@ -323,10 +324,18 @@ Evidence:
 
 ### Slice 2 — Explicit Specialist Handoffs
 
-- [ ] Define bounded specialist roles (e.g. planner/reviewer/implementation specialist) as instruction/evidence roles, not independent machine authorities.
-- [ ] Each implementation worker must bind to an independently approved task/Safety Plan envelope.
-- [ ] Sequential specialist handoff first; no concurrent writes to one workspace until explicit locking/conflict policy exists.
-- [ ] Durable handoff provenance and evidence.
+- [x] Define bounded planner/implementation/reviewer specialist roles as instruction/evidence roles, not independent machine authorities.
+- [x] Every durable handoff is bound to the independently approved task/Safety Plan/project/workspace/profile/worker identity, and the service revalidates the current task binding before append.
+- [x] Sequential transitions only: planner -> implementation -> reviewer, with reviewer -> implementation for bounded repair; no concurrent writes.
+- [x] Durable append-only handoff provenance/evidence journal with chain validation, tamper rejection and opaque-ID traversal protection.
+- [x] Handoffs explicitly grant no machine/write authority and carry no raw workspace path, task goal, path scope, validation commands, model output, Hub/session identity or credentials.
+- [x] Stale Safety Plan, worker, registry/profile/policy or allowed/protected path authority fails closed before handoff persistence.
+
+Evidence:
+- Core handoff contract `0ad537276734811aa76d25aef2abce19f3790f49`.
+- Core tests corrected through `d5563097594290b867da8102847707cd411b50d0`; CI `#534` / `36108097496`, success.
+- Current durable-task authority revalidation service `18dd9dcd3d8d629eced5e37e44e20ce9c6330044`.
+- Service tests `493ff844bc957960d628ea9f8b1377e8c4646bed`, with test-wording correction `a160350ee51436fb8de03b6cfe61e9463c5218fc`; CI `#540` / `36108515738`, success.
 
 ### Slice 3 — Multi-worker Scheduling / UI
 
@@ -337,7 +346,7 @@ Evidence:
 
 ## Status
 
-**IN PROGRESS — Slice 1 read-only dashboard contract is complete and cloud-tested; Slice 2 sequential specialist handoff is next.**
+**IN PROGRESS — Slices 1 and 2 are complete and cloud-tested. Slice 3 begins with the workspace locking/conflict contract before any concurrent worker execution is enabled.**
 
 ---
 
@@ -364,8 +373,9 @@ Evidence:
 | Human pause + unattended report + safe resume | Complete / cloud tested |
 | Milestone 7 unattended execution | **COMPLETE** |
 | Read-only orchestration dashboard contract | **Complete / cloud tested** |
-| Sequential specialist handoff | **Next** |
-| Concurrent multi-worker orchestration | Not started |
+| Sequential specialist handoff | **Complete / cloud tested** |
+| Workspace locking/conflict policy | **Next** |
+| Concurrent multi-worker orchestration | Not enabled |
 
 ---
 
@@ -376,9 +386,9 @@ Evidence:
 3. Hub work remains pinned to reviewed Core/SDK `0.0.83` until a deliberate dependency change is recorded.
 4. Dirty worktrees must preserve pre-run user state and distinguish it from task-created changes.
 5. Validation commands are trusted local configuration outside model execution. Planner commands remain untrusted until explicit admission.
-6. Task JSON replacement is atomic; event, supervisor-decision, Sentinel observation and workflow budget-decision JSONL remain append-based durability models.
-7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow/budget/report/dashboard state or model-facing output.
-8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, budgets, dashboard state, or Hub participation.
+6. Task JSON replacement is atomic; event, supervisor-decision, Sentinel observation, specialist-handoff and workflow budget-decision JSONL remain append-based durability models.
+7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow/budget/report/dashboard/handoff state or model-facing output.
+8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, budgets, dashboard state, specialist handoffs, or Hub participation.
 9. Native Hub approval is UX/defense-in-depth only; owner hook/executor enforcement is authoritative.
 10. Owner disconnect requires durable handoff/replacement ownership or fail-closed behavior.
 11. Arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams and unreviewed provider-owned execution remain disabled in the first pilot.
@@ -394,7 +404,8 @@ Evidence:
 21. Budgeted progression starts one node per durable usage snapshot.
 22. Restart reconciliation never trusts stale workflow position and never replays active/terminal/escalated tasks.
 23. Dashboard/UI work remains a presentation/query layer until an explicitly reviewed action surface is designed; UI convenience cannot become a shortcut around MCP/service safety boundaries.
-24. Multi-worker work begins sequentially. Concurrent workspace writes require explicit locking/conflict/checkpoint policy before they can be enabled.
+24. Specialist handoffs carry provenance/evidence only and are revalidated against current task authority on every durable append; they cannot preserve stale scope or worker identity.
+25. Concurrent workspace writes remain disabled. Enabling them requires an explicit lock/conflict/checkpoint contract and cloud acceptance before any scheduler can request concurrency.
 
 ---
 
@@ -404,19 +415,21 @@ Evidence:
 2. **COMPLETE — Milestone 6.** Supervisor contract, Planner, Reviewer, durable decisions and human escalation.
 3. **COMPLETE — Milestone 7.** Sentinel, durable DAG, bounded automatic progression, budgets/checkpoints, human pause, sanitized report and restart-safe unattended execution.
 4. **COMPLETE — Milestone 8 Slice 1: read-only orchestration dashboard contract.**
-   - bounded sanitized snapshot over existing project/workspace/task/workflow/incident/supervisor evidence;
-   - no raw workspace roots, credentials, session/Hub IDs, model output, validation stdout/stderr, diff contents or private checkpoint refs;
-   - read-only only; no shell/filesystem/process/runtime mutation controls;
-   - deterministic limits/truncation metadata and explicit stale/unavailable source evidence;
-   - acceptance tests cloud-green in CI `#526`.
-5. **NEXT — Milestone 8 Slice 2: sequential specialist handoff.**
-   - define specialist roles as bounded instruction/evidence roles only;
-   - implementation specialists must remain bound to an independently approved durable task/Safety Plan;
-   - no new raw workspace, shell, Hub, process, network, MCP/plugin or completion authority;
-   - handoffs are sequential first, with durable provenance/evidence;
-   - no concurrent workspace writes until an explicit locking/conflict/checkpoint policy exists;
+5. **COMPLETE — Milestone 8 Slice 2: sequential specialist handoff.**
+   - planner/implementation/reviewer handoffs are sequential and provenance-only;
+   - current durable Safety Plan/task binding is revalidated before persistence;
+   - no machine/write/concurrent authority is granted by a handoff;
+   - tampered, stale, cross-task, reordered or traversal-based handoffs fail closed;
+   - CI `#534` and `#540` green.
+6. **NEXT — Milestone 8 Slice 3A: workspace locking/conflict contract.**
+   - design lock identity around opaque workspace/task/owner IDs, not raw paths;
+   - define exclusive writer ownership and explicit read/observe semantics;
+   - stale/expired/restarted owners must not retain write authority merely because a lock record exists;
+   - lock state must not grant filesystem/Safety Plan authority; task authority still revalidates independently;
+   - define conflict detection before any actual concurrent worker scheduler is enabled;
    - cloud tests first; no live shared-runtime writes.
-6. **LATER — Multi-worker concurrency only after explicit workspace locking/conflict policy.**
+7. **AFTER LOCK CONTRACT — bounded concurrency budgets and scheduler integration.**
+8. **LATER — richer operator UI over existing sanitized dashboard/handoff/incident evidence.**
 
 ---
 
@@ -429,12 +442,13 @@ Evidence:
 - 2026-09-25: Human attention/report/restart closure completed with report `9c5f74053a09ccafe9b548766d241c62b682614f`, tests `01de3fd211e86efe91708bf990acf75cf2ecd359`, restart reconciliation `3815abb742efc92b8390a19e7e00f226efc06d8e`, tests `7787f2d494cd1f99fc51a019379e07c53c101ee1`; CI `#518` / `36105316586` passed.
 - 2026-09-25: **Milestone 7 COMPLETE.** Unattended progression remains task-authority bounded and restart-safe, with durable reactive incident visibility.
 - 2026-09-25: Milestone 8 Slice 1 dashboard contract implemented through `12a384c7033517c3922f6514844d6bb08c45a95c`, metadata hardened by `88d59d6f85edb52a1bd736c29865f159656c2687`, and acceptance-tested by `349c8f0c9fc6147b6f3fed55ca17f9688d0f3324`; CI `#526` / `36107456324` passed.
+- 2026-09-25: Milestone 8 Slice 2 sequential specialist handoff implemented through `0ad537276734811aa76d25aef2abce19f3790f49`, current-authority service `18dd9dcd3d8d629eced5e37e44e20ce9c6330044`, tests through `a160350ee51436fb8de03b6cfe61e9463c5218fc`; CI `#534` / `36108097496` and `#540` / `36108515738` passed.
 
 ---
 
 # Current Next Step
 
-Begin **Milestone 8 Slice 2 — sequential specialist handoff** only. Define bounded specialist roles and durable handoff provenance while preserving the existing task/Safety Plan as the sole machine-authority boundary. No concurrent workspace writes, no new raw machine controls, and cloud tests first.
+Begin **Milestone 8 Slice 3A — workspace locking/conflict contract** only. Define fail-closed exclusive writer ownership and conflict/staleness semantics without enabling concurrent execution yet. Lock records coordinate scheduling only; they must never grant or preserve task/Safety Plan authority. Cloud tests first; no live shared-runtime writes.
 
 ---
 
