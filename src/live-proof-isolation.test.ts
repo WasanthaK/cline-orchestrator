@@ -6,8 +6,11 @@ import { promisify } from "node:util";
 import test from "node:test";
 import {
   assertDisposableWorkspaceRoot,
+  assertLiveProofOptIn,
   createDisposableProofWorkspace,
   createLiveProofIsolation,
+  LIVE_PROOF_OPT_IN_ENV,
+  LIVE_PROOF_OPT_IN_VALUE,
 } from "./live-proof-isolation.js";
 
 const execFile = promisify(execFileCallback);
@@ -29,6 +32,20 @@ test("live proof isolation uses a private Cline root, data dir, registry, and pi
   } finally {
     await rm(isolation.root, { recursive: true, force: true });
   }
+});
+
+test("physical proof opt-in fails closed unless the exact disposable-only value is present", () => {
+  assert.throws(
+    () => assertLiveProofOptIn({}),
+    /physical live proof is disabled/i,
+  );
+  assert.throws(
+    () => assertLiveProofOptIn({ [LIVE_PROOF_OPT_IN_ENV]: "yes" }),
+    /physical live proof is disabled/i,
+  );
+  assert.doesNotThrow(() => assertLiveProofOptIn({
+    [LIVE_PROOF_OPT_IN_ENV]: LIVE_PROOF_OPT_IN_VALUE,
+  }));
 });
 
 test("disposable workspace builder creates a clean independent Git baseline", async () => {
