@@ -103,13 +103,23 @@ function assertBindingCurrent(supervisor: SupervisorTaskV1, rawTask: Orchestrato
   return task;
 }
 
+function assertPlannerAdmissionIsPreRun(task: OrchestratorTask): void {
+  const runCount = task.runCount ?? 0;
+  if (runCount !== 0 || !["created", "waiting"].includes(task.status)) {
+    throw new SupervisorDecisionError(
+      `Planner admission is allowed only before implementation execution begins (status=${task.status}; runCount=${runCount})`,
+      "proposal_not_admissible",
+    );
+  }
+}
+
 function decisionBase(
   supervisor: SupervisorTaskV1,
   kind: SupervisorDecisionKind,
   provenance: SupervisorDecisionV1["provenance"],
   summary: string,
   options: SupervisorDecisionOptions,
-): Omit<SupervisorDecisionV1, "schemaVersion"> & { schemaVersion: 1 } {
+): SupervisorDecisionV1 {
   const decisionId = (options.idFactory ?? (() => crypto.randomUUID()))();
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(decisionId)) {
     throw new SupervisorDecisionError("decisionId must be an opaque UUID", "decision_invalid");
@@ -203,6 +213,7 @@ export class SupervisorDecisionService {
   ): Promise<SupervisorDecisionV1> {
     const task = await this.tasks.load(supervisor.taskId);
     assertBindingCurrent(supervisor, task);
+    assertPlannerAdmissionIsPreRun(task);
     if (proposal.supervisorTaskId !== supervisor.supervisorTaskId || proposal.taskId !== supervisor.taskId) {
       throw new SupervisorDecisionError("Planner proposal does not match supervisor task binding", "binding_stale");
     }
