@@ -263,7 +263,10 @@ export function evaluateUnattendedStartGuard(
     const rawLimit = budget[item.limit];
     if (typeof rawUsage !== "number" || typeof rawLimit !== "number") continue;
     const value = item.dimension === "task_runs" ? rawUsage + projectedRuns : rawUsage;
-    if (value >= rawLimit) exhausted.push(item.dimension);
+    const exhaustedDimension = item.dimension === "task_runs"
+      ? value > rawLimit
+      : value >= rawLimit;
+    if (exhaustedDimension) exhausted.push(item.dimension);
   }
 
   if (exhausted.length > 0) {
