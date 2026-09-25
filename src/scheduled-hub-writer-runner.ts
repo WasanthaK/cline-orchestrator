@@ -36,6 +36,7 @@ export class ScheduledHubWriterError extends Error {
       | "worker_profile_unavailable"
       | "provider_preflight_failed"
       | "lease_binding_mismatch"
+      | "lease_lost"
       | "worker_result_invalid",
   ) {
     super(message);
@@ -53,6 +54,9 @@ type OwnerBinding = {
   taskId: string;
   ownerInstanceId: string;
 };
+
+const LEASE_LOST_ABORT_REASON =
+  "Scheduled writer lease was lost; execution aborted fail-safe before further writes";
 
 function normalizePath(value: string): string {
   const resolved = path.resolve(value);
@@ -107,12 +111,17 @@ function assertFreshScheduledTask(task: OrchestratorTask): void {
 }
 
 /**
- * Scheduler-side trusted runner for Slice 9B.
+ * Scheduler-side trusted runner for Milestone 9.
  *
  * It creates a fresh orchestrator owner identity per task in this gateway process,
  * revalidates the durable task/registry/profile binding on every scheduler pass,
  * refuses takeover of any task with prior Hub/session/run history, and starts the
  * task through a per-task lease-aware Hub runtime wrapper.
+ *
+ * Lease loss is a lifecycle boundary as well as a write boundary: the lease abort
+ * signal actively aborts the ClineRunner, which durably marks the task aborted.
+ * The stale worker therefore cannot keep an apparently-live task after fencing is
+ * lost, and later write attempts remain blocked by the lease-aware executors.
  *
  * This class does not expose a public scheduling endpoint and does not by itself
  * enable shared-runtime concurrency. The caller still owns candidate selection,
@@ -249,8 +258,36 @@ export class ScheduledHubWriterAuthorityRunner implements WriterAuthorityRunner 
       runtimeFactory: scheduledRuntimeFactory,
     });
 
+    let leaseLost = lease.signal.aborted;
+    let abortPromise: Promise<void> | undefined;
+    const abortForLeaseLoss = () => {
+      leaseLost = true;
+      if (abortPromise) return;
+      abortPromise = (async () => {
+        try {
+          await runner.abort(taskId, LEASE_LOST_ABORT_REASON);
+        } catch {
+          // The run may have become terminal in the same turn. Lease-aware write
+          // executors still reject the stale claim, so never convert this race into
+          // authority or retry/recovery.
+        }
+      })();
+    };
+    lease.signal.addEventListener("abort", abortForLeaseLoss, { once: true });
+
     try {
+      if (lease.signal.aborted) {
+        abortForLeaseLoss();
+        await abortPromise;
+        throw new ScheduledHubWriterError(LEASE_LOST_ABORT_REASON, "lease_lost");
+      }
+      await lease.validateCurrent();
+
       const result = await runner.start(located.task);
+      if (abortPromise) await abortPromise;
+      if (leaseLost || lease.signal.aborted) {
+        throw new ScheduledHubWriterError(LEASE_LOST_ABORT_REASON, "lease_lost");
+      }
       if (result.status !== "completed" && result.status !== "waiting_for_human") {
         throw new ScheduledHubWriterError(
           `Scheduled Hub worker ended in unexpected task state ${result.status}`,
@@ -258,6 +295,8 @@ export class ScheduledHubWriterAuthorityRunner implements WriterAuthorityRunner 
         );
       }
     } finally {
+      lease.signal.removeEventListener("abort", abortForLeaseLoss);
+      if (abortPromise) await abortPromise;
       await runner.close("scheduled Hub writer complete");
     }
   }
