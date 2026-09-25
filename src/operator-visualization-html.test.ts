@@ -128,7 +128,6 @@ test("renderer has no interactive or executable surface", () => {
     "websocket",
     "command:",
     "vscode.postmessage",
-    "acquirevs codeapi",
     "acquirevscodeapi",
   ]) {
     assert.equal(html.includes(forbidden), false, forbidden);
@@ -136,8 +135,10 @@ test("renderer has no interactive or executable surface", () => {
 });
 
 test("renderer rejects a view that advertises any action capability", () => {
-  const unsafe = view() as OperatorVisualizationV1 & { actions: unknown[] };
-  unsafe.actions = [{ type: "write" }];
+  const unsafe = {
+    ...view(),
+    actions: [{ type: "write" }],
+  } as unknown as OperatorVisualizationV1;
   assert.throws(
     () => renderOperatorVisualizationHtml(unsafe),
     /read-only action-free views only/,
