@@ -65,6 +65,11 @@ export async function createDisposableProofWorkspace(): Promise<string> {
   await git(root, "init");
   await git(root, "config", "user.name", "Cline Orchestrator Proof");
   await git(root, "config", "user.email", "proof@example.invalid");
+  // Keep this disposable repository independent from the operator's global
+  // checkout policy. On Windows, core.autocrlf=true would make `git reset
+  // --hard` restore committed LF content as CRLF, which is Git-equivalent but
+  // defeats the proof's byte-exact rollback assertion.
+  await git(root, "config", "core.autocrlf", "false");
   await git(root, "add", ".");
   await git(root, "commit", "-m", "isolated owner-loss proof baseline");
 
