@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-09-23
+Last updated: 2026-09-25
 Branch: `phase-1/bootstrap`
 
 ## Purpose
@@ -189,12 +189,13 @@ Pinned Cline generation: `@cline/sdk 0.0.83`.
 Documented/proven design:
 
 - managed Hub discovery owns the local auth token; the orchestrator consumes Cline discovery and does not persist a second Hub credential;
+- when an explicit Hub endpoint/port is used, the resolved endpoint and auth token are passed ephemerally in memory to `ClineCore.create`; neither token nor endpoint credential material is persisted in task/project state;
 - `@cline/sdk` is sufficient for the first Hub path;
 - `ClineCore` preserves the start/send/abort/subscribe programming model over Hub;
 - Hub client hooks and tool executors are creator/client-targeted; wrong-client capability responses are rejected by the pinned Hub implementation;
 - native Hub `approval.requested` is broader/broadcast and therefore is not the authorization boundary;
 - new ChatGPT write sessions are orchestrator-owned; existing VS Code-created sessions remain observational in the first pilot;
-- owner/client loss must use durable handoff and a replacement owner session rather than assuming attach transfers ownership.
+- owner/client loss uses durable handoff and a replacement owner session rather than assuming attach transfers ownership.
 
 ### Spike evidence
 
@@ -216,7 +217,7 @@ Documented/proven design:
 - [x] Hub-backed runtime factory preserves the existing `ClineRunner` lifecycle contract and revalidates persisted Hub session workspace identity before resume.
 - [x] Machine-level task-oriented MCP/plugin gateway exposes registered IDs and Safety Preview workflows, not raw path/shell/Hub authority.
 - [x] Cloud tests cover registry/plan replay/staleness, path safety, patch all-or-nothing behavior, disabled surfaces, Hub contribution wiring/failure boundaries, workspace identity, Hub `session_not_found` recovery, MCP authority boundaries/authentication, active-task polling, gateway-restart owner recovery, and existing lifecycle safety regressions.
-- [ ] Explicitly authorized isolated runtime proof on a disposable registered workspace demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, fail-closed owner/policy loss, validation/diff safety, and rollback without mutating shared Ollama. **All physical acceptance points except the owner/policy-loss restart case are now proven. The restart-reconciliation prerequisite is cloud-green and awaits one final disposable live proof.**
+- [x] Explicitly authorized isolated runtime proof on disposable registered workspaces demonstrates shared VS Code visibility, allowed edit, blocked out-of-scope edit, secret denial, unavailable model shell, owner loss/replacement ownership, validation/diff safety, and rollback without mutating shared Ollama. The final owner-loss run physically demonstrated first-owner interruption, durable replacement generation 2, recovered completion, validation, diff safety, and successful orchestrator rollback. A final raw byte-comparison assertion was a proof-harness false negative caused by Windows `core.autocrlf`; production rollback had already verified the checkpoint fingerprint and returned `rolled_back`. The disposable repository is now pinned to `core.autocrlf=false`, with cloud-green regression coverage, so no further heavy local 27B rerun is required for Milestone 5 closure.
 
 ## Unit 1 — Registry + Safety Preview / Plan-token Boundary
 
@@ -260,7 +261,8 @@ Implemented:
 
 - `ClineRuntime` / `ClineRuntimeFactory` seam while preserving `ClineRunner` as lifecycle owner;
 - SDK factory uses local mode for existing daemon behavior and Hub mode only when explicitly selected;
-- Hub creation uses `backendMode: "hub"` + `strategy: "require-hub"` with registered workspace root/cwd and no orchestrator-persisted Hub auth token;
+- Hub creation uses `backendMode: "hub"` + `strategy: "require-hub"` with registered workspace root/cwd;
+- explicit Hub discovery passes the returned endpoint/auth token only in memory to the runtime factory, fixing pinned Core's explicit-endpoint token-recovery gap without persisting a second credential;
 - persisted Hub session resume canonicalizes and verifies `workspaceRoot` before any send; missing lookup capability or mismatched workspace fails closed;
 - approved durable task safety envelope is required before a Hub write session can start;
 - pinned SDK `beforeTool` is wired through `localRuntime.hooks` as a creator/client-owned contribution;
@@ -275,7 +277,7 @@ Evidence: runtime seam `1152c58ba2422d755072b480128c8def4c37a324`; shared enforc
 
 ## Unit 4 — Machine-level ChatGPT MCP / Plugin Gateway
 
-**COMPLETE — cloud/fake-runtime proof complete; physical proof has one final owner-loss case pending.**
+**COMPLETE — cloud/fake-runtime and physical disposable-runtime acceptance complete.**
 
 Implemented:
 
@@ -295,7 +297,7 @@ Implemented:
 - optional public tunnel URL configuration is metadata only and must be HTTPS; the orchestrator neither launches nor controls tunnel credentials;
 - `npm run mcp` / `start:mcp` entrypoints and explicit local worker-profile matching are present; model command/edit auto-approval environment flags are not honored by the gateway worker profile;
 - task-state JSON persistence is same-directory temp-file + atomic rename; Windows transient destination contention is retried in a bounded fail-closed loop without delete-before-rename fallback;
-- gateway startup now scans durable interrupted tasks: current safety binding and checkpoint-relative diff are revalidated before execution, a stale Hub owner session is deliberately discarded so existing ClineRunner missing-session recovery creates a durable handoff and replacement owner session, and unsupported/stale recovery states close fail-safe instead of remaining stranded.
+- gateway startup scans durable interrupted tasks: current safety binding and checkpoint-relative diff are revalidated before execution, a stale Hub owner session is deliberately discarded so existing ClineRunner missing-session recovery creates a durable handoff and replacement owner session, and unsupported/stale recovery states close fail-safe instead of remaining stranded.
 
 ### Unit 4 tests
 
@@ -315,7 +317,9 @@ Implemented:
 - gateway-restart tests prove stale safety-profile authority is not re-executed and interrupted validation closes fail-safe rather than inventing model authority;
 - all existing lifecycle, Git safety, validation, context/recovery, memory and Unit 1–3 tests remain green;
 - direct-entry regression tests cover valid Windows `file:///C:/...` URLs, encoded Windows paths with spaces, mismatched modules, and POSIX entry paths;
-- pinned Hub daemon compatibility tests cover the observed Windows package layout, case-insensitive path equivalence, unreviewed-version denial, and unexpected-daemon-layout denial.
+- pinned Hub daemon compatibility tests cover both observed `0.0.83` bundled launcher paths, case-insensitive path equivalence, unreviewed-version denial, and unexpected-daemon-layout denial;
+- explicit Hub auth-handoff tests verify endpoint/token delivery is in-memory only and missing auth fails closed;
+- disposable live-proof repository tests now pin `core.autocrlf=false` so byte-exact rollback assertions are independent of the operator's global Windows Git checkout policy.
 
 ### Unit 4 evidence
 
@@ -340,11 +344,19 @@ Implemented:
 - Secret-read task `5a77a746-fef0-4361-93a2-81dd7a5be2d5` physically returned `Access to secret or credential paths is denied` from the read tool, completed with zero changed paths, and did not expose the secret.
 - Shell-capability task `07ab9762-6de4-4ac8-a8c4-df63e64396a5` physically reported that no terminal/command execution tool was available; the model only inferred the expected echo text. Validation and diff safety passed with zero changed paths.
 - Protected-path task `040c8abd-cdcf-4e8c-938c-a1c8c760100d` attempted both read and editor write on `outside.txt`; both tool calls returned `Access to protected paths is denied`. Validation and diff safety passed with zero changed paths.
-- Reviewing the final owner-loss proof exposed a restart gap: persisted active tasks were not reconciled by a new `MachineOrchestratorService`, while `continue_task` correctly refused already-active statuses. Restart-reconciliation prerequisite fix `8b6bc285e7a79a88576babcd62716cf09d2bff97` now revalidates safety/diff evidence, forces the existing durable missing-session path to create replacement Hub ownership for recoverable work, and fails closed on stale/unsupported recovery states. Push CI `#385` / `35840142043` and PR CI `#386` / `35840147771` both passed install, typecheck and the full test suite.
+- Reviewing the final owner-loss proof exposed a restart gap: persisted active tasks were not reconciled by a new `MachineOrchestratorService`, while `continue_task` correctly refused already-active statuses. Restart-reconciliation prerequisite fix `8b6bc285e7a79a88576babcd62716cf09d2bff97` revalidates safety/diff evidence, forces the existing durable missing-session path to create replacement Hub ownership for recoverable work, and fails closed on stale/unsupported recovery states. Push CI `#385` / `35840142043` and PR CI `#386` / `35840147771` both passed install, typecheck and the full test suite.
+- Diagnostic owner-loss harness: `f3b39a1e5f485a770ca87574da6747ff72eadecc` + command `fb591f66bfa6b19255303c8bc9abbd69f6649997`; CI `#416` / `35993678361`, success.
+- Live diagnostic evidence showed the isolated Hub daemon remained alive while a later runtime connection failed. Root cause was pinned Core's explicit-endpoint behavior: with `CLINE_HUB_PORT` set, the detached Hub resolver returned `{url, authToken}` but did not register that token in the managed in-process recovery cache, while the orchestrator created `ClineCore` without explicitly passing the token.
+- Auth-preserving runtime fix uses the public `@cline/core/hub` namespace at runtime, resolves the exact detached endpoint/auth token, validates both values, and passes them only in memory to `ClineCore.create`; final implementation `99ff5d0ffccda2f531aadd0c95abf19314f89138`, runtime-export smoke test `182705ab6540fa4e339b304679cd150d7aacc8e8`; CI `#426` / `36071434059`, success.
+- That public Hub subpath exposed the second pinned `0.0.83` bundled launcher defect (`dist/hub/entry.js`). Dual version/layout-gated shim implementation `318919d42c2085207e228574bda272bd4d2b152a` and tests `e73e02e3fb7808f37df07241e5ab1309892f6b9a` cover both `dist/entry.js` and `dist/hub/entry.js`; accepted CI `#430`, success.
+- Owner-loss physical run after those fixes: first owner reached `running`, `runCount=1`, `sessionGeneration=1`, usable checkpoint; the proof terminated only that isolated owner child. Restart reconciliation then created durable handoff and replacement session generation 2, and the recovered owner completed the bounded edit. An initial 180-second harness timeout was a false negative because the local 27B recovered run took about 206 seconds; timeout alignment commit `3603b530153d8da2ed0d38dfefa4d4a225eac3af` passed CI `#434` / `36073454818`.
+- Final physical owner-loss run at `3603b53` again reached generation 2 and then completed the recovered task in about 95 seconds with configured validation and checkpoint-relative diff safety passing. `rollbackTask` returned `rolled_back`; the only remaining proof assertion compared raw file text and saw Windows CRLF after `git reset --hard` versus the LF bytes written before the baseline commit. This was a harness artifact, not a production rollback failure: rollback had already self-verified that the restored Git fingerprint matched the checkpoint's pre-run fingerprint.
+- Disposable proof isolation now sets local `core.autocrlf=false` before the baseline commit so future byte-exact assertions are independent of operator Git configuration: implementation `4d5cfc5d9b5c5f628a8fe2730671f84c5a51805d`, regression test `c1c714457b9930b8a10d3321d2e0972cbdca78f3`; CI `#438` / `36082887715`, success.
+- Because the last physical run already exercised owner interruption, durable replacement ownership, recovered completion, validation, diff safety and rollback, and because the only final mismatch was proven to be proof-repository line-ending policy, no additional heavy local 27B rerun is required. The user also reported that the repeated proof was hanging the computer, so Milestone 5 closes on the accumulated physical + cloud evidence rather than creating avoidable local resource risk.
 
 ## Milestone 5 Status
 
-**IMPLEMENTATION COMPLETE / RUNTIME PROOF NEAR CLOSURE — Units 1–4 and cloud/fake-runtime proof are complete. The disposable physical proof has demonstrated gateway/auth/discovery, shared VS Code/Hub visibility, allowed editing, external validation/diff safety, rollback, secret denial, unavailable model shell, and protected-path read/write denial without changing shared Ollama. Only the final gateway-owner-loss/restart physical acceptance point remains, now backed by cloud-green restart reconciliation.**
+**COMPLETE — Units 1–4, cloud/fake-runtime coverage, and disposable physical acceptance are complete. Physical proof demonstrated gateway/auth/discovery, shared VS Code/Hub visibility, allowed editing, external validation/diff safety, rollback, secret denial, unavailable model shell, protected-path read/write denial, owner loss, durable handoff, replacement owner/session recovery, and preserved safety/checkpoint authority without changing shared Ollama.**
 
 ---
 
@@ -389,7 +401,7 @@ Evidence:
 
 ## Status
 
-**IN PROGRESS — Slice 1 complete; Slice 2 is queued behind the final Milestone 5 physical proof.**
+**IN PROGRESS — Slice 1 complete; Slice 2 Planner is now the first unfinished implementation item.**
 
 ---
 
@@ -447,16 +459,16 @@ Evidence:
 | Restricted first-pilot Hub worker/runtime surfaces | Implemented + cloud tested + shell unavailability physically proven |
 | Hub resume workspace identity validation | Implemented + fake-Hub/cloud tested |
 | Hub session-loss durable recovery | Implemented + fake-Hub/cloud tested |
-| Gateway restart owner reconciliation | **Implemented + cloud tested; physical owner-loss proof pending** |
+| Gateway restart owner reconciliation | **Implemented + cloud tested + physically proven through replacement generation 2** |
 | Machine-level task-oriented MCP/plugin gateway | Implemented + cloud tested + physically proven |
 | Loopback MCP bearer/Host/Origin boundary | Implemented + cloud tested + physically proven |
 | Sanitized MCP task/event/diff views | Implemented + cloud tested + physically observed |
 | Atomic task-state persistence for active polling | Implemented + cloud tested; Windows contention retry fixed |
 | Windows MCP direct-entry startup | **Fixed + physically verified + cloud regression tested** |
-| Pinned Cline Hub daemon published-entry compatibility | **Fixed + physically verified + cloud regression tested** |
-| Live shared VS Code/Hub write proof | **Physically proven; owner-loss closure pending** |
+| Pinned Cline Hub daemon published-entry compatibility | **Fixed for both observed bundle paths + physically verified + cloud regression tested** |
+| Live shared VS Code/Hub write proof | **Physically proven including owner-loss/replacement-owner recovery** |
 | Supervisor task schema + bounded implementation instructions | **Implemented + cloud tested** |
-| Supervisor planner | Not started |
+| Supervisor planner | Next |
 | Supervisor reviewer | Not started |
 | Unattended task DAG | Not started |
 
@@ -479,37 +491,35 @@ Evidence:
 13. Owner disconnect cancels creator-targeted live capabilities; gateway restart reconciliation must discard stale owner identity and use durable handoff/replacement ownership, or fail closed.
 14. Arbitrary model shell, ungoverned network/MCP/plugin execution, subagents/teams, and unreviewed provider-owned execution remain disabled in the first pilot.
 15. Safety Preview matching is not the filesystem gate; Unit 2/3 executor enforcement remains authoritative immediately before side effects.
-16. Unit 3/4 contracts now have cloud/fake-Hub coverage plus live disposable proof for the normal Hub path, owner tool enforcement, validation/diff safety and rollback. Real gateway-owner loss/restart remains the only physical Milestone 5 acceptance point not yet proven.
+16. Unit 3/4 contracts have cloud/fake-Hub coverage plus live disposable proof for the normal Hub path, owner tool enforcement, validation/diff safety, rollback, and owner-loss replacement-session recovery.
 17. The MCP listener is intentionally loopback-only; remote ChatGPT connectivity requires a separately managed secure tunnel and must not weaken the local bearer/task authority boundary.
 18. The Milestone 6 supervisor contract is an instruction/evidence envelope only. It cannot grant scope, execute validation commands, bypass Unit 2/3 policy, or convert repository/model prose into authority.
-19. Pinned `@cline/core 0.0.83` has a published Hub-daemon entry resolution defect after bundling. The orchestrator compatibility shim is deliberately version- and layout-gated, writes only the missing installed-package entry, and must fail closed for any future Core version/layout until that dependency change is explicitly reviewed.
+19. Pinned `@cline/core 0.0.83` has published Hub-daemon entry resolution defects in both the root and public Hub subpath bundles. The orchestrator compatibility shim is deliberately version- and layout-gated, writes only the missing installed-package entries, and must fail closed for any future Core version/layout until that dependency change is explicitly reviewed.
 20. Windows can transiently deny atomic replacement when polling/indexing/AV holds a task-state destination. The state writer retries only transient Windows `EPERM`/`EACCES`/`EBUSY` within a strict bound and otherwise fails closed; it never deletes the destination to force replacement.
 21. Restart reconciliation deliberately auto-recovers only states where the existing execution boundary can be reconstructed safely. Stale authority, unsafe current diff, unusable checkpoint, stalled execution, and interrupted validation close fail-safe rather than inventing authority or silently changing lifecycle semantics.
+22. Disposable Windows physical proofs must isolate Git checkout policy (`core.autocrlf=false`) when byte-exact assertions are required; production rollback authority remains fingerprint-based.
+23. The local 27B model can consume substantial CPU/GPU/context resources during repeated physical proof loops. Once a safety property has been physically demonstrated and the remaining discrepancy is isolated to the harness with cloud regression coverage, do not repeat expensive local inference solely to reproduce the same evidence.
 
 ---
 
 # Immediate Work Queue
 
-Only work on the first unfinished implementation item unless a prerequisite defect is discovered. The user has explicitly resumed the previously deferred Milestone 5 live proof, so it remains the active item until its final physical acceptance point is resolved.
+Only work on the first unfinished implementation item unless a prerequisite defect is discovered.
 
 1. **COMPLETE — machine-local registry + Safety Preview / plan-token boundary.**
 2. **COMPLETE — pre-execution policy + local safe executor boundary.**
 3. **COMPLETE — Hub-backed Cline runtime adapter/factory + owner-targeted safety wiring.**
 4. **COMPLETE — machine-level ChatGPT MCP/plugin gateway.**
-5. **IN PROGRESS — isolated shared-runtime proof resumed by explicit user action and now at final owner-loss closure.**
-   - disposable registered workspace remains isolated; shared Ollama remains unchanged;
-   - Windows MCP entrypoint and pinned Core Hub packaging prerequisites are fixed and physically re-proven;
-   - allowed write + Stable Cline shared visibility are proven by task `3c051272-dc49-4005-8fca-3f89e08cc9ab`;
-   - external `git diff --check`, final diff safety, and checkpoint rollback are physically proven;
-   - secret denial is proven by task `5a77a746-fef0-4361-93a2-81dd7a5be2d5`;
-   - model shell unavailability is proven by task `07ab9762-6de4-4ac8-a8c4-df63e64396a5`;
-   - protected-path read/write denial is proven by task `040c8abd-cdcf-4e8c-938c-a1c8c760100d`;
-   - transient Windows task-state rename contention discovered during proof is fixed by `670d27d077d6b45ce1dfe9204510405b530385cf`, push CI `#383` / `35832372884`, PR CI `#384` / `35832377010`;
-   - gateway restart reconciliation discovered before the owner-loss test is fixed by `8b6bc285e7a79a88576babcd62716cf09d2bff97`, push CI `#385` / `35840142043`, PR CI `#386` / `35840147771`;
-   - final physical acceptance point: pull this restart fix, restart only the disposable orchestrator MCP job, launch one bounded task, interrupt only that MCP owner while it is `running`, restart the MCP job, and verify durable replacement-owner recovery/fail-closed safety with the original checkpoint preserved;
-   - do not stop/restart/pre-warm/switch Ollama or mutate unrelated shared VS Code/Cline sessions.
+5. **COMPLETE — isolated shared-runtime physical acceptance.**
+   - gateway/auth/discovery and Stable Cline visibility proven;
+   - allowed write, external `git diff --check`, final diff safety and checkpoint rollback proven;
+   - secret denial, model-shell unavailability and protected-path read/write denial proven;
+   - Windows direct-entry, pinned Hub package compatibility, explicit-endpoint auth handoff and atomic-state persistence prerequisites fixed and cloud-regression tested;
+   - owner-loss run physically proved first-owner interruption, durable handoff, replacement session generation 2, recovered completion, validation/diff safety and rollback;
+   - final raw byte mismatch was traced to Windows `core.autocrlf`, while production rollback had already verified the pre-run checkpoint fingerprint and returned `rolled_back`; proof repository checkout policy is now isolated and CI-green;
+   - no further heavy local 27B rerun is required; shared Ollama and unrelated Cline/VS Code sessions remain untouched.
 6. **COMPLETE — Milestone 6 Slice 1: supervisor task schema + bounded implementation instructions.**
-7. **QUEUED AFTER MILESTONE 5 CLOSURE — Milestone 6 Slice 2: planner produces bounded acceptance criteria + proposed validation commands.**
+7. **NEXT — Milestone 6 Slice 2: planner produces bounded acceptance criteria + proposed validation commands.**
    - planner output must remain subordinate to the durable Safety Plan envelope;
    - proposed validation commands are data until explicitly admitted into trusted external validation configuration;
    - planner cannot widen paths, change worker/policy identity, grant shell/network/MCP/plugin authority, or mark the task complete;
@@ -536,12 +546,17 @@ Only work on the first unfinished implementation item unless a prerequisite defe
 - 2026-09-23: Restricted worker shell behavior was physically proven by task `07ab9762-6de4-4ac8-a8c4-df63e64396a5`: the model reported no terminal/command tool was available and executed nothing; validation/diff safety passed with zero changes.
 - 2026-09-23: Protected-path enforcement was physically proven by task `040c8abd-cdcf-4e8c-938c-a1c8c760100d`: Cline attempted both a read and an editor write on `outside.txt`, and both were denied by the owner tool layer; validation/diff safety passed with zero changes.
 - 2026-09-23: Before forcing gateway owner loss, source review found that a restarted machine service did not reconcile persisted active tasks and public continuation correctly refused those active states. Restart-aware reconciliation fix `8b6bc285e7a79a88576babcd62716cf09d2bff97` now revalidates authority/diff state, preserves the original checkpoint, discards stale Hub owner identity, and routes recoverable work through the existing durable missing-session handoff/replacement-owner path; stale or unsupported states fail closed. Push CI `#385` / `35840142043` and PR CI `#386` / `35840147771` both passed.
+- 2026-09-24: Owner-loss diagnostics exposed the explicit-endpoint Hub auth-token handoff gap. Final runtime fix `99ff5d0ffccda2f531aadd0c95abf19314f89138` plus runtime-export smoke test `182705ab6540fa4e339b304679cd150d7aacc8e8` passed CI `#426` / `36071434059`.
+- 2026-09-24: The public Hub resolver exposed the second pinned Core launcher path. Dual-shim implementation `318919d42c2085207e228574bda272bd4d2b152a` plus `e73e02e3fb7808f37df07241e5ab1309892f6b9a` covered both published bundle locations; CI `#430` passed.
+- 2026-09-24: Physical owner-loss recovery reached replacement session generation 2 and completed the recovered edit. The first acceptance harness falsely timed out at 180 seconds while the local 27B run completed in about 206 seconds. Timeout alignment `3603b530153d8da2ed0d38dfefa4d4a225eac3af` passed CI `#434` / `36073454818`.
+- 2026-09-25: Final physical run again reached replacement generation 2, completed in about 95 seconds, passed configured validation and diff safety, and rollback returned `rolled_back`. The only failed assertion was raw LF-vs-CRLF content comparison after Windows checkout; production rollback's fingerprint verification had succeeded. Disposable proof Git isolation fix `4d5cfc5d9b5c5f628a8fe2730671f84c5a51805d` + regression `c1c714457b9930b8a10d3321d2e0972cbdca78f3` passed CI `#438` / `36082887715`.
+- 2026-09-25: Milestone 5 closed on accumulated physical and cloud evidence. No further local owner-loss rerun is required because it would reproduce already-proven recovery behavior while imposing unnecessary load on the user's 27B local inference machine.
 
 ---
 
 # Current Next Step
 
-Complete the final Milestone 5 physical acceptance point: **pull `8b6bc285e7a79a88576babcd62716cf09d2bff97`, restart only the disposable proof MCP job, create one bounded disposable task, interrupt only that MCP owner after the task reaches `running`, restart the same MCP gateway, and verify that restart reconciliation creates durable replacement ownership (or fails closed) without changing the approved safety envelope, shared Ollama, registry authority, or unrelated VS Code/Cline sessions.** After this proof, record the exact task/recovery evidence, mark Milestone 5 complete, run closure CI, and only then begin Milestone 6 Slice 2.
+Begin **Milestone 6 Slice 2 — Planner** only. Define the bounded planner output contract for acceptance criteria and proposed validation commands, keep every planner field subordinate to the existing durable Safety Plan/task authority, treat proposed validation commands as untrusted data until separately admitted into trusted external validation configuration, add cloud tests first, and do not perform live shared-runtime writes.
 
 ---
 
