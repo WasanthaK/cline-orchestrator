@@ -309,11 +309,17 @@ Improve operator visibility and, only after the single-worker safety boundary re
 
 ### Slice 1 — Read-only Orchestration Dashboard Contract
 
-- [ ] Define a sanitized dashboard snapshot from existing task/workflow/Sentinel/supervisor evidence.
-- [ ] Show projects/workspaces/tasks/workflows, status, budgets, attention/incidents and usage summaries without raw paths, credentials, model output or private checkpoint/session state.
-- [ ] Keep dashboard read-only initially; no generic filesystem/shell/Hub/process controls.
-- [ ] Reuse existing public MCP/service views rather than bypassing authority boundaries.
-- [ ] Cloud tests for redaction, bounded result sizes and stale-state handling.
+- [x] Define a sanitized dashboard snapshot from existing task/workflow/Sentinel/supervisor evidence.
+- [x] Show projects/workspaces/tasks/workflows, status, budgets, attention/incidents and bounded usage summaries without raw paths, credentials, model output or private checkpoint/session state.
+- [x] Keep dashboard read-only initially; no generic filesystem/shell/Hub/process controls.
+- [x] Reuse existing sanitized service/report views rather than bypassing authority boundaries.
+- [x] Deterministic collection limits/truncation metadata and explicit stale/unavailable source metadata.
+- [x] Cloud tests cover redaction, bounded result sizes, deterministic ordering, stale/unavailable evidence, error-code sanitization and invalid counter handling.
+
+Evidence:
+- Dashboard contract `12a384c7033517c3922f6514844d6bb08c45a95c`.
+- Source metadata hardening `88d59d6f85edb52a1bd736c29865f159656c2687`; CI `#524` / `36107007328`.
+- Acceptance tests `349c8f0c9fc6147b6f3fed55ca17f9688d0f3324`; CI `#526` / `36107456324`, success.
 
 ### Slice 2 — Explicit Specialist Handoffs
 
@@ -331,7 +337,7 @@ Improve operator visibility and, only after the single-worker safety boundary re
 
 ## Status
 
-**NOT STARTED — Slice 1 read-only dashboard contract is next.**
+**IN PROGRESS — Slice 1 read-only dashboard contract is complete and cloud-tested; Slice 2 sequential specialist handoff is next.**
 
 ---
 
@@ -357,8 +363,9 @@ Improve operator visibility and, only after the single-worker safety boundary re
 | Unattended budgets + checkpoint policy | Complete / cloud tested |
 | Human pause + unattended report + safe resume | Complete / cloud tested |
 | Milestone 7 unattended execution | **COMPLETE** |
-| Read-only orchestration dashboard contract | **Next** |
-| Specialist/multi-worker orchestration | Not started |
+| Read-only orchestration dashboard contract | **Complete / cloud tested** |
+| Sequential specialist handoff | **Next** |
+| Concurrent multi-worker orchestration | Not started |
 
 ---
 
@@ -386,8 +393,8 @@ Improve operator visibility and, only after the single-worker safety boundary re
 20. Current task state retains detailed metrics for the latest run only. Multi-run historical usage that cannot be reconstructed causes unattended budget accounting to fail closed.
 21. Budgeted progression starts one node per durable usage snapshot.
 22. Restart reconciliation never trusts stale workflow position and never replays active/terminal/escalated tasks.
-23. Dashboard/UI work must remain a presentation/query layer until an explicitly reviewed action surface is designed; UI convenience must not become a shortcut around MCP/service safety boundaries.
-24. Multi-worker work must begin sequentially. Concurrent workspace writes require explicit locking/conflict/checkpoint policy before they can be enabled.
+23. Dashboard/UI work remains a presentation/query layer until an explicitly reviewed action surface is designed; UI convenience cannot become a shortcut around MCP/service safety boundaries.
+24. Multi-worker work begins sequentially. Concurrent workspace writes require explicit locking/conflict/checkpoint policy before they can be enabled.
 
 ---
 
@@ -396,14 +403,19 @@ Improve operator visibility and, only after the single-worker safety boundary re
 1. **COMPLETE — Milestones 1–5.** Foundation, reversible editing, context durability, project memory, machine MCP/Hub shared runtime and physical safety acceptance.
 2. **COMPLETE — Milestone 6.** Supervisor contract, Planner, Reviewer, durable decisions and human escalation.
 3. **COMPLETE — Milestone 7.** Sentinel, durable DAG, bounded automatic progression, budgets/checkpoints, human pause, sanitized report and restart-safe unattended execution.
-4. **NEXT — Milestone 8 Slice 1: read-only orchestration dashboard contract.**
-   - compose existing sanitized project/workspace/task/workflow/incident/supervisor evidence into one bounded snapshot;
+4. **COMPLETE — Milestone 8 Slice 1: read-only orchestration dashboard contract.**
+   - bounded sanitized snapshot over existing project/workspace/task/workflow/incident/supervisor evidence;
    - no raw workspace roots, credentials, session/Hub IDs, model output, validation stdout/stderr, diff contents or private checkpoint refs;
-   - read-only only; do not add shell/filesystem/process/runtime mutation controls;
-   - define deterministic limits/pagination or truncation markers so dashboard retrieval remains bounded;
-   - represent stale/unavailable evidence explicitly rather than fabricating freshness;
+   - read-only only; no shell/filesystem/process/runtime mutation controls;
+   - deterministic limits/truncation metadata and explicit stale/unavailable source evidence;
+   - acceptance tests cloud-green in CI `#526`.
+5. **NEXT — Milestone 8 Slice 2: sequential specialist handoff.**
+   - define specialist roles as bounded instruction/evidence roles only;
+   - implementation specialists must remain bound to an independently approved durable task/Safety Plan;
+   - no new raw workspace, shell, Hub, process, network, MCP/plugin or completion authority;
+   - handoffs are sequential first, with durable provenance/evidence;
+   - no concurrent workspace writes until an explicit locking/conflict/checkpoint policy exists;
    - cloud tests first; no live shared-runtime writes.
-5. **AFTER DASHBOARD CONTRACT — Milestone 8 Slice 2 sequential specialist handoff.**
 6. **LATER — Multi-worker concurrency only after explicit workspace locking/conflict policy.**
 
 ---
@@ -416,12 +428,13 @@ Improve operator visibility and, only after the single-worker safety boundary re
 - 2026-09-25: Unattended budgets/checkpoint gating completed through CI `#508`.
 - 2026-09-25: Human attention/report/restart closure completed with report `9c5f74053a09ccafe9b548766d241c62b682614f`, tests `01de3fd211e86efe91708bf990acf75cf2ecd359`, restart reconciliation `3815abb742efc92b8390a19e7e00f226efc06d8e`, tests `7787f2d494cd1f99fc51a019379e07c53c101ee1`; CI `#518` / `36105316586` passed.
 - 2026-09-25: **Milestone 7 COMPLETE.** Unattended progression remains task-authority bounded and restart-safe, with durable reactive incident visibility.
+- 2026-09-25: Milestone 8 Slice 1 dashboard contract implemented through `12a384c7033517c3922f6514844d6bb08c45a95c`, metadata hardened by `88d59d6f85edb52a1bd736c29865f159656c2687`, and acceptance-tested by `349c8f0c9fc6147b6f3fed55ca17f9688d0f3324`; CI `#526` / `36107456324` passed.
 
 ---
 
 # Current Next Step
 
-Begin **Milestone 8 Slice 1 — read-only orchestration dashboard contract** only. Compose existing sanitized evidence into a bounded operator-facing snapshot without exposing raw machine/runtime/private task data and without adding a new mutation surface. Cloud tests first; do not perform live shared-runtime writes.
+Begin **Milestone 8 Slice 2 — sequential specialist handoff** only. Define bounded specialist roles and durable handoff provenance while preserving the existing task/Safety Plan as the sole machine-authority boundary. No concurrent workspace writes, no new raw machine controls, and cloud tests first.
 
 ---
 
