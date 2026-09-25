@@ -120,19 +120,6 @@ async function saveApprovedTask(workspace: RegisteredWorkspace): Promise<Orchest
   return task;
 }
 
-class FailingHeartbeatLockStore extends WorkspaceLockStore {
-  renewAttempts = 0;
-
-  override async renew(
-    _claim: WorkspaceWriterClaimV1,
-    _leaseMs: number,
-    _options: WorkspaceLockOptions = {},
-  ): Promise<{ state: never; claim: never }> {
-    this.renewAttempts += 1;
-    throw new Error("forced lease heartbeat failure");
-  }
-}
-
 class LeaseLossFakeRuntime implements ClineRuntime {
   private startInput: any;
   private readonly sessionId = crypto.randomUUID();
@@ -152,7 +139,7 @@ class LeaseLossFakeRuntime implements ClineRuntime {
   }
 
   async send(): Promise<any> {
-    this.harness.sendStarted = true;
+    this.harness.markSendStarted();
     await this.aborted;
 
     const editor = this.startInput?.capabilities?.toolExecutors?.editor;
@@ -192,13 +179,44 @@ class LeaseLossFakeRuntimeFactory implements ClineRuntimeFactory {
   staleWriteSucceeded = false;
   abortCalls = 0;
   disposeCalls = 0;
+  private sendStartedResolve!: () => void;
+  private readonly sendStartedSignal = new Promise<void>((resolve) => {
+    this.sendStartedResolve = resolve;
+  });
+
+  markSendStarted(): void {
+    this.sendStarted = true;
+    this.sendStartedResolve();
+  }
+
+  async waitUntilSendStarted(): Promise<void> {
+    await this.sendStartedSignal;
+  }
 
   async create(request: ClineRuntimeCreateRequest): Promise<ClineRuntime> {
     return new LeaseLossFakeRuntime(request.workspaceRoot, this);
   }
 }
 
-test("heartbeat lease loss aborts the scheduled Hub worker and blocks stale writes", async () => {
+class FailingHeartbeatLockStore extends WorkspaceLockStore {
+  renewAttempts = 0;
+
+  constructor(rootDir: string, private readonly runtime: LeaseLossFakeRuntimeFactory) {
+    super(rootDir);
+  }
+
+  override async renew(
+    _claim: WorkspaceWriterClaimV1,
+    _leaseMs: number,
+    _options: WorkspaceLockOptions = {},
+  ): Promise<{ state: never; claim: never }> {
+    this.renewAttempts += 1;
+    await this.runtime.waitUntilSendStarted();
+    throw new Error("forced lease heartbeat failure");
+  }
+}
+
+test("heartbeat lease loss aborts an active scheduled Hub worker and blocks its stale write", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "orch-scheduled-lease-loss-"));
   try {
     const registry = new WorkspaceRegistry(path.join(root, "registry.json"));
@@ -217,7 +235,7 @@ test("heartbeat lease loss aborts the scheduled Hub worker and blocks stale writ
       runtime,
       async () => preflightOk(),
     );
-    const locks = new FailingHeartbeatLockStore(path.join(root, "coordination"));
+    const locks = new FailingHeartbeatLockStore(path.join(root, "coordination"), runtime);
     const scheduler = new WriterConcurrencyScheduler(
       locks,
       {
