@@ -301,6 +301,31 @@ export function validateWorkspaceWriterClaim(
   }
 }
 
+/**
+ * Extends only the exact current live fenced claim. Renewal preserves lease/fence
+ * identity but advances the state revision and claim expiry, making the previous
+ * claim stale. It cannot resurrect an expired/released/replaced writer and still
+ * grants coordination only.
+ */
+export function renewWorkspaceWriter(
+  rawState: WorkspaceLockStateV1,
+  claim: WorkspaceWriterClaimV1,
+  durationMs: number,
+  options: WorkspaceLockOptions = {},
+): { state: WorkspaceLockStateV1; claim: WorkspaceWriterClaimV1 } {
+  assertWorkspaceLockState(rawState);
+  assertClaimShape(claim);
+  const duration = leaseMs(durationMs);
+  const now = lockNow(options);
+  validateWorkspaceWriterClaim(rawState, claim, now);
+
+  const state = structuredClone(rawState);
+  const writer = state.activeWriter!;
+  state.revision += 1;
+  writer.expiresAt = new Date(now.getTime() + duration).toISOString();
+  return { state, claim: claimFrom(state) };
+}
+
 export function releaseWorkspaceWriter(
   rawState: WorkspaceLockStateV1,
   claim: WorkspaceWriterClaimV1,
