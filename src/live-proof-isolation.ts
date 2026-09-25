@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import * as ClineHub from "@cline/core/hub";
 
 const execFile = promisify(execFileCallback);
 
@@ -20,6 +21,10 @@ export interface LiveProofIsolation {
   environment: Record<string, string>;
 }
 
+type ClineHubLifecycleSurface = {
+  stopLocalHubServerGracefully?: () => Promise<boolean>;
+};
+
 /**
  * Defense-in-depth guard for scripts that may start an isolated local Hub/runtime.
  * This deliberately does not represent user authorization by itself; callers must
@@ -34,6 +39,31 @@ export function assertLiveProofOptIn(
       `Physical live proof is disabled. Set ${LIVE_PROOF_OPT_IN_ENV}=${LIVE_PROOF_OPT_IN_VALUE} only for an explicitly authorized disposable proof.`,
     );
   }
+}
+
+/**
+ * Use only Cline's reviewed local-Hub lifecycle boundary for proof cleanup. Because
+ * the proof installs an isolated CLINE_DIR/data dir/address into process.env before
+ * Hub creation, Cline's default owner context resolves to the disposable proof Hub.
+ * Never fall back to process enumeration or generic kill commands.
+ */
+export async function stopLiveProofHubGracefully(): Promise<void> {
+  const stop = (ClineHub as unknown as ClineHubLifecycleSurface).stopLocalHubServerGracefully;
+  if (typeof stop !== "function") {
+    throw new Error(
+      "Pinned @cline/core Hub surface does not expose stopLocalHubServerGracefully; refusing unsafe live-proof cleanup",
+    );
+  }
+  const stopped = await stop();
+  if (!stopped) {
+    throw new Error(
+      "Cline did not confirm graceful shutdown of the isolated live-proof Hub; refusing to remove its data directory",
+    );
+  }
+}
+
+export function hasLiveProofHubShutdownSurface(): boolean {
+  return typeof (ClineHub as unknown as ClineHubLifecycleSurface).stopLocalHubServerGracefully === "function";
 }
 
 async function allocateLoopbackPort(): Promise<number> {
