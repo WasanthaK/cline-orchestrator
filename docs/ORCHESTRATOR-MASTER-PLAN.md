@@ -51,6 +51,7 @@ The system should support long-running and eventually unattended coding work whi
 7. **Scope expansion fails closed.** Broader work requires durable human escalation or a fresh Safety Preview.
 8. **Supervisor output is advisory unless explicitly admitted by trusted orchestration code.** Planner/Reviewer text cannot grant filesystem, command, validation, worker, policy, Hub, network, MCP, plugin, subagent, or completion authority.
 9. **Sentinel is observational.** Incident detection/resolution evidence never grants execution authority or process-control privileges.
+10. **Workflow ordering is not workflow authority.** A DAG may coordinate independently approved tasks, but cannot grant paths, commands, worker identity, model capabilities, or Safety Plan scope. Automatic progression may pass only an opaque task ID to a starter that independently revalidates the task's existing authority.
 
 ---
 
@@ -313,10 +314,28 @@ Evidence: query layer `f820d20528941e301f737e2f7c13f36dd308eef0`; MCP exposure `
 - Uncertain recovery/authority remains a human/fail-closed matter.
 - Optional future GitHub issue synchronization must be separately permissioned and is not part of execution authority.
 
+## Slice 1 — Durable Bounded Task Queue / DAG
+
+- [x] Versioned workflow schema is built only from already-approved durable tasks.
+- [x] Workflow nodes persist only opaque node/task/project/workspace/Safety Plan/profile identity, validation-required state and dependency edges; no filesystem paths, write scope, protected patterns, validation commands, model output, credentials, Hub/session IDs or executable capability are copied into workflow authority.
+- [x] Duplicate tasks/node IDs, duplicate dependencies, unknown dependencies and self/multi-node cycles fail closed.
+- [x] Runnable-node selection is deterministic from persisted node order.
+- [x] A node is runnable only while its own durable task remains `created`; active, terminal, or human-escalated tasks are never re-started by selection.
+- [x] Dependency success requires durable `completed` state, required validation success, diff-safety success and no pending human escalation. Failed, incomplete or `waiting_for_human` dependencies block downstream work.
+- [x] Immutable workflow definitions are stored atomically in a machine-local workflow store keyed only by opaque workflow UUID; load revalidates schema/graph and identity.
+- [x] Automatic progression is authority-free: the coordinator passes only opaque task IDs to an injected starter and propagates starter rejection immediately. The injected starter remains responsible for independently enforcing each task's existing Safety Plan/binding before execution.
+- [x] Progression is bounded by `maxStarts`; no workflow-wide scope inheritance or machine authority is introduced.
+
+Evidence:
+
+- DAG contract + graph selector: `9834e2f274227e4389498f5f2999ed9ac3ebffb7`; tests `aa3e5fe13f6d85cf7f6bd6b159c4aaccd7aa0e65`; CI `#486` / `36103577443`.
+- Atomic durable workflow store: `c564f83040a448bff669d100a5d4041464cc30d8`; tests `8be4ed2638489430bd088fe2273984c8152e4582`; CI `#490` / `36103856012`.
+- Authority-free progression coordinator: `0b136f8945be1e47218b00d47246a55de3acbef5`; tests `7e9282ee7e3e8e16363991339a42a28da555b918`; CI `#494` / `36104036934`.
+
 ## Unattended execution acceptance
 
 - [x] Sentinel durable incident model, deduplication, evidence resolution and sanitized MCP exposure.
-- [ ] Task queue/DAG, dependencies and automatic progression.
+- [x] Durable task queue/DAG, dependency validation and bounded automatic progression primitive.
 - [ ] Time/token/request/repair budgets and checkpoint policy.
 - [ ] `waiting_for_human` integration and escalation rules for unattended work.
 - [ ] Final unattended-run report.
@@ -324,7 +343,7 @@ Evidence: query layer `f820d20528941e301f737e2f7c13f36dd308eef0`; MCP exposure `
 
 ## Status
 
-**IN PROGRESS — Sentinel Slice 0 complete; bounded task queue/DAG is next.**
+**IN PROGRESS — Sentinel Slice 0 and bounded DAG Slice 1 complete; budgets/checkpoint policy is next.**
 
 ---
 
@@ -362,7 +381,8 @@ Possible later scope:
 | Durable supervisor decision timeline + human escalation | Complete |
 | Sentinel incident core | **Complete + cloud tested** |
 | Sentinel read-only MCP view | **Complete + cloud tested** |
-| Unattended task DAG | **Next** |
+| Unattended task DAG + durable store + progression primitive | **Complete + cloud tested** |
+| Unattended budgets / checkpoint policy | **Next** |
 | Advanced UI / multi-worker | Not started |
 
 ---
@@ -375,8 +395,8 @@ Possible later scope:
 4. Dirty worktrees must preserve pre-run user state and distinguish it from task-created changes.
 5. Validation commands are trusted local configuration outside model execution. Planner commands remain untrusted until explicit admission.
 6. Task JSON replacement is atomic; event, supervisor-decision and Sentinel observation JSONL remain append-based durability models.
-7. Hub and MCP credentials must never enter durable task/project/supervisor/incident state or model-facing output.
-8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, or Hub participation.
+7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow state or model-facing output.
+8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, or Hub participation.
 9. Native Hub approval is UX/defense-in-depth only; owner hook/executor enforcement is authoritative.
 10. Owner disconnect requires durable handoff/replacement ownership or fail-closed behavior.
 11. Arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams and unreviewed provider-owned execution remain disabled in the first pilot.
@@ -389,6 +409,8 @@ Possible later scope:
 18. Sentinel remains observational/reactive and cannot become process restart, safety-policy, or code-mutation authority.
 19. Sentinel resolution is evidence-based: only recognized later durable events may close an incident.
 20. `list_incidents` is a read path that refreshes durable evidence; it must not become an implicit repair/restart trigger.
+21. A workflow is ordering/state coordination only. It deliberately omits path scopes and executable capabilities; membership in a DAG never grants authority to start, continue, repair, validate, or broaden a task.
+22. The unattended progression coordinator only selects already-approved `created` tasks and passes opaque task IDs to an injected starter. Starter rejection is fail-closed and stops further starts in that progression pass.
 
 ---
 
@@ -397,16 +419,22 @@ Possible later scope:
 1. **COMPLETE — Milestones 1–5.** Foundation, reversible editing, context durability, project memory, machine MCP/Hub shared runtime and physical safety acceptance.
 2. **COMPLETE — Milestone 6.** Supervisor contract, Planner, Reviewer, durable decisions and human escalation.
 3. **COMPLETE — Milestone 7 Slice 0.** Sentinel incident model, deduplication, evidence resolution and read-only MCP exposure.
-4. **NEXT — Milestone 7 Slice 1: bounded task queue/DAG.**
-   - define versioned workflow/DAG schema with opaque task/workspace/Safety Plan bindings;
-   - explicit dependency edges, cycle rejection and deterministic runnable-node selection;
-   - node execution must reuse existing Safety Preview/task authority rather than grant workflow-wide machine authority;
-   - automatic progression only after durable task completion/validation/diff-safety evidence;
-   - failed/waiting-for-human nodes block dependents by default;
-   - no hidden scope inheritance between nodes;
+4. **COMPLETE — Milestone 7 Slice 1: durable bounded task queue/DAG.**
+   - versioned workflow schema and opaque authority references only;
+   - dependency/cycle validation and deterministic runnable-node selection;
+   - durable atomic workflow store with graph revalidation on load;
+   - automatic progression primitive passes only opaque task IDs to an independently authority-enforcing starter;
+   - failed/waiting-for-human/unsafe dependencies block downstream work;
+   - cloud CI `#486`, `#490`, `#494`; no live shared-runtime writes.
+5. **NEXT — Milestone 7 Slice 2: budgets + checkpoint policy.**
+   - define explicit elapsed-time, model-token, tool/request, run/recovery and validation-repair budgets;
+   - budget accounting must use durable evidence and fail closed on incomplete accounting rather than undercount;
+   - define checkpoint requirements for unattended node execution and progression;
+   - budget exhaustion must stop new node starts and become durable human-visible state, not silently widen limits;
+   - reuse existing task checkpoint/rollback authority; workflow must not create a second rollback mechanism;
    - cloud tests first; no live shared-runtime writes.
-5. **AFTER DAG — Milestone 7 budgets/checkpoint policy/unattended reports + safe restart.**
-6. **LATER — Milestone 8 advanced UI / multi-worker.**
+6. **AFTER BUDGETS — waiting-for-human workflow integration, final unattended report and safe resume after interruption.**
+7. **LATER — Milestone 8 advanced UI / multi-worker.**
 
 ---
 
@@ -419,12 +447,15 @@ Possible later scope:
 - 2026-09-25: **Milestone 6 COMPLETE.** Planner/Reviewer supervision remains subordinate to durable orchestrator authority.
 - 2026-09-25: Sentinel incident core completed through `c4756161ee558cbfe05817f0f9901081fcdf2455`; CI `#470` / `36099791355`.
 - 2026-09-25: Sentinel registered-workspace query + read-only MCP exposure completed through `9b34d88effae9317eb6f5504c58d64654abbd063`; CI `#480` / `36100230922`.
+- 2026-09-25: Unattended DAG contract/selection completed through `aa3e5fe13f6d85cf7f6bd6b159c4aaccd7aa0e65`; CI `#486` / `36103577443`.
+- 2026-09-25: Durable workflow store completed through `8be4ed2638489430bd088fe2273984c8152e4582`; CI `#490` / `36103856012`.
+- 2026-09-25: Authority-free automatic progression primitive completed through `7e9282ee7e3e8e16363991339a42a28da555b918`; CI `#494` / `36104036934`.
 
 ---
 
 # Current Next Step
 
-Begin **Milestone 7 Slice 1 — bounded task queue/DAG** only. Define the durable workflow schema, explicit dependency graph, cycle validation and deterministic runnable-node selection. Workflow nodes must point to independently approved task authority; a DAG must never become a blanket permission envelope. Dependents progress only from durable successful completion evidence, while failure or `waiting_for_human` blocks downstream work by default. Add cloud tests first; do not perform live shared-runtime writes.
+Begin **Milestone 7 Slice 2 — budgets + checkpoint policy** only. Define explicit unattended elapsed-time, model-token, tool/request, run/recovery and validation-repair budgets using durable evidence. Incomplete usage accounting must fail closed rather than undercount. Budget exhaustion must prevent further workflow starts and require durable human-visible handling. Checkpoint policy must reuse each task's existing pre-run Git checkpoint/rollback mechanism rather than introducing workflow-level rollback authority. Add cloud tests first; do not perform live shared-runtime writes.
 
 ---
 
