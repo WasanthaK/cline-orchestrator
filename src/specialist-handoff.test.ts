@@ -298,8 +298,8 @@ test("durable specialist handoff journal preserves and validates exact sequentia
       (error: unknown) => error instanceof SpecialistHandoffError && error.code === "chain_invalid",
     );
 
-    assert.throws(
-      () => store.list("../outside") as unknown,
+    await assert.rejects(
+      () => store.list("../outside"),
       (error: unknown) => error instanceof SpecialistHandoffError && error.code === "handoff_invalid",
     );
   } finally {
