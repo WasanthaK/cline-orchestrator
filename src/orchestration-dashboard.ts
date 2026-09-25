@@ -149,6 +149,14 @@ function safeCount(value: number): number {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
+function safeErrorCode(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  return /^[a-z0-9][a-z0-9_.:-]{0,119}$/i.test(normalized)
+    ? normalized
+    : "source_error";
+}
+
 function sourceMeta(
   meta: DashboardSourceMetaInput | undefined,
   total: number,
@@ -166,7 +174,7 @@ function sourceMeta(
     capturedAt: meta?.capturedAt,
     available,
     stale,
-    errorCode: meta?.errorCode?.slice(0, 120),
+    errorCode: safeErrorCode(meta?.errorCode),
     truncated: total > returned,
     total,
     returned,
@@ -256,14 +264,6 @@ export function buildOrchestrationDashboard(
     pendingHumanEscalations: safeCount(input.supervisor.pendingHumanEscalations),
   };
 
-  const supervisorMeta = sourceMeta(
-    input.supervisor,
-    1,
-    1,
-    nowMs,
-    staleAfterMs,
-  );
-
   return {
     schemaVersion: 1,
     generatedAt: now.toISOString(),
@@ -274,7 +274,7 @@ export function buildOrchestrationDashboard(
       tasks: sourceMeta(input.tasksMeta, input.tasks.length, tasks.length, nowMs, staleAfterMs),
       workflows: sourceMeta(input.workflowsMeta, input.workflows.length, workflows.length, nowMs, staleAfterMs),
       incidents: sourceMeta(input.incidentsMeta, input.incidents.length, incidents.length, nowMs, staleAfterMs),
-      supervisor: supervisorMeta,
+      supervisor: sourceMeta(input.supervisor, 1, 1, nowMs, staleAfterMs),
     },
     projects: projects.map((project) => ({
       projectId: project.projectId,
