@@ -1,13 +1,15 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { captureGitSnapshot } from "./git-state.js";
 import {
   assertDisposableWorkspaceRoot,
+  assertLiveProofOptIn,
   createDisposableProofWorkspace,
   createLiveProofIsolation,
+  stopLiveProofHubGracefully,
 } from "./live-proof-isolation.js";
 import { RestartAwareMachineOrchestratorService } from "./machine-recovery.js";
 import { environmentWorkerProfileResolver } from "./mcp-main.js";
@@ -286,6 +288,7 @@ async function parentMain(): Promise<void> {
   );
 
   const scriptPath = fileURLToPath(import.meta.url);
+  let hubMayHaveStarted = false;
   const child = spawn(process.execPath, ["--import", "tsx", scriptPath], {
     cwd: process.cwd(),
     env: {
@@ -299,6 +302,7 @@ async function parentMain(): Promise<void> {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
+  hubMayHaveStarted = true;
 
   let recoveryService: RestartAwareMachineOrchestratorService | undefined;
   let taskId: string | undefined;
@@ -415,10 +419,16 @@ async function parentMain(): Promise<void> {
       await waitForChildExit(child).catch(() => undefined);
     }
     await recoveryService?.close().catch(() => undefined);
+    if (hubMayHaveStarted) {
+      await stopLiveProofHubGracefully();
+    }
+    await rm(workspaceRoot, { recursive: true, force: true });
+    await rm(isolation.root, { recursive: true, force: true });
   }
 }
 
 async function main(): Promise<void> {
+  assertLiveProofOptIn();
   if (process.env[CHILD_ROLE] === "owner") {
     await ownerChild();
     return;
