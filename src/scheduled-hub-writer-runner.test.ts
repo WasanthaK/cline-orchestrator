@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -112,6 +113,15 @@ class FakeHubRuntimeFactory implements ClineRuntimeFactory {
   }
 }
 
+function initializeGitBaseline(root: string): void {
+  execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "orchestrator-test@example.invalid"], { cwd: root });
+  execFileSync("git", ["config", "user.name", "Cline Orchestrator Test"], { cwd: root });
+  execFileSync("git", ["config", "core.autocrlf", "false"], { cwd: root });
+  execFileSync("git", ["add", "src/a.txt"], { cwd: root });
+  execFileSync("git", ["commit", "-m", "baseline"], { cwd: root, stdio: "ignore" });
+}
+
 async function setupRegisteredWorkspace(
   registry: WorkspaceRegistry,
   projectId: string,
@@ -120,6 +130,7 @@ async function setupRegisteredWorkspace(
 ): Promise<RegisteredWorkspace> {
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(path.join(root, "src", "a.txt"), "a\n", "utf8");
+  initializeGitBaseline(root);
   return await registry.registerWorkspace({
     projectId,
     displayName,
@@ -214,6 +225,10 @@ test("real scheduler runs two fresh orchestrator-owned Hub writers concurrently 
     const persisted2 = await new TaskStore(workspace2.canonicalRoot).load(task2.id);
     assert.equal(persisted1.status, "completed");
     assert.equal(persisted2.status, "completed");
+    assert.equal(persisted1.lastDiffSafety?.passed, true);
+    assert.equal(persisted2.lastDiffSafety?.passed, true);
+    assert.ok(persisted1.lastRunCheckpoint?.available);
+    assert.ok(persisted2.lastRunCheckpoint?.available);
     assert.ok(persisted1.clineSessionId);
     assert.ok(persisted2.clineSessionId);
     assert.notEqual(persisted1.clineSessionId, persisted2.clineSessionId);
