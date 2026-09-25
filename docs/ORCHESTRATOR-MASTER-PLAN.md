@@ -52,6 +52,7 @@ The system should support long-running and eventually unattended coding work whi
 8. **Supervisor output is advisory unless explicitly admitted by trusted orchestration code.** Planner/Reviewer text cannot grant filesystem, command, validation, worker, policy, Hub, network, MCP, plugin, subagent, or completion authority.
 9. **Sentinel is observational.** Incident detection/resolution evidence never grants execution authority or process-control privileges.
 10. **Workflow ordering is not workflow authority.** A DAG may coordinate independently approved tasks, but cannot grant paths, commands, worker identity, model capabilities, or Safety Plan scope. Automatic progression may pass only an opaque task ID to a starter that independently revalidates the task's existing authority.
+11. **Unattended budgets fail closed.** Missing historical usage evidence, exhausted limits, missing checkpoint evidence, or an untrusted starter checkpoint mechanism prevents another automatic node start; limits are never silently increased.
 
 ---
 
@@ -332,18 +333,36 @@ Evidence:
 - Atomic durable workflow store: `c564f83040a448bff669d100a5d4041464cc30d8`; tests `8be4ed2638489430bd088fe2273984c8152e4582`; CI `#490` / `36103856012`.
 - Authority-free progression coordinator: `0b136f8945be1e47218b00d47246a55de3acbef5`; tests `7e9282ee7e3e8e16363991339a42a28da555b918`; CI `#494` / `36104036934`.
 
+## Slice 2 — Budgets + Checkpoint Policy
+
+- [x] Versioned explicit ceilings cover elapsed time, model requests, input/output tokens, tool calls, task runs, recoveries and validation repairs.
+- [x] Usage is derived only from durable task state; missing tasks/metrics or historical multi-run metrics that cannot be reconstructed make accounting incomplete and block unattended starts rather than undercount.
+- [x] Dependency progression requires preserved existing task checkpoint evidence; restored/unavailable dependency checkpoints block unattended downstream starts.
+- [x] The starter must declare the existing task pre-run checkpoint mechanism; unknown checkpoint behavior fails closed.
+- [x] Task-run budget checks reserve the prospective start; the final configured run slot is allowed, while exceeding it is denied.
+- [x] Budget exhaustion or incomplete accounting prevents starter invocation.
+- [x] Budget/start guard decisions are append-only durable machine-local records for later human/report visibility, containing bounded reason/exhausted/accounting evidence and opaque task/workflow IDs only.
+- [x] Budgeted progression starts at most one node per accounting pass, forcing fresh durable usage accounting before any later automatic start.
+- [x] Workflow budgeting reuses the existing per-task Git checkpoint/rollback authority; no workflow-level rollback mechanism is introduced.
+
+Evidence:
+
+- Budget/checkpoint contract: `1c81a6ff7d961c89e918f29ba4eb629e28dee01b`; tests `06f15b28f16a4c9aca394d97cfc2eca6d6ed23ed`; final-run-slot correction `1d4acd984103bf3be6752edcc3aa1c88f4650780`; CI `#502` / `36104641333`.
+- Durable budget decision journal: `44989106bb022a157eab250b48c642457696b98d`.
+- Budget-gated one-start-per-pass coordinator: `969fd238a40e867f80dc2e01f2c34cc7fb46fb1b`; integration tests `5333385737810f935ead4092e1d29760a2cbac99`; CI `#508` / `36104849331`.
+
 ## Unattended execution acceptance
 
 - [x] Sentinel durable incident model, deduplication, evidence resolution and sanitized MCP exposure.
 - [x] Durable task queue/DAG, dependency validation and bounded automatic progression primitive.
-- [ ] Time/token/request/repair budgets and checkpoint policy.
+- [x] Time/token/request/repair budgets and checkpoint policy.
 - [ ] `waiting_for_human` integration and escalation rules for unattended work.
 - [ ] Final unattended-run report.
 - [ ] Safe resume after interruption.
 
 ## Status
 
-**IN PROGRESS — Sentinel Slice 0 and bounded DAG Slice 1 complete; budgets/checkpoint policy is next.**
+**IN PROGRESS — Sentinel, DAG and budgets/checkpoint slices complete; workflow human-escalation/report/restart closure is next.**
 
 ---
 
@@ -382,7 +401,8 @@ Possible later scope:
 | Sentinel incident core | **Complete + cloud tested** |
 | Sentinel read-only MCP view | **Complete + cloud tested** |
 | Unattended task DAG + durable store + progression primitive | **Complete + cloud tested** |
-| Unattended budgets / checkpoint policy | **Next** |
+| Unattended budgets + checkpoint policy | **Complete + cloud tested** |
+| Workflow human-escalation/report/restart closure | **Next** |
 | Advanced UI / multi-worker | Not started |
 
 ---
@@ -394,9 +414,9 @@ Possible later scope:
 3. Hub work remains pinned to reviewed Core/SDK `0.0.83` until a deliberate dependency change is recorded.
 4. Dirty worktrees must preserve pre-run user state and distinguish it from task-created changes.
 5. Validation commands are trusted local configuration outside model execution. Planner commands remain untrusted until explicit admission.
-6. Task JSON replacement is atomic; event, supervisor-decision and Sentinel observation JSONL remain append-based durability models.
-7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow state or model-facing output.
-8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, or Hub participation.
+6. Task JSON replacement is atomic; event, supervisor-decision, Sentinel observation and workflow budget-decision JSONL remain append-based durability models.
+7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow/budget state or model-facing output.
+8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, budget policy, or Hub participation.
 9. Native Hub approval is UX/defense-in-depth only; owner hook/executor enforcement is authoritative.
 10. Owner disconnect requires durable handoff/replacement ownership or fail-closed behavior.
 11. Arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams and unreviewed provider-owned execution remain disabled in the first pilot.
@@ -411,6 +431,9 @@ Possible later scope:
 20. `list_incidents` is a read path that refreshes durable evidence; it must not become an implicit repair/restart trigger.
 21. A workflow is ordering/state coordination only. It deliberately omits path scopes and executable capabilities; membership in a DAG never grants authority to start, continue, repair, validate, or broaden a task.
 22. The unattended progression coordinator only selects already-approved `created` tasks and passes opaque task IDs to an injected starter. Starter rejection is fail-closed and stops further starts in that progression pass.
+23. Current task state retains detailed metrics for the latest run only. If a workflow task has multiple historical runs that cannot be reconstructed exactly, unattended budget accounting deliberately becomes incomplete and blocks further automatic starts until a future cumulative accounting mechanism is added.
+24. Budgeted progression starts only one node per usage snapshot; this prevents multiple tasks from consuming resources concurrently against stale token/tool/run accounting.
+25. Budget policy cannot raise worker/model/task authority and does not create rollback authority; it is only an additional deny gate around automatic progression.
 
 ---
 
@@ -419,21 +442,15 @@ Possible later scope:
 1. **COMPLETE — Milestones 1–5.** Foundation, reversible editing, context durability, project memory, machine MCP/Hub shared runtime and physical safety acceptance.
 2. **COMPLETE — Milestone 6.** Supervisor contract, Planner, Reviewer, durable decisions and human escalation.
 3. **COMPLETE — Milestone 7 Slice 0.** Sentinel incident model, deduplication, evidence resolution and read-only MCP exposure.
-4. **COMPLETE — Milestone 7 Slice 1: durable bounded task queue/DAG.**
-   - versioned workflow schema and opaque authority references only;
-   - dependency/cycle validation and deterministic runnable-node selection;
-   - durable atomic workflow store with graph revalidation on load;
-   - automatic progression primitive passes only opaque task IDs to an independently authority-enforcing starter;
-   - failed/waiting-for-human/unsafe dependencies block downstream work;
-   - cloud CI `#486`, `#490`, `#494`; no live shared-runtime writes.
-5. **NEXT — Milestone 7 Slice 2: budgets + checkpoint policy.**
-   - define explicit elapsed-time, model-token, tool/request, run/recovery and validation-repair budgets;
-   - budget accounting must use durable evidence and fail closed on incomplete accounting rather than undercount;
-   - define checkpoint requirements for unattended node execution and progression;
-   - budget exhaustion must stop new node starts and become durable human-visible state, not silently widen limits;
-   - reuse existing task checkpoint/rollback authority; workflow must not create a second rollback mechanism;
+4. **COMPLETE — Milestone 7 Slice 1.** Durable bounded task queue/DAG, persistence and authority-free progression.
+5. **COMPLETE — Milestone 7 Slice 2.** Fail-closed unattended budgets and checkpoint policy with durable decision evidence.
+6. **NEXT — Milestone 7 Slice 3: human-escalation + final report + safe resume.**
+   - derive workflow-level blocked/waiting state from durable task states without inventing new task authority;
+   - `waiting_for_human`, failed/aborted/validation-failed/rolled-back dependencies block downstream starts by default;
+   - budget/accounting/checkpoint denial becomes durable workflow attention state, not automatic limit relaxation;
+   - produce bounded final/intermediate unattended workflow report from durable task, budget and incident evidence with no raw paths/credentials/output;
+   - restart/resume must reload immutable workflow definition and re-evaluate current task/evidence/budgets before any new start; never replay a previously started node solely from workflow state;
    - cloud tests first; no live shared-runtime writes.
-6. **AFTER BUDGETS — waiting-for-human workflow integration, final unattended report and safe resume after interruption.**
 7. **LATER — Milestone 8 advanced UI / multi-worker.**
 
 ---
@@ -450,12 +467,14 @@ Possible later scope:
 - 2026-09-25: Unattended DAG contract/selection completed through `aa3e5fe13f6d85cf7f6bd6b159c4aaccd7aa0e65`; CI `#486` / `36103577443`.
 - 2026-09-25: Durable workflow store completed through `8be4ed2638489430bd088fe2273984c8152e4582`; CI `#490` / `36103856012`.
 - 2026-09-25: Authority-free automatic progression primitive completed through `7e9282ee7e3e8e16363991339a42a28da555b918`; CI `#494` / `36104036934`.
+- 2026-09-25: Unattended budget/checkpoint guard completed through `1d4acd984103bf3be6752edcc3aa1c88f4650780`; CI `#502` / `36104641333`.
+- 2026-09-25: Durable budget decisions + budget-gated one-start progression completed through `5333385737810f935ead4092e1d29760a2cbac99`; CI `#508` / `36104849331`.
 
 ---
 
 # Current Next Step
 
-Begin **Milestone 7 Slice 2 — budgets + checkpoint policy** only. Define explicit unattended elapsed-time, model-token, tool/request, run/recovery and validation-repair budgets using durable evidence. Incomplete usage accounting must fail closed rather than undercount. Budget exhaustion must prevent further workflow starts and require durable human-visible handling. Checkpoint policy must reuse each task's existing pre-run Git checkpoint/rollback mechanism rather than introducing workflow-level rollback authority. Add cloud tests first; do not perform live shared-runtime writes.
+Begin **Milestone 7 Slice 3 — workflow human-escalation + final report + safe resume** only. Derive workflow attention/blocking from existing durable task states and budget/checkpoint decisions rather than creating new execution authority. Build a bounded sanitized workflow report from durable evidence. On process restart, reload the immutable workflow and current task state, rebuild budget/evidence, and select only still-`created` runnable nodes; previously active/terminal/escalated nodes must never be replayed from stale workflow state. Add cloud tests first; do not perform live shared-runtime writes.
 
 ---
 
