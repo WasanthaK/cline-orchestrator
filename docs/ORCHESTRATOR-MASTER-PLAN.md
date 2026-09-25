@@ -55,6 +55,7 @@ The system should support long-running and unattended coding work while preservi
 11. **Unattended budgets fail closed.** Missing historical usage evidence, exhausted limits, missing checkpoint evidence, or an untrusted starter checkpoint mechanism prevents another automatic node start; limits are never silently increased.
 12. **Workflow restart never replays stale position.** Resume reloads the immutable workflow plus current durable task/budget evidence, then selects only still-`created` nodes; active, terminal, escalated or unsafe nodes are never replayed from workflow state alone.
 13. **Specialist handoff is provenance, not authority.** A handoff can identify the next bounded role and durable evidence, but it grants no machine/write authority and cannot keep stale task/Safety Plan authority alive.
+14. **Concurrency admission is coordination, not authority.** A writer slot, lock claim, lease renewal or scheduler decision never grants task/Safety Plan/filesystem authority; every admitted writer must independently revalidate current durable authority before acquisition and again immediately before execution.
 
 ---
 
@@ -340,7 +341,7 @@ Evidence:
 ### Slice 3 — Multi-worker Scheduling / UI
 
 - [x] Explicit workspace locking and conflict policy.
-- [ ] Bounded concurrency budgets.
+- [x] Bounded concurrency budgets.
 - [ ] Rich VS Code/web operator visualization for task/event/usage/incident/handoff state.
 - [ ] No team/subagent feature may silently bypass existing owner-targeted safety executors.
 
@@ -348,11 +349,16 @@ Evidence:
 - Workspace writer lock/fencing contract `2d27c655b59af05c345fd3d59f2cc484f67e34e6`; contract tests `d84253a8702e07d5bf2db7b622ac34d7e8a309f1`.
 - Durable single-gateway lock store `1c3ed32b9ea2806308bf35f65ad1f7e3178f7303`; persistence/concurrency/restart/corruption acceptance tests `d7c6a757384aaeffb3b1847eae8f4595df9a3f6a`; CI `#551` / `36110515174`, success.
 - Lock records are coordination-only: they persist opaque workspace/task/owner/lease/fence identity, grant neither task nor filesystem authority, and require independently revalidated task/Safety Plan authority before any future write-capable start.
-- Current lock serialization is scoped to one gateway Node process. Multi-process/distributed scheduler ownership remains unsupported until a separately reviewed fencing backend exists.
+- Concurrency budget contract `6c266ac80ba2beddeb78f060fb0f824326567b85`; corrected acceptance tests `fb3e2bebfae6dd00984f0cf4fe1317f5941e0784`; CI `#559` / `36111154835`, success.
+- Lease renewal `e4eac8143ab21aebd0695c56055c6182e03d961d`, live-lock enumeration/store integration `c3aed67a26d7d378e83cc2f3a75e31d34e399f4f`, and renewal/enumeration tests `480b91880c1a527b9cd3952c9f384666cd6f8995` close the long-running writer expiry gap.
+- Bounded writer scheduler `1fe7e0a9e972007a0a05762936f1ab93ded8ac14`; scheduler acceptance tests `75efcd4230a31a6c9670d467d0db289b828b14b9`; CI `#569` / `36111750951`, success.
+- Scheduler admission is single-gateway serialized and derives global capacity from current durable live leases. It admits at most the configured total writers/starts, never more than one writer per workspace, revalidates task authority before acquisition and after acquisition, keeps fenced leases renewed for the full worker lifecycle, and requires the trusted runner to validate the current lease immediately before write-capable side effects.
+- Existing unattended workflow accounting remains unchanged: each workflow still starts at most one node per durable usage snapshot. The concurrency scheduler is an isolated trusted integration contract for independently approved cross-workspace candidates; it is not wired into the live machine runtime yet.
+- Current lock/scheduler serialization is scoped to one gateway Node process. Multi-process/distributed scheduler ownership remains unsupported until a separately reviewed fencing backend exists.
 
 ## Status
 
-**IN PROGRESS — Slices 1 and 2 and Slice 3A workspace locking/conflict semantics are complete and cloud-tested. Concurrent execution remains disabled. The next item is bounded concurrency budgets before any scheduler can start multiple workers.**
+**IN PROGRESS — Slices 1 and 2, Slice 3A workspace locking, and Slice 3B bounded concurrency budgets/scheduler contract are complete and cloud-tested. Live machine-runtime concurrent execution remains disabled. The next implementation item is richer operator visualization over existing sanitized evidence.**
 
 ---
 
@@ -381,8 +387,9 @@ Evidence:
 | Read-only orchestration dashboard contract | **Complete / cloud tested** |
 | Sequential specialist handoff | **Complete / cloud tested** |
 | Workspace locking/conflict policy | **Complete / cloud tested** |
-| Bounded concurrency budgets | **Next** |
-| Concurrent multi-worker orchestration | Not enabled |
+| Bounded concurrency budgets/scheduler contract | **Complete / cloud tested** |
+| Concurrent live machine-runtime orchestration | Not enabled |
+| Rich operator visualization | **Next** |
 
 ---
 
@@ -394,8 +401,8 @@ Evidence:
 4. Dirty worktrees must preserve pre-run user state and distinguish it from task-created changes.
 5. Validation commands are trusted local configuration outside model execution. Planner commands remain untrusted until explicit admission.
 6. Task JSON replacement is atomic; event, supervisor-decision, Sentinel observation, specialist-handoff and workflow budget-decision JSONL remain append-based durability models.
-7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow/budget/report/dashboard/handoff state or model-facing output.
-8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, budgets, dashboard state, specialist handoffs, lock ownership, or Hub participation.
+7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow/budget/report/dashboard/handoff/lock/scheduler state or model-facing output.
+8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, budgets, dashboard state, specialist handoffs, lock ownership, concurrency admission, or Hub participation.
 9. Native Hub approval is UX/defense-in-depth only; owner hook/executor enforcement is authoritative.
 10. Owner disconnect requires durable handoff/replacement ownership or fail-closed behavior.
 11. Arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams and unreviewed provider-owned execution remain disabled in the first pilot.
@@ -408,12 +415,13 @@ Evidence:
 18. Sentinel remains observational/reactive and cannot become process restart, safety-policy, or code-mutation authority.
 19. A workflow is ordering/state coordination only. Membership never grants task authority.
 20. Current task state retains detailed metrics for the latest run only. Multi-run historical usage that cannot be reconstructed causes unattended budget accounting to fail closed.
-21. Budgeted progression starts one node per durable usage snapshot.
+21. Budgeted workflow progression still starts one node per durable usage snapshot; cross-workspace concurrency must not reuse stale workflow accounting to start multiple nodes from the same workflow pass.
 22. Restart reconciliation never trusts stale workflow position and never replays active/terminal/escalated tasks.
 23. Dashboard/UI work remains a presentation/query layer until an explicitly reviewed action surface is designed; UI convenience cannot become a shortcut around MCP/service safety boundaries.
 24. Specialist handoffs carry provenance/evidence only and are revalidated against current task authority on every durable append; they cannot preserve stale scope or worker identity.
-25. Concurrent workspace writes remain disabled. The lock/fencing contract is cloud-tested, but scheduler concurrency still requires explicit bounded concurrency budgets plus independent task/Safety Plan revalidation before every writer acquisition/start.
-26. The current durable workspace lock store serializes competing acquisitions only within one gateway Node process; multi-process/distributed scheduling needs a separately reviewed fencing backend and is not enabled.
+25. Live concurrent machine-runtime writes remain disabled. The scheduler contract is cloud-tested, but a future live adapter must keep existing owner-targeted safe executors authoritative and validate the current fenced lease before every write-capable side effect.
+26. Durable workspace locks and concurrency admission are currently single-gateway-process primitives. Multiple independent gateway processes require a separately reviewed distributed fencing backend; unsupported multi-process scheduling must fail closed rather than infer shared capacity.
+27. A lease heartbeat failure aborts the scheduler lease session, but trusted worker adapters must honor the abort signal and validate current lease state before every coordinated side effect; lease possession alone never authorizes a write.
 
 ---
 
@@ -437,14 +445,21 @@ Evidence:
    - lock ownership grants no filesystem or task/Safety Plan authority;
    - competing acquisitions inside one gateway process deterministically admit one writer;
    - CI `#551` / `36110515174` green.
-7. **NEXT — Milestone 8 Slice 3B: bounded concurrency budgets and scheduler integration.**
-   - define a fail-closed concurrency budget before enabling any parallel start path;
-   - preserve one exclusive writer per workspace and begin, at most, with concurrency across distinct workspaces;
-   - independently revalidate durable task/Safety Plan authority before lock acquisition and worker start;
-   - bound total active writers and starts per scheduling pass; no inferred/unbounded capacity;
-   - restart/expiry/release accounting must derive from durable current evidence rather than stale scheduler position;
-   - cloud tests first; no live shared-runtime concurrency proof until explicitly authorized.
-8. **LATER — richer operator UI over existing sanitized dashboard/handoff/incident evidence.**
+7. **COMPLETE — Milestone 8 Slice 3B: bounded concurrency budgets and scheduler contract.**
+   - explicit bounded total writers and starts-per-pass; one writer per workspace remains fixed;
+   - capacity derives from current durable live lock evidence and malformed coordination state fails closed;
+   - live leases are renewable without changing lease/fence identity; old renewal claims become stale and expired leases cannot be resurrected;
+   - task authority is revalidated before and after lock acquisition;
+   - trusted worker lifetime is fenced and heartbeat-managed; lease validation remains required immediately before write-capable effects;
+   - existing per-workflow unattended accounting still contributes at most one node per durable usage snapshot;
+   - CI `#559` and `#569` green; no live shared-runtime concurrency proof performed.
+8. **NEXT — Milestone 8 Slice 3C: richer operator visualization.**
+   - build a VS Code/web presentation surface over the existing sanitized dashboard snapshot plus bounded incident/handoff/workflow evidence;
+   - remain read-only initially; no raw filesystem/shell/Hub/process controls and no new write authority;
+   - expose concurrency/lock state only through sanitized opaque summaries, not paths, credentials, lease secrets, model output or checkpoint/session internals;
+   - preserve deterministic limits/truncation/staleness metadata and explicit unavailable/error states;
+   - cloud-test view-model redaction, boundedness and deterministic ordering before any UI action surface is considered.
+9. **LATER — explicit proof that no team/subagent integration can bypass owner-targeted safe executors, before enabling any such feature or live concurrent machine-runtime adapter.**
 
 ---
 
@@ -458,13 +473,14 @@ Evidence:
 - 2026-09-25: **Milestone 7 COMPLETE.** Unattended progression remains task-authority bounded and restart-safe, with durable reactive incident visibility.
 - 2026-09-25: Milestone 8 Slice 1 dashboard contract implemented through `12a384c7033517c3922f6514844d6bb08c45a95c`, metadata hardened by `88d59d6f85edb52a1bd736c29865f159656c2687`, and acceptance-tested by `349c8f0c9fc6147b6f3fed55ca17f9688d0f3324`; CI `#526` / `36107456324` passed.
 - 2026-09-25: Milestone 8 Slice 2 sequential specialist handoff implemented through `0ad537276734811aa76d25aef2abce19f3790f49`, current-authority service `18dd9dcd3d8d629eced5e37e44e20ce9c6330044`, tests through `a160350ee51436fb8de03b6cfe61e9463c5218fc`; CI `#534` / `36108097496` and `#540` / `36108515738` passed.
-- 2026-09-25: Milestone 8 Slice 3A workspace lock/fencing contract completed through `2d27c655b59af05c345fd3d59f2cc484f67e34e6`, tests `d84253a8702e07d5bf2db7b622ac34d7e8a309f1`, durable store `1c3ed32b9ea2806308bf35f65ad1f7e3178f7303`, and acceptance tests `d7c6a757384aaeffb3b1847eae8f4595df9a3f6a`; CI `#551` / `36110515174` passed. Concurrent worker execution remains disabled.
+- 2026-09-25: Milestone 8 Slice 3A workspace lock/fencing contract completed through `2d27c655b59af05c345fd3d59f2cc484f67e34e6`, tests `d84253a8702e07d5bf2db7b622ac34d7e8a309f1`, durable store `1c3ed32b9ea2806308bf35f65ad1f7e3178f7303`, and acceptance tests `d7c6a757384aaeffb3b1847eae8f4595df9a3f6a`; CI `#551` / `36110515174` passed.
+- 2026-09-25: Milestone 8 Slice 3B bounded concurrency contract completed through `6c266ac80ba2beddeb78f060fb0f824326567b85`, tests `fb3e2bebfae6dd00984f0cf4fe1317f5941e0784`, lease renewal/live accounting through `e4eac8143ab21aebd0695c56055c6182e03d961d`, `c3aed67a26d7d378e83cc2f3a75e31d34e399f4f`, `480b91880c1a527b9cd3952c9f384666cd6f8995`, and scheduler contract/tests `1fe7e0a9e972007a0a05762936f1ab93ded8ac14` / `75efcd4230a31a6c9670d467d0db289b828b14b9`; CI `#559` / `36111154835` and `#569` / `36111750951` passed. Live machine-runtime concurrency remains disabled.
 
 ---
 
 # Current Next Step
 
-Begin **Milestone 8 Slice 3B — bounded concurrency budgets and scheduler integration**. First define a fail-closed concurrency-budget contract that grants no task authority: preserve one writer per workspace, allow at most explicitly bounded cross-workspace writer slots, independently revalidate durable task/Safety Plan authority before acquisition/start, derive restart accounting from current durable evidence, and keep live concurrent execution disabled until cloud acceptance is complete. Cloud tests first; no live shared-runtime writes.
+Begin **Milestone 8 Slice 3C — richer operator visualization**. Build a read-only VS Code/web-facing view model on top of the already-sanitized dashboard, workflow, incident, handoff and bounded concurrency evidence. Keep all authority boundaries unchanged: no raw paths, credentials, model output, checkpoint/session internals, generic filesystem/shell/Hub/process controls, or write-capable UI actions. Cloud tests first.
 
 ---
 
