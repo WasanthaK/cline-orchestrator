@@ -14,6 +14,7 @@ import {
   createLiveProofIsolation,
   stopLiveProofHubGracefully,
 } from "./live-proof-isolation.js";
+import { LiveProofSendBarrier } from "./live-proof-send-barrier.js";
 import { environmentWorkerProfileResolver } from "./mcp-main.js";
 import { rollbackTask } from "./rollback.js";
 import { SafetyPlanService } from "./safety-plan.js";
@@ -189,7 +190,10 @@ class ProofObservingRuntimeFactory implements ClineRuntimeFactory {
   private readonly sendSignals = new Map<string, SendSignal>();
   private readonly editors = new Map<string, CapturedEditor>();
 
-  constructor(private readonly base: ClineRuntimeFactory) {}
+  constructor(
+    private readonly base: ClineRuntimeFactory,
+    private readonly sendBarrier?: LiveProofSendBarrier,
+  ) {}
 
   private signal(workspaceRoot: string): SendSignal {
     let existing = this.sendSignals.get(workspaceRoot);
@@ -245,6 +249,7 @@ class ProofObservingRuntimeFactory implements ClineRuntimeFactory {
       },
       send: async (input) => {
         this.markSendStarted(workspaceRoot);
+        await this.sendBarrier?.enter(workspaceRoot);
         return await base.send(input);
       },
       abort: async (sessionId, reason) => await base.abort(sessionId, reason),
@@ -306,10 +311,11 @@ async function main(): Promise<void> {
     const taskB = await createApprovedProofTask(safetyPlans, workspaceB, 102);
 
     const locks = new WorkspaceLockStore(path.join(isolation.root, "coordination"));
+    const sendBarrier = new LiveProofSendBarrier([rootA, rootB]);
     const runner = new ScheduledHubWriterAuthorityRunner(
       registry,
       environmentWorkerProfileResolver(),
-      new SdkClineRuntimeFactory(),
+      new ProofObservingRuntimeFactory(new SdkClineRuntimeFactory(), sendBarrier),
     );
     const scheduler = new WriterConcurrencyScheduler(
       locks,
@@ -343,6 +349,7 @@ async function main(): Promise<void> {
     if (schedule.reservedTaskIds.length !== 2 || schedule.completedTaskIds.length !== 2) {
       fail(`parallel scheduler did not reserve and complete exactly two tasks: ${JSON.stringify(schedule)}`);
     }
+    if (!sendBarrier.bothSendsReached) fail("independent Hub sends never overlapped");
     if ((await locks.listActive()).length !== 0) fail("parallel writer leases were not released");
 
     const completedA = await assertCompletedTask(workspaceA, taskA.id, 101);
@@ -459,6 +466,7 @@ async function main(): Promise<void> {
       parallel: {
         completedTaskIds: schedule.completedTaskIds,
         simultaneousLeasesObserved: overlap.length,
+        overlappingHubSendsObserved: sendBarrier.bothSendsReached,
         distinctWorkspaceIds: new Set(overlap.map((item) => item.workspaceId)).size,
         distinctFenceTokens: new Set(overlap.map((item) => item.fenceToken)).size,
         distinctHubOwnerSessions: completedA.clineSessionId !== completedB.clineSessionId,

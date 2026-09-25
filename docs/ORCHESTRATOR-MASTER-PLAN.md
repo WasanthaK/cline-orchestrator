@@ -240,6 +240,10 @@ Evidence:
 
 ## Slice 9D — Disposable physical proof
 
+- [x] Prepare a gated disposable multi-workspace harness with isolated Hub/data,
+  registry and Git roots; require actual overlapping Hub sends before reporting
+  concurrent execution. Prepare a separate gated scheduled gateway restart
+  harness. See `docs/MILESTONE-9D-PHYSICAL-PROOF.md`.
 - [ ] Use isolated disposable repositories/workspaces before shared development workspaces.
 - [ ] Prove two independent workspaces execute write tasks concurrently with separate leases/owner sessions.
 - [ ] Prove same-workspace competing writer admission is denied.
@@ -452,12 +456,13 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 - 2026-09-25: Milestone 9A complete; adapter `9af0e30dfa740e4b36b959257dc0b9352658623a`, tests `6937640e02a6c75bab8c6a9e2bb8ec5ca173e2da`, CI `#596` / `36119645637`.
 - 2026-09-25: Milestone 9B complete; real scheduler/Hub integration cloud proof through stable branch-head CI `#614` / `36122721492`.
 - 2026-09-25: Milestone 9C complete; mid-flight lease-loss fail-safe CI `#620`, worker-crash/stale-executor CI `#622`, explicit fenced restart recovery CI `#628`, active Hub owner-loss/handoff recovery CI `#630`.
+- 2026-09-25: Milestone 9D harness review added a bounded overlap barrier and an isolated scheduled restart proof command. Local Node test runner: 262 passed; typecheck passed. No new physical proof has run. Next: run the three gated proofs on a suitable local provider and review their evidence before changing any 9D acceptance checkbox.
 
 ---
 
 # Current Next Step
 
-**Milestone 9 Slice 9D — disposable physical proof.** Prepare/review the isolated proof harness first. The proof must use disposable repositories/workspaces and preserve the current owner-targeted executor + fenced-lease boundary. Do not connect to, mutate or restart the user's shared local Cline/Hub/VS Code runtime without explicit user authorization immediately before that action.
+**Milestone 9 Slice 9D — disposable physical proof.** Run the three gated isolated commands in `docs/MILESTONE-9D-PHYSICAL-PROOF.md` with a working local provider and review their evidence. The proof must use disposable repositories/workspaces and preserve the current owner-targeted executor + fenced-lease boundary. Do not connect to, mutate or restart the user's shared local Cline/Hub/VS Code runtime without explicit user authorization immediately before that action.
 
 ---
 
