@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteUtf8 } from "./atomic-write.js";
 import {
@@ -6,6 +6,7 @@ import {
   assertWorkspaceLockState,
   createWorkspaceLockState,
   releaseWorkspaceWriter,
+  renewWorkspaceWriter,
   validateWorkspaceWriterClaim,
   WorkspaceLockError,
   type WorkspaceLockOptions,
@@ -15,6 +16,7 @@ import {
 } from "./workspace-lock.js";
 
 const mutationTails = new Map<string, Promise<void>>();
+const LOCK_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.json$/i;
 
 async function serializeMutation<T>(key: string, mutate: () => Promise<T>): Promise<T> {
   const previous = mutationTails.get(key) ?? Promise.resolve();
@@ -98,6 +100,37 @@ export class WorkspaceLockStore {
     return this.readState(workspaceId);
   }
 
+  /**
+   * Enumerates all currently live durable writer leases. Unknown files or malformed
+   * lock records fail closed so global concurrency accounting can never undercount
+   * because corrupt coordination evidence was silently ignored.
+   */
+  async listActive(now: Date = new Date()): Promise<WorkspaceLockStateV1[]> {
+    if (!Number.isFinite(now.getTime())) {
+      throw new WorkspaceLockError("lock enumeration clock is invalid", "lock_invalid");
+    }
+    let names: string[];
+    try {
+      names = await readdir(this.locksDir());
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return [];
+      throw new WorkspaceLockError("Workspace lock directory is unreadable", "lock_invalid");
+    }
+
+    const states: WorkspaceLockStateV1[] = [];
+    for (const name of names.sort()) {
+      const match = LOCK_FILE.exec(name);
+      if (!match) {
+        throw new WorkspaceLockError("Workspace lock directory contains an unsupported entry", "lock_invalid");
+      }
+      const state = await this.readState(match[1]);
+      if (state.activeWriter && Date.parse(state.activeWriter.expiresAt) > now.getTime()) {
+        states.push(state);
+      }
+    }
+    return states.map(cloneState);
+  }
+
   async acquire(
     request: WorkspaceWriterAcquireRequest,
     options: WorkspaceLockOptions = {},
@@ -119,6 +152,23 @@ export class WorkspaceLockStore {
     const state = await this.readState(claim.workspaceId);
     validateWorkspaceWriterClaim(state, claim, now);
     return cloneState(state);
+  }
+
+  async renew(
+    claim: WorkspaceWriterClaimV1,
+    leaseMs: number,
+    options: WorkspaceLockOptions = {},
+  ): Promise<{ state: WorkspaceLockStateV1; claim: WorkspaceWriterClaimV1 }> {
+    const key = this.lockPath(claim.workspaceId);
+    return serializeMutation(key, async () => {
+      const current = await this.readState(claim.workspaceId);
+      const renewed = renewWorkspaceWriter(current, claim, leaseMs, options);
+      await this.writeState(renewed.state);
+      return {
+        state: cloneState(renewed.state),
+        claim: structuredClone(renewed.claim),
+      };
+    });
   }
 
   async release(claim: WorkspaceWriterClaimV1): Promise<WorkspaceLockStateV1> {
