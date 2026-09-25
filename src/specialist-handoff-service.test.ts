@@ -170,7 +170,7 @@ test("specialist service cannot cross-bind a supervisor packet to another durabl
           capturedAt: "2026-09-25T08:02:00.000Z",
         }],
       }),
-      /Task not found/i,
+      /was not found/i,
     );
   } finally {
     await rm(root, { recursive: true, force: true });
