@@ -82,7 +82,7 @@ function dashboard(): OrchestrationDashboardV1 {
     incidents: [{
       incidentId: IDS.incident,
       workspaceId: IDS.workspace,
-      kind: "runtime_unavailable",
+      kind: "gateway_failure",
       severity: "critical",
       status: "open",
       firstSeenAt: "2026-09-25T08:18:00.000Z",
