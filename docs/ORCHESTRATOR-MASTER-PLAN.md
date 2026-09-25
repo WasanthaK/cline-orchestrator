@@ -287,13 +287,20 @@ Evidence:
 
 ## Slice 9B — Live scheduler/runtime integration
 
-- [ ] Connect `writer-concurrency-scheduler` to orchestrator-owned Cline Hub sessions through the lease-aware trusted adapter.
-- [ ] Enforce configurable total writer budget and one live writer per workspace.
-- [ ] Permit concurrency only across distinct workspaces in the first live implementation.
-- [ ] Every live writer uses a distinct orchestrator-owned owner session; never silently take over an existing VS Code-created write session.
-- [ ] Scheduler admission starts only already-approved durable tasks and grants no new path/tool/command authority.
-- [ ] Existing workflow budget/checkpoint accounting remains authoritative and cannot be bypassed by concurrency.
-- [ ] Implementation/cloud tests must not connect to or mutate the shared local live Cline/Hub runtime.
+- [x] Connect `writer-concurrency-scheduler` to orchestrator-owned Cline Hub sessions through the lease-aware trusted adapter.
+- [x] Enforce configurable total writer budget and one live writer per workspace.
+- [x] Permit concurrency only across distinct workspaces in the first live implementation.
+- [x] Every live writer uses a distinct orchestrator-owned owner session; never silently take over an existing VS Code-created write session.
+- [x] Scheduler admission starts only already-approved durable tasks and grants no new path/tool/command authority.
+- [x] Existing workflow budget/checkpoint accounting remains authoritative and cannot be bypassed by concurrency.
+- [x] Implementation/cloud tests do not connect to or mutate the shared local live Cline/Hub runtime.
+
+Evidence:
+- Lease-aware Hub runtime wrapper `a4b9d34e9c7e68a8f1fb77374427ef79f6cf8137`; wrapper tests `442f2c4053bfb046b93940a2ea759a1a6b705c24`.
+- Scheduled Hub writer authority runner through `bbf81b8710099eaa2690a439b90d2c1bfbee116a`.
+- Real scheduler + durable lock-store + registered-workspace + fake-Hub integration tests `2db5cb5ab09bb4fa3f1808ba133d722dbcaefd92`; Git-baseline acceptance correction `c9c05bacd104f91a46c3fd1b6eee4efdcad90bff`.
+- CI `#610` / `36122080710`: install, typecheck and full test suite passed. The acceptance proof runs two distinct registered Git workspaces concurrently through separate orchestrator-owned Hub sessions, lease-aware write executors, checkpoints/diff-safety and clean lease release; pre-existing session history and registry/profile drift fail before runtime creation.
+- Initial CI `#608` correctly surfaced that non-Git disposable fixtures could not satisfy the existing checkpoint/diff-safety completion gate; the fixture was corrected rather than weakening production safety.
 
 ## Slice 9C — Failure, restart and stale-writer safety
 
@@ -321,7 +328,7 @@ Milestone 9 is complete only when the orchestrator can safely run independent wr
 
 ## Status
 
-**IN PROGRESS — Slice 9A COMPLETE; Slice 9B is next. Live shared-runtime concurrency is still disabled.**
+**IN PROGRESS — Slices 9A and 9B COMPLETE; Slice 9C is next. Live shared-runtime concurrency remains disabled pending failure/restart closure and physical proof.**
 
 ---
 
@@ -522,7 +529,7 @@ edit authority
 | 6 | GPT Supervisor | Complete |
 | 7 | Unattended workflows | Complete |
 | 8 | UI + concurrency safety contracts | Complete |
-| 9 | Controlled live multi-workspace workers | **In progress — 9A complete, 9B next** |
+| 9 | Controlled live multi-workspace workers | **In progress — 9A/9B complete, 9C next** |
 | 10 | Interactive operator control plane | Planned |
 | 11 | Secure remote ChatGPT control | Planned |
 | 12 | Distributed / multi-machine orchestration | Planned |
@@ -554,7 +561,8 @@ edit authority
 | Workspace locks/fencing + scheduler contract | Complete / cloud tested |
 | Owner-targeted delegation no-bypass invariant | Complete / cloud tested |
 | Lease-aware owner write boundary | **Complete / cloud tested — M9A** |
-| Live machine-runtime scheduler integration | Not enabled — M9B next |
+| Scheduler -> orchestrator-owned Hub-session integration | **Complete / cloud tested with fake Hub runtime — M9B** |
+| Shared live machine-runtime concurrency | Not enabled — requires M9C + M9D |
 | Native team/subagent execution | Not enabled — M13 |
 | Remote ChatGPT control | Not enabled — M11 |
 | Distributed/multi-machine scheduler | Not enabled — M12 |
@@ -580,8 +588,8 @@ edit authority
 14. Current unattended accounting fails closed when historical usage cannot be reconstructed.
 15. Locks/scheduler are single-gateway primitives until Milestone 12.
 16. Lease heartbeat failure must abort live adapters; lease possession alone never authorizes writes.
-17. Slice 9A proves the write guard contract but **does not wire it into live Cline execution**.
-18. Live concurrent machine-runtime writes remain disabled until Slice 9B+9C implementation and Slice 9D proof.
+17. Slice 9A proves the immediate pre-write durable-authority + fenced-lease guard and leaves existing owner-targeted safe executors authoritative.
+18. Slice 9B proves cloud/fake-runtime scheduler-to-Hub-session wiring, distinct orchestrator owner sessions, checkpoint/diff-safety preservation and no silent takeover; shared live writes remain disabled until Slice 9C failure/restart closure and Slice 9D physical proof.
 19. Native Cline teams/subagents require Milestone 13 and cannot be enabled by configuration alone.
 20. Push, merge, deploy, destructive Git, secret access, external-network mutation and system changes remain separately gated.
 21. Any proof that mutates/restarts shared local Hub/Cline/VS Code runtime requires explicit user authorization immediately before that proof.
@@ -592,8 +600,8 @@ edit authority
 
 1. **COMPLETE — Milestones 1–8.**
 2. **COMPLETE — Milestone 9 Slice 9A.** Lease-aware owner-targeted write boundary; CI `#596` / `36119645637`.
-3. **NEXT — Milestone 9 Slice 9B.** Wire `writer-concurrency-scheduler` to orchestrator-owned Hub sessions through the new lease-aware adapter, using cloud/fake-runtime tests only first.
-4. **THEN — Milestone 9 Slice 9C.** Worker/lease/restart/stale-owner failure behavior.
+3. **COMPLETE — Milestone 9 Slice 9B.** Scheduler -> orchestrator-owned lease-aware Hub-session integration with real scheduler/lock/registry/Git evidence and fake Hub runtime; CI `#610` / `36122080710`.
+4. **NEXT — Milestone 9 Slice 9C.** Worker crash, heartbeat/lease loss, owner/Hub disconnect, gateway restart and stale/duplicate writer safety; cloud/fake-runtime first.
 5. **GATED PHYSICAL PROOF — Milestone 9 Slice 9D.** Disposable isolation first; explicit authorization before touching shared live runtime.
 6. **FUTURE IN ORDER — Milestones 10–18.**
 7. **STILL GATED — native teams/subagents, distributed scheduling, UI write actions, push/merge/deploy/destructive Git, secrets, external-network mutation or system changes** until their milestone/policy gate is satisfied.
@@ -606,12 +614,13 @@ edit authority
 - 2026-09-25: Milestone 8 dashboard/handoffs/locks/scheduler/operator visualization/no-bypass boundary completed through CI `#588` / `36114475941`.
 - 2026-09-25: Canonical roadmap extended through Milestone 18 in `228acad723add7cd4f6b81897700a2391625ab21`.
 - 2026-09-25: **Milestone 9 Slice 9A COMPLETE.** Lease-aware Hub safety adapter `9af0e30dfa740e4b36b959257dc0b9352658623a` wraps the existing owner-targeted `editor`/`applyPatch` boundary with current durable-authority and fenced-lease validation. Regression tests `6937640e02a6c75bab8c6a9e2bb8ec5ca173e2da`; CI `#596` / `36119645637` passed full typecheck/tests. Live runtime integration remains disabled.
+- 2026-09-25: **Milestone 9 Slice 9B COMPLETE.** Lease-aware Hub runtime wrapper `a4b9d34e9c7e68a8f1fb77374427ef79f6cf8137`, scheduled owner runner through `bbf81b8710099eaa2690a439b90d2c1bfbee116a`, runtime tests `442f2c4053bfb046b93940a2ea759a1a6b705c24`, scheduler/runtime integration tests `2db5cb5ab09bb4fa3f1808ba133d722dbcaefd92`, Git-baseline correction `c9c05bacd104f91a46c3fd1b6eee4efdcad90bff`; CI `#610` / `36122080710` passed full typecheck/tests. Two distinct registered Git workspaces execute concurrently through separate orchestrator-owned sessions and the lease-aware write boundary in fake-runtime cloud proof. Shared live runtime remains untouched/disabled.
 
 ---
 
 # Current Next Step
 
-**Milestone 9 Slice 9B — live scheduler/runtime integration, cloud/fake-runtime first.** Connect the existing scheduler contract to orchestrator-owned Hub-session construction through the Slice 9A lease-aware safety adapter. Preserve one writer per workspace, existing task/Safety Plan authority, workflow budgets/checkpoints and distinct owner sessions. Do **not** connect to or mutate the shared local Cline/Hub/VS Code runtime during the cloud implementation/tests.
+**Milestone 9 Slice 9C — failure, restart and stale-writer safety, cloud/fake-runtime first.** Prove worker crash, heartbeat/lease loss, Hub/owner disconnect, gateway restart, stale/expired fence and duplicate-writer behavior transition to durable safe states and cannot perform later writes or revive old ownership. Preserve the Slice 9A write boundary and Slice 9B orchestrator-owned-session integration. Do **not** connect to or mutate the shared local Cline/Hub/VS Code runtime during this slice.
 
 ---
 
