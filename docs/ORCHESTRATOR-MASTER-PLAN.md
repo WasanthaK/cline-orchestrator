@@ -366,8 +366,8 @@ Implemented:
 
 - [x] Supervisor task schema and bounded implementation instructions.
 - [x] Planner produces acceptance criteria and validation commands.
-- [ ] Reviewer consumes diff + validation + task evidence and can request bounded repairs.
-- [ ] Reviewer cannot bypass safety gates.
+- [x] Reviewer consumes diff + validation + task evidence and can request bounded repairs.
+- [x] Reviewer cannot bypass safety gates.
 - [ ] Durable supervisor decisions and human escalation state.
 
 ## Slice 1 — Supervisor Task Contract + Bounded Implementation Instructions
@@ -424,9 +424,32 @@ Evidence:
 - Planner execution seam: `9f7829caeb6324d38613b92cb5a1d6293db27084`.
 - Execution/fail-closed tests: `5f83903b61494c458474d2ab3f2402101170a0c4`; CI `#448` / `36098312588`, success.
 
+## Slice 3 — Sanitized Reviewer Evidence + Bounded Decisions
+
+**COMPLETE — reviewer recommendations are advisory and cannot override durable safety/completion evidence.**
+
+Implemented:
+
+- versioned reviewer evidence packet is derived from the approved supervisor task plus durable task state;
+- reviewer sees objective, acceptance criteria, approved/protected scope patterns, bounded task counters/state, checkpoint availability, validation pass/count/timing metadata, and bounded diff-safety summary/counts;
+- canonical workspace paths, Hub/Cline session IDs, raw prompts/output, validation stdout/stderr, checkpoint refs/backup paths and credentials are deliberately omitted;
+- reviewer result is restricted to `pass`, `repair`, or `escalate`, bound to the same supervisor/orchestrator task IDs and marked `completionAuthority: "advisory_only"`;
+- output validation rejects extra authority-bearing fields instead of ignoring them;
+- `pass` is locally rejected unless required validation evidence passes, diff safety is available and passed, the rollback checkpoint is available/not restored, and there is no pending human escalation;
+- `repair` requires exactly one bounded repair instruction and cannot carry an escalation reason or any scope/validation/policy/worker/capability override fields;
+- `escalate` requires exactly one bounded escalation reason and cannot carry a repair instruction;
+- reviewer prompt explicitly forbids changing trusted validation commands, Safety Plan, worker/policy identity, scope, protected paths, shell/network/MCP/plugin authority, subagents or agent teams;
+- `runSupervisorReviewer()` executes one injected reviewer-model turn and locally validates the untrusted result; provider/model failures fail closed;
+- reviewer cannot mark a task complete; orchestrator validation and checkpoint-relative diff safety remain authoritative.
+
+Evidence:
+
+- Reviewer contract/evidence implementation: `72cb1620efdef8455d22f448318ddf907b5e7933`.
+- Reviewer sanitization, pass-gating, authority-rejection, repair/escalation and execution tests: `19024c79c178b9c9e58854065fa98d2d4a029cd1`; CI `#454` / `36098699621`, success.
+
 ## Status
 
-**IN PROGRESS — Slices 1–2 complete; Slice 3 Reviewer is the first unfinished implementation item.**
+**IN PROGRESS — Slices 1–3 complete; durable supervisor decisions + human escalation state is the final unfinished Milestone 6 acceptance item.**
 
 ---
 
@@ -494,7 +517,8 @@ Evidence:
 | Live shared VS Code/Hub write proof | **Physically proven including owner-loss/replacement-owner recovery** |
 | Supervisor task schema + bounded implementation instructions | **Implemented + cloud tested** |
 | Supervisor planner | **Implemented + cloud tested; proposals remain non-authoritative** |
-| Supervisor reviewer | Next |
+| Supervisor reviewer | **Implemented + cloud tested; recommendations remain advisory** |
+| Durable supervisor decisions / escalation state | Next |
 | Orchestrator Sentinel reactive incident tracking | Planned; GitHub issue #2 |
 | Unattended task DAG | Not started |
 
@@ -526,7 +550,8 @@ Evidence:
 22. Disposable Windows physical proofs must isolate Git checkout policy (`core.autocrlf=false`) when byte-exact assertions are required; production rollback authority remains fingerprint-based.
 23. The local 27B model can consume substantial CPU/GPU/context resources during repeated physical proof loops. Once a safety property has been physically demonstrated and the remaining discrepancy is isolated to the harness with cloud regression coverage, do not repeat expensive local inference solely to reproduce the same evidence.
 24. Planner-generated validation commands remain untrusted proposals. They must never become executable validation configuration merely because the planner emitted them; a later trusted admission/decision step must remain explicit and bounded.
-25. The future Orchestrator Sentinel is observational/reactive, not a second autonomous controller. It may capture/deduplicate incidents and fail closed, but it must not restart/kill Ollama or Cline, mutate shared VS Code/Hub state, widen Safety Plans, alter worker/policy identity, grant disabled capabilities, or modify user code automatically.
+25. Reviewer recommendations are advisory evidence only. A reviewer `pass` cannot override missing/failed validation, diff safety, checkpoint state, pending human escalation, or any Unit 1–5 safety boundary; reviewer repair text cannot grant new authority.
+26. The future Orchestrator Sentinel is observational/reactive, not a second autonomous controller. It may capture/deduplicate incidents and fail closed, but it must not restart/kill Ollama or Cline, mutate shared VS Code/Hub state, widen Safety Plans, alter worker/policy identity, grant disabled capabilities, or modify user code automatically.
 
 ---
 
@@ -552,13 +577,20 @@ Only work on the first unfinished implementation item unless a prerequisite defe
    - extra authority-bearing fields are rejected rather than ignored;
    - planner cannot widen paths, change worker/policy identity, grant shell/network/MCP/plugin authority, or mark the task complete;
    - planner model receives no mutation/tool authority; cloud CI `#448` is green.
-8. **NEXT — Milestone 6 Slice 3: Reviewer consumes diff + validation + task evidence and can request bounded repairs.**
-   - reviewer input must be sanitized evidence, not raw machine authority;
-   - reviewer may return pass / bounded-repair-request / human-escalation recommendation only;
-   - repair requests must remain inside the existing approved scope and cannot alter trusted validation/policy/worker identity;
-   - reviewer cannot mark a task complete independently of orchestrator validation/diff-safety gates;
+8. **COMPLETE — Milestone 6 Slice 3: sanitized Reviewer evidence + bounded decisions.**
+   - reviewer receives bounded durable task/validation/diff/checkpoint evidence with raw runtime/output details omitted;
+   - pass / repair / escalate are the only decisions and completion authority remains advisory;
+   - pass is rejected locally unless required validation/diff/checkpoint/escalation evidence is satisfied;
+   - repair/escalation outputs cannot carry scope, trusted validation, worker/policy or disabled-capability overrides;
+   - cloud CI `#454` is green; no live shared-runtime writes.
+9. **NEXT — Milestone 6 Slice 4: durable supervisor decisions + human escalation state.**
+   - persist planner/reviewer decisions with version, timestamps, task binding and provenance;
+   - planner proposals must remain non-authoritative until an explicit trusted admission step accepts bounded acceptance criteria and/or validation configuration;
+   - reviewer repair decisions may queue only bounded continuation inside the existing approved envelope; no scope expansion;
+   - reviewer escalation recommendations must map to durable `waiting_for_human` state rather than silently widening authority;
+   - preserve an auditable decision timeline and fail closed on stale/mismatched task binding;
    - add cloud tests first; no live shared-runtime writes.
-9. **TRACKED FUTURE — Orchestrator Sentinel reactive incident tracking (GitHub issue #2).**
+10. **TRACKED FUTURE — Orchestrator Sentinel reactive incident tracking (GitHub issue #2).**
    - add after core Planner/Reviewer supervision or at the start of Milestone 7;
    - persist bounded/redacted incident evidence, deduplicate repeats, expose sanitized status, and fail closed when authority/recovery is uncertain;
    - never become an automatic process/runtime restart or code-mutation authority.
@@ -590,13 +622,14 @@ Only work on the first unfinished implementation item unless a prerequisite defe
 - 2026-09-25: Final physical run again reached replacement generation 2, completed in about 95 seconds, passed configured validation and diff safety, and rollback returned `rolled_back`. The only failed assertion was raw LF-vs-CRLF content comparison after Windows checkout; production rollback's fingerprint verification had succeeded. Disposable proof Git isolation fix `4d5cfc5d9b5c5f628a8fe2730671f84c5a51805d` + regression `c1c714457b9930b8a10d3321d2e0972cbdca78f3` passed CI `#438` / `36082887715`.
 - 2026-09-25: Milestone 5 closed on accumulated physical and cloud evidence. No further local owner-loss rerun is required because it would reproduce already-proven recovery behavior while imposing unnecessary load on the user's 27B local inference machine.
 - 2026-09-25: Milestone 6 Slice 2 Planner implemented through `5f83903b61494c458474d2ab3f2402101170a0c4`. The planner receives bounded sanitized task context, returns only bound acceptance criteria plus proposal-only validation commands, rejects authority-bearing extra fields, and fails closed on model/provider errors. CI `#448` / `36098312588` passed typecheck and the full test suite.
+- 2026-09-25: Milestone 6 Slice 3 Reviewer implemented through `19024c79c178b9c9e58854065fa98d2d4a029cd1`. Reviewer input is sanitized durable task/validation/diff/checkpoint evidence; pass is gated by local evidence; repair/escalation outputs are bounded and non-authoritative; authority-bearing fields fail closed. CI `#454` / `36098699621` passed typecheck and the full test suite.
 - 2026-09-25: Future reactive operations requirement captured as GitHub issue #2, **Orchestrator Sentinel reactive incident tracking**. Sentinel is explicitly observational/reactive and cannot become a new runtime/process/code authority.
 
 ---
 
 # Current Next Step
 
-Begin **Milestone 6 Slice 3 — Reviewer** only. Define a bounded reviewer evidence packet from sanitized task/diff/validation/checkpoint evidence and a strict reviewer result contract (pass, bounded repair request, or human-escalation recommendation). A reviewer repair request must remain inside the existing approved Safety Plan scope, cannot change trusted validation commands, worker/policy identity, or disabled capabilities, and cannot mark the task complete independently of orchestrator validation and checkpoint-relative diff safety. Add cloud tests first; do not perform live shared-runtime writes.
+Begin **Milestone 6 Slice 4 — durable supervisor decisions + human escalation state** only. Persist bounded/versioned planner and reviewer decisions with task binding and provenance; keep planner validation commands non-authoritative until an explicit trusted admission step; allow reviewer repair requests to drive only bounded continuation inside the existing approved envelope; map reviewer escalation recommendations to durable `waiting_for_human` state rather than expanding authority; preserve an auditable supervisor decision timeline; fail closed on stale/mismatched bindings. Add cloud tests first and do not perform live shared-runtime writes.
 
 ---
 
