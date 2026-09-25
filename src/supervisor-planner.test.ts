@@ -5,6 +5,7 @@ import {
 } from "./supervisor-task.js";
 import {
   renderSupervisorPlannerPrompt,
+  runSupervisorPlanner,
   SUPERVISOR_PLANNER_LIMITS,
   SupervisorPlannerError,
   validateSupervisorPlannerProposal,
@@ -180,6 +181,64 @@ test("planner proposal enforces item counts and string bounds", () => {
         "x".repeat(SUPERVISOR_PLANNER_LIMITS.maxValidationCommandChars + 1),
       ],
       validationAuthority: "proposal_only",
+    }),
+    (error: unknown) =>
+      error instanceof SupervisorPlannerError && error.code === "proposal_invalid",
+  );
+});
+
+test("planner execution seam gives the model only bounded planning input and validates its output", async () => {
+  const task = supervisorTask();
+  let requestSeen: unknown;
+  const proposal = await runSupervisorPlanner(task, {
+    async plan(request) {
+      requestSeen = request;
+      return {
+        schemaVersion: 1,
+        supervisorTaskId: request.supervisorTaskId,
+        taskId: request.taskId,
+        acceptanceCriteria: ["Typecheck and tests remain green."],
+        proposedValidationCommands: ["npm run typecheck", "npm test"],
+        validationAuthority: "proposal_only",
+      };
+    },
+  });
+
+  assert.deepEqual(proposal.proposedValidationCommands, ["npm run typecheck", "npm test"]);
+  const serializedRequest = JSON.stringify(requestSeen);
+  assert.ok(serializedRequest.includes(IDS.supervisor));
+  assert.ok(serializedRequest.includes(IDS.task));
+  assert.equal(serializedRequest.includes("/private/workspace"), false);
+  assert.equal(serializedRequest.includes("hub-session-secret"), false);
+  assert.equal(serializedRequest.includes("sensitive worker output"), false);
+});
+
+test("planner execution seam fails closed on model failure and invalid model output", async () => {
+  const task = supervisorTask();
+
+  await assert.rejects(
+    runSupervisorPlanner(task, {
+      async plan() {
+        throw new Error("provider unavailable");
+      },
+    }),
+    (error: unknown) =>
+      error instanceof SupervisorPlannerError && error.code === "planner_failed",
+  );
+
+  await assert.rejects(
+    runSupervisorPlanner(task, {
+      async plan() {
+        return {
+          schemaVersion: 1,
+          supervisorTaskId: IDS.supervisor,
+          taskId: IDS.task,
+          acceptanceCriteria: [],
+          proposedValidationCommands: [],
+          validationAuthority: "proposal_only",
+          modelShellAllowed: true,
+        };
+      },
     }),
     (error: unknown) =>
       error instanceof SupervisorPlannerError && error.code === "proposal_invalid",
