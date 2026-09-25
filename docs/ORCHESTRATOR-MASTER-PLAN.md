@@ -36,7 +36,7 @@ VS Code Cline   Cline session
 Workspace / Git / validation
 ```
 
-The system should support long-running and eventually unattended coding work while preserving human control, reversible workspace changes, durable project memory, bounded model context, fail-closed authority, reactive incident visibility, and evidence-based completion.
+The system should support long-running and unattended coding work while preserving human control, reversible workspace changes, durable project memory, bounded model context, fail-closed authority, reactive incident visibility, and evidence-based completion.
 
 ---
 
@@ -53,6 +53,7 @@ The system should support long-running and eventually unattended coding work whi
 9. **Sentinel is observational.** Incident detection/resolution evidence never grants execution authority or process-control privileges.
 10. **Workflow ordering is not workflow authority.** A DAG may coordinate independently approved tasks, but cannot grant paths, commands, worker identity, model capabilities, or Safety Plan scope. Automatic progression may pass only an opaque task ID to a starter that independently revalidates the task's existing authority.
 11. **Unattended budgets fail closed.** Missing historical usage evidence, exhausted limits, missing checkpoint evidence, or an untrusted starter checkpoint mechanism prevents another automatic node start; limits are never silently increased.
+12. **Workflow restart never replays stale position.** Resume reloads the immutable workflow plus current durable task/budget evidence, then selects only still-`created` nodes; active, terminal, escalated or unsafe nodes are never replayed from workflow state alone.
 
 ---
 
@@ -115,24 +116,6 @@ Key closure: through `7fa6abebbc00b801349d321a98efd626795e2d1f`; CI `#194` / `35
 
 # Milestone 4 — Durable Project Memory
 
-## Durable structure
-
-```text
-.orchestrator/
-  project.json
-  tasks/
-  task-summaries/
-  events/
-  checkpoints/
-  handoffs/
-  memory/
-    architecture.md
-    decisions.md
-    code-map.md
-    conventions.md
-    known-issues.md
-```
-
 ## Acceptance
 
 - [x] Stable project identity and metadata.
@@ -188,14 +171,9 @@ Pinned Cline generation: `@cline/sdk 0.0.83` / `@cline/core 0.0.83`.
 - Policy/executor boundary through `46da20d18cd703018c54207258d4fb2422e71eeb`; CI `#311/#312`.
 - Hub runtime/safety wiring through `32c057d30bc70533233477e87f7e01ec09b2e04a`; CI `#329/#330`.
 - Machine MCP implementation through `ee47237d6ca7e1571f064923c909fdfe9bc07e65`; CI `#351/#352`.
-- Windows direct-entry fix through `0f3741eb3c231696bb2cf909be3b948a71125005`; CI `#365/#366`.
-- Pinned Hub packaging compatibility through `7fb9d3c2c394aab1f038208854cae7a3f2b77cc9`.
-- Windows atomic-state retry `670d27d077d6b45ce1dfe9204510405b530385cf`; CI `#383/#384`.
 - Restart reconciliation `8b6bc285e7a79a88576babcd62716cf09d2bff97`; CI `#385/#386`.
-- Diagnostic harness `f3b39a1e5f485a770ca87574da6747ff72eadecc` + `fb591f66bfa6b19255303c8bc9abbd69f6649997`; CI `#416` / `35993678361`.
 - Explicit-endpoint Hub auth handoff `99ff5d0ffccda2f531aadd0c95abf19314f89138`; smoke test `182705ab6540fa4e339b304679cd150d7aacc8e8`; CI `#426` / `36071434059`.
 - Dual pinned Core launcher shims `318919d42c2085207e228574bda272bd4d2b152a` + tests `e73e02e3fb7808f37df07241e5ab1309892f6b9a`; CI `#430`.
-- Owner-loss proof timeout alignment `3603b530153d8da2ed0d38dfefa4d4a225eac3af`; CI `#434`.
 - Disposable Git `core.autocrlf=false` isolation `4d5cfc5d9b5c5f628a8fe2730671f84c5a51805d` + regression `c1c714457b9930b8a10d3321d2e0972cbdca78f3`; CI `#438`.
 
 ### Physical owner-loss closure
@@ -216,47 +194,6 @@ A final proof assertion saw LF/CRLF byte differences after Windows checkout. Pro
 
 Add Planner/Reviewer supervision without creating a second execution or authorization path.
 
-## Slice 1 — Supervisor Task Contract
-
-- [x] Versioned task contract bound to approved durable authority.
-- [x] Bounded objective/criteria/validation/scope fields.
-- [x] Raw workspace, Hub/session identity and worker output omitted.
-- [x] Instructions repeat approved/protected scope and disabled capabilities.
-- [x] Scope expansion requires stop + escalation; model completion remains advisory.
-
-Evidence: `76d737c6083830e62eac8171e797df9c96ac4291`, `b3aed68158c3f12cd11d67bab97c37e045842ac5`, `d8a064aa0ec6328c69c390e577fb4637af7509f9`; CI `#359/#360`.
-
-## Slice 2 — Bounded Planner
-
-- [x] Proposal contains only bound IDs, criteria, proposed validation and `proposal_only` authority.
-- [x] Extra authority-bearing fields rejected.
-- [x] Planner cannot widen scope/change worker-policy/grant disabled capabilities/complete task.
-- [x] Model adapter has no mutation authority; failures fail closed.
-
-Evidence: `04cb34ffb8a813e1a55338000b99d9a8dc173d50`, `10a5770b000fe9c250a8c0689bc4f43de1ec5ab3`, `9f7829caeb6324d38613b92cb5a1d6293db27084`, `5f83903b61494c458474d2ab3f2402101170a0c4`; CI `#448` / `36098312588`.
-
-## Slice 3 — Sanitized Reviewer
-
-- [x] Reviewer receives bounded durable evidence, not raw runtime/output/credential data.
-- [x] Only `pass`, `repair`, `escalate`; completion authority is advisory.
-- [x] `pass` locally gated by durable validation/diff/checkpoint/escalation evidence.
-- [x] Repair/escalation bounded; extra authority-bearing fields rejected.
-- [x] Model/provider failure fails closed.
-
-Evidence: `72cb1620efdef8455d22f448318ddf907b5e7933`, `19024c79c178b9c9e58854065fa98d2d4a029cd1`; CI `#454` / `36098699621`.
-
-## Slice 4 — Durable Decisions + Human Escalation
-
-- [x] Append-only per-task supervisor decision log.
-- [x] Decisions versioned/timestamped and bound to Safety Plan/profile/revision identity.
-- [x] Planner proposal does not auto-trust validation commands.
-- [x] Trusted admission explicit, pre-run only, exact-subset bounded.
-- [x] Reviewer pass/repair persist without authority/lifecycle mutation.
-- [x] Reviewer escalation reuses durable `waiting_for_human`.
-- [x] Stale authority fails closed; logs omit runtime secrets/raw paths/output.
-
-Evidence: `5b44d2baf79451f33afcd5563d54a3f42ffc5959`, `f2b67a6ff4d870fab04c36b9d2245613d3347d2b`, `ce0620427e821a66ffd64942720f2bc0b942b055`; CI `#462` / `36099296457`.
-
 ## Acceptance
 
 - [x] Supervisor task schema and bounded instructions.
@@ -264,6 +201,12 @@ Evidence: `5b44d2baf79451f33afcd5563d54a3f42ffc5959`, `f2b67a6ff4d870fab04c36b9d
 - [x] Reviewer sanitized evidence + bounded repairs.
 - [x] Reviewer cannot bypass safety/completion gates.
 - [x] Durable decisions + human escalation.
+
+Evidence:
+- Supervisor task contract through `d8a064aa0ec6328c69c390e577fb4637af7509f9`; CI `#359/#360`.
+- Planner through `5f83903b61494c458474d2ab3f2402101170a0c4`; CI `#448` / `36098312588`.
+- Reviewer through `19024c79c178b9c9e58854065fa98d2d4a029cd1`; CI `#454` / `36098699621`.
+- Durable decisions/human escalation through `ce0620427e821a66ffd64942720f2bc0b942b055`; CI `#462` / `36099296457`.
 
 ## Status
 
@@ -275,109 +218,120 @@ Evidence: `5b44d2baf79451f33afcd5563d54a3f42ffc5959`, `f2b67a6ff4d870fab04c36b9d
 
 ## Objective
 
-Progress from supervised single-task execution to bounded unattended workflows, with reactive incident visibility in place before autonomy increases.
+Progress from supervised single-task execution to bounded unattended workflows, with reactive incident visibility before autonomy increases.
 
 ## Slice 0 — Orchestrator Sentinel
 
 Tracked as GitHub issue **#2 — Add Orchestrator Sentinel reactive incident tracking**.
 
-### Incident core
+- [x] Durable append-only incident observations and deterministic deduplication.
+- [x] Bounded/redacted incident evidence and fail-closed/human-action state.
+- [x] Evidence-based resolution only from later durable task events.
+- [x] Read-only registered-workspace incident query and `list_incidents` MCP exposure.
+- [x] No process/runtime/code/policy mutation authority.
 
-- [x] Versioned append-only observation journal under `.orchestrator/sentinel/`.
-- [x] Deterministic incident fingerprinting/deduplication across equivalent workspace failures.
-- [x] Re-scanning the same durable event does not inflate occurrences.
-- [x] Bounded/redacted summaries strip bearer/API-key/secret/password values, URLs, absolute paths and UUIDs from free-text evidence.
-- [x] Incident model tracks severity, first/last seen, occurrence count, fail-closed state, human-action requirement, recovery attempts and bounded task/event references.
-- [x] Existing task events classify stalls, session recovery, validation failure, diff-safety failure, rollback failure, checkpoint unavailability, human escalation, provider failure, gateway failure and generic task failure.
-- [x] Resolution requires a real later durable task event of an allowed recovery type.
-- [x] Sentinel exposes no process/runtime/code/policy mutation methods.
-
-Evidence: `6b37e054a441cf54195870234caef764d31cdb0d`, tests `72f5f507312b532d4aa88bc32da73d1fce76a16a`, correction `c4756161ee558cbfe05817f0f9901081fcdf2455`; CI `#470` / `36099791355`.
-
-### Read-only operational exposure
-
-- [x] Registered-workspace query resolves only opaque workspace ID and keeps canonical root machine-local.
-- [x] Query refreshes Sentinel observations from durable task/event history.
-- [x] Open incidents are default; resolved incidents and result limit are explicit bounded query options.
-- [x] `list_incidents` is exposed through the existing MCP as read-only/non-destructive.
-- [x] MCP schema contains no raw workspace path, session ID, Hub token, command or credential parameters.
-- [x] Gateway surface explicitly has no restart-Ollama/restart-Cline/model-resolution incident tools.
-- [x] Query tests verify redaction and idempotent re-scan behavior.
-
-Evidence: query layer `f820d20528941e301f737e2f7c13f36dd308eef0`; MCP exposure `53f35e70ff57731f867ccce6c98e809c69f6edd4`; query tests `ae1830db370ba23d357378c744d2689c787e87cc`; MCP authority tests `9b34d88effae9317eb6f5504c58d64654abbd063`; CI `#480` / `36100230922`, success.
-
-### Safety constraints
-
-- Sentinel is observational/reactive, not a second controller.
-- It does not restart/kill Ollama, llama.cpp or Cline.
-- It does not mutate shared VS Code/Hub state.
-- It does not widen Safety Plans, change worker/policy identity, grant disabled capabilities, or modify user code.
-- Uncertain recovery/authority remains a human/fail-closed matter.
-- Optional future GitHub issue synchronization must be separately permissioned and is not part of execution authority.
+Evidence:
+- Core through `c4756161ee558cbfe05817f0f9901081fcdf2455`; CI `#470` / `36099791355`.
+- Read-only query/MCP through `9b34d88effae9317eb6f5504c58d64654abbd063`; CI `#480` / `36100230922`.
 
 ## Slice 1 — Durable Bounded Task Queue / DAG
 
-- [x] Versioned workflow schema is built only from already-approved durable tasks.
-- [x] Workflow nodes persist only opaque node/task/project/workspace/Safety Plan/profile identity, validation-required state and dependency edges; no filesystem paths, write scope, protected patterns, validation commands, model output, credentials, Hub/session IDs or executable capability are copied into workflow authority.
-- [x] Duplicate tasks/node IDs, duplicate dependencies, unknown dependencies and self/multi-node cycles fail closed.
-- [x] Runnable-node selection is deterministic from persisted node order.
-- [x] A node is runnable only while its own durable task remains `created`; active, terminal, or human-escalated tasks are never re-started by selection.
-- [x] Dependency success requires durable `completed` state, required validation success, diff-safety success and no pending human escalation. Failed, incomplete or `waiting_for_human` dependencies block downstream work.
-- [x] Immutable workflow definitions are stored atomically in a machine-local workflow store keyed only by opaque workflow UUID; load revalidates schema/graph and identity.
-- [x] Automatic progression is authority-free: the coordinator passes only opaque task IDs to an injected starter and propagates starter rejection immediately. The injected starter remains responsible for independently enforcing each task's existing Safety Plan/binding before execution.
-- [x] Progression is bounded by `maxStarts`; no workflow-wide scope inheritance or machine authority is introduced.
+- [x] Versioned workflow built only from already-approved durable tasks.
+- [x] Workflow stores opaque identity/dependencies only; no paths, scope, commands or executable capability.
+- [x] Duplicate/unknown dependencies and cycles fail closed.
+- [x] Deterministic runnable-node selection.
+- [x] Dependency success requires durable completion + required validation + diff safety + no human escalation.
+- [x] Immutable atomic workflow store with graph revalidation on load.
+- [x] Authority-free progression passes only opaque task IDs to an independently authority-enforcing starter.
+- [x] Progression bounded; no hidden scope inheritance.
 
 Evidence:
-
-- DAG contract + graph selector: `9834e2f274227e4389498f5f2999ed9ac3ebffb7`; tests `aa3e5fe13f6d85cf7f6bd6b159c4aaccd7aa0e65`; CI `#486` / `36103577443`.
-- Atomic durable workflow store: `c564f83040a448bff669d100a5d4041464cc30d8`; tests `8be4ed2638489430bd088fe2273984c8152e4582`; CI `#490` / `36103856012`.
-- Authority-free progression coordinator: `0b136f8945be1e47218b00d47246a55de3acbef5`; tests `7e9282ee7e3e8e16363991339a42a28da555b918`; CI `#494` / `36104036934`.
+- DAG contract/selection `9834e2f274227e4389498f5f2999ed9ac3ebffb7` + tests `aa3e5fe13f6d85cf7f6bd6b159c4aaccd7aa0e65`; CI `#486` / `36103577443`.
+- Durable store `c564f83040a448bff669d100a5d4041464cc30d8` + tests `8be4ed2638489430bd088fe2273984c8152e4582`; CI `#490` / `36103856012`.
+- Progression coordinator `0b136f8945be1e47218b00d47246a55de3acbef5` + tests `7e9282ee7e3e8e16363991339a42a28da555b918`; CI `#494` / `36104036934`.
 
 ## Slice 2 — Budgets + Checkpoint Policy
 
-- [x] Versioned explicit ceilings cover elapsed time, model requests, input/output tokens, tool calls, task runs, recoveries and validation repairs.
-- [x] Usage is derived only from durable task state; missing tasks/metrics or historical multi-run metrics that cannot be reconstructed make accounting incomplete and block unattended starts rather than undercount.
-- [x] Dependency progression requires preserved existing task checkpoint evidence; restored/unavailable dependency checkpoints block unattended downstream starts.
-- [x] The starter must declare the existing task pre-run checkpoint mechanism; unknown checkpoint behavior fails closed.
-- [x] Task-run budget checks reserve the prospective start; the final configured run slot is allowed, while exceeding it is denied.
-- [x] Budget exhaustion or incomplete accounting prevents starter invocation.
-- [x] Budget/start guard decisions are append-only durable machine-local records for later human/report visibility, containing bounded reason/exhausted/accounting evidence and opaque task/workflow IDs only.
-- [x] Budgeted progression starts at most one node per accounting pass, forcing fresh durable usage accounting before any later automatic start.
-- [x] Workflow budgeting reuses the existing per-task Git checkpoint/rollback authority; no workflow-level rollback mechanism is introduced.
+- [x] Explicit elapsed-time, model-request, token, tool, task-run, recovery and validation-repair ceilings.
+- [x] Usage comes only from durable evidence; incomplete historical accounting blocks unattended starts rather than undercounting.
+- [x] Preserved dependency checkpoint evidence is required.
+- [x] Starter must use the existing task pre-run checkpoint mechanism.
+- [x] Budget exhaustion/incomplete accounting prevents starter invocation.
+- [x] Durable append-only budget decisions provide human/report evidence.
+- [x] Budgeted progression starts at most one node per accounting pass.
+- [x] Existing task checkpoint/rollback remains the only rollback authority.
 
 Evidence:
+- Budget/checkpoint guard through `1d4acd984103bf3be6752edcc3aa1c88f4650780`; CI `#502` / `36104641333`.
+- Durable decision journal `44989106bb022a157eab250b48c642457696b98d`.
+- Budget-gated coordinator/tests through `5333385737810f935ead4092e1d29760a2cbac99`; CI `#508` / `36104849331`.
 
-- Budget/checkpoint contract: `1c81a6ff7d961c89e918f29ba4eb629e28dee01b`; tests `06f15b28f16a4c9aca394d97cfc2eca6d6ed23ed`; final-run-slot correction `1d4acd984103bf3be6752edcc3aa1c88f4650780`; CI `#502` / `36104641333`.
-- Durable budget decision journal: `44989106bb022a157eab250b48c642457696b98d`.
-- Budget-gated one-start-per-pass coordinator: `969fd238a40e867f80dc2e01f2c34cc7fb46fb1b`; integration tests `5333385737810f935ead4092e1d29760a2cbac99`; CI `#508` / `36104849331`.
+## Slice 3 — Human Attention + Report + Safe Resume
+
+- [x] Workflow-level state is derived from current durable task evidence rather than stored workflow position.
+- [x] Pending human escalation yields `waiting_for_human` and prevents unattended progression.
+- [x] Failed/aborted/validation-failed/rolled-back or missing completion safety evidence yields blocked workflow state.
+- [x] Budget/accounting/checkpoint denials become durable attention state and are never automatically relaxed.
+- [x] Bounded final/intermediate report exposes only opaque task/node IDs, lifecycle/safety booleans/counts, budget reasons and incident counts; raw goals, paths, commands/stdout, model output, session IDs, credentials, diff paths/summaries and checkpoint storage refs are omitted.
+- [x] A completed workflow requires every node to have durable successful completion evidence including required validation and diff safety.
+- [x] Restart reconciliation reloads immutable workflow plus current durable task/budget evidence on every pass.
+- [x] Already-active tasks are never replayed after restart.
+- [x] Human-blocked or terminal-failed workflows do not start other stale candidates.
+- [x] Budgets/checkpoints are re-evaluated after restart before any new start.
+- [x] Completed workflows return a final report and start nothing.
+
+Evidence:
+- Sanitized report contract `9c5f74053a09ccafe9b548766d241c62b682614f`; tests `01de3fd211e86efe91708bf990acf75cf2ecd359`.
+- Safe restart reconciliation `3815abb742efc92b8390a19e7e00f226efc06d8e`; tests `7787f2d494cd1f99fc51a019379e07c53c101ee1`; CI `#518` / `36105316586`, success.
 
 ## Unattended execution acceptance
 
 - [x] Sentinel durable incident model, deduplication, evidence resolution and sanitized MCP exposure.
-- [x] Durable task queue/DAG, dependency validation and bounded automatic progression primitive.
+- [x] Durable task queue/DAG, dependency validation and bounded automatic progression.
 - [x] Time/token/request/repair budgets and checkpoint policy.
-- [ ] `waiting_for_human` integration and escalation rules for unattended work.
-- [ ] Final unattended-run report.
-- [ ] Safe resume after interruption.
+- [x] `waiting_for_human` integration and escalation rules for unattended work.
+- [x] Final unattended-run report.
+- [x] Safe resume after interruption.
 
 ## Status
 
-**IN PROGRESS — Sentinel, DAG and budgets/checkpoint slices complete; workflow human-escalation/report/restart closure is next.**
+**COMPLETE — bounded unattended workflows, fail-closed budgets/checkpoints, reactive Sentinel visibility, human pause, sanitized reporting and restart-safe progression are cloud-tested. No additional local-runtime proof is required at this stage.**
 
 ---
 
 # Milestone 8 — Advanced UI / Multi-worker
 
-Possible later scope:
+## Objective
 
-- [ ] Rich VS Code orchestration panel/web dashboard.
-- [ ] Advanced MCP surfaces beyond bounded task-level gateway.
-- [ ] Sequential specialist roles / multiple workers when capacity permits.
-- [ ] Team-role handoffs and richer task/event/usage visualization.
+Improve operator visibility and, only after the single-worker safety boundary remains authoritative, add optional specialist/multi-worker orchestration without converting worker count into broader authority.
+
+## Candidate slices
+
+### Slice 1 — Read-only Orchestration Dashboard Contract
+
+- [ ] Define a sanitized dashboard snapshot from existing task/workflow/Sentinel/supervisor evidence.
+- [ ] Show projects/workspaces/tasks/workflows, status, budgets, attention/incidents and usage summaries without raw paths, credentials, model output or private checkpoint/session state.
+- [ ] Keep dashboard read-only initially; no generic filesystem/shell/Hub/process controls.
+- [ ] Reuse existing public MCP/service views rather than bypassing authority boundaries.
+- [ ] Cloud tests for redaction, bounded result sizes and stale-state handling.
+
+### Slice 2 — Explicit Specialist Handoffs
+
+- [ ] Define bounded specialist roles (e.g. planner/reviewer/implementation specialist) as instruction/evidence roles, not independent machine authorities.
+- [ ] Each implementation worker must bind to an independently approved task/Safety Plan envelope.
+- [ ] Sequential specialist handoff first; no concurrent writes to one workspace until explicit locking/conflict policy exists.
+- [ ] Durable handoff provenance and evidence.
+
+### Slice 3 — Multi-worker Scheduling / UI
+
+- [ ] Explicit workspace locking and conflict policy.
+- [ ] Bounded concurrency budgets.
+- [ ] Rich VS Code/web operator visualization for task/event/usage/incident/handoff state.
+- [ ] No team/subagent feature may silently bypass existing owner-targeted safety executors.
 
 ## Status
 
-**NOT STARTED**
+**NOT STARTED — Slice 1 read-only dashboard contract is next.**
 
 ---
 
@@ -398,12 +352,13 @@ Possible later scope:
 | Task-oriented MCP gateway | Complete / physically proven |
 | Supervisor Planner/Reviewer | Complete |
 | Durable supervisor decision timeline + human escalation | Complete |
-| Sentinel incident core | **Complete + cloud tested** |
-| Sentinel read-only MCP view | **Complete + cloud tested** |
-| Unattended task DAG + durable store + progression primitive | **Complete + cloud tested** |
-| Unattended budgets + checkpoint policy | **Complete + cloud tested** |
-| Workflow human-escalation/report/restart closure | **Next** |
-| Advanced UI / multi-worker | Not started |
+| Sentinel incident core + read-only MCP | Complete / cloud tested |
+| Unattended DAG + persistence + progression | Complete / cloud tested |
+| Unattended budgets + checkpoint policy | Complete / cloud tested |
+| Human pause + unattended report + safe resume | Complete / cloud tested |
+| Milestone 7 unattended execution | **COMPLETE** |
+| Read-only orchestration dashboard contract | **Next** |
+| Specialist/multi-worker orchestration | Not started |
 
 ---
 
@@ -415,8 +370,8 @@ Possible later scope:
 4. Dirty worktrees must preserve pre-run user state and distinguish it from task-created changes.
 5. Validation commands are trusted local configuration outside model execution. Planner commands remain untrusted until explicit admission.
 6. Task JSON replacement is atomic; event, supervisor-decision, Sentinel observation and workflow budget-decision JSONL remain append-based durability models.
-7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow/budget state or model-facing output.
-8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, budget policy, or Hub participation.
+7. Hub and MCP credentials must never enter durable task/project/supervisor/incident/workflow/budget/report/dashboard state or model-facing output.
+8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, workflow graph membership, budgets, dashboard state, or Hub participation.
 9. Native Hub approval is UX/defense-in-depth only; owner hook/executor enforcement is authoritative.
 10. Owner disconnect requires durable handoff/replacement ownership or fail-closed behavior.
 11. Arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams and unreviewed provider-owned execution remain disabled in the first pilot.
@@ -427,13 +382,12 @@ Possible later scope:
 16. Reviewer `pass` never marks a task complete. Reviewer repair text never grants new authority.
 17. Trusted Planner admission is pre-run only and exact-subset bounded; model output cannot self-admit validation commands.
 18. Sentinel remains observational/reactive and cannot become process restart, safety-policy, or code-mutation authority.
-19. Sentinel resolution is evidence-based: only recognized later durable events may close an incident.
-20. `list_incidents` is a read path that refreshes durable evidence; it must not become an implicit repair/restart trigger.
-21. A workflow is ordering/state coordination only. It deliberately omits path scopes and executable capabilities; membership in a DAG never grants authority to start, continue, repair, validate, or broaden a task.
-22. The unattended progression coordinator only selects already-approved `created` tasks and passes opaque task IDs to an injected starter. Starter rejection is fail-closed and stops further starts in that progression pass.
-23. Current task state retains detailed metrics for the latest run only. If a workflow task has multiple historical runs that cannot be reconstructed exactly, unattended budget accounting deliberately becomes incomplete and blocks further automatic starts until a future cumulative accounting mechanism is added.
-24. Budgeted progression starts only one node per usage snapshot; this prevents multiple tasks from consuming resources concurrently against stale token/tool/run accounting.
-25. Budget policy cannot raise worker/model/task authority and does not create rollback authority; it is only an additional deny gate around automatic progression.
+19. A workflow is ordering/state coordination only. Membership never grants task authority.
+20. Current task state retains detailed metrics for the latest run only. Multi-run historical usage that cannot be reconstructed causes unattended budget accounting to fail closed.
+21. Budgeted progression starts one node per durable usage snapshot.
+22. Restart reconciliation never trusts stale workflow position and never replays active/terminal/escalated tasks.
+23. Dashboard/UI work must remain a presentation/query layer until an explicitly reviewed action surface is designed; UI convenience must not become a shortcut around MCP/service safety boundaries.
+24. Multi-worker work must begin sequentially. Concurrent workspace writes require explicit locking/conflict/checkpoint policy before they can be enabled.
 
 ---
 
@@ -441,40 +395,33 @@ Possible later scope:
 
 1. **COMPLETE — Milestones 1–5.** Foundation, reversible editing, context durability, project memory, machine MCP/Hub shared runtime and physical safety acceptance.
 2. **COMPLETE — Milestone 6.** Supervisor contract, Planner, Reviewer, durable decisions and human escalation.
-3. **COMPLETE — Milestone 7 Slice 0.** Sentinel incident model, deduplication, evidence resolution and read-only MCP exposure.
-4. **COMPLETE — Milestone 7 Slice 1.** Durable bounded task queue/DAG, persistence and authority-free progression.
-5. **COMPLETE — Milestone 7 Slice 2.** Fail-closed unattended budgets and checkpoint policy with durable decision evidence.
-6. **NEXT — Milestone 7 Slice 3: human-escalation + final report + safe resume.**
-   - derive workflow-level blocked/waiting state from durable task states without inventing new task authority;
-   - `waiting_for_human`, failed/aborted/validation-failed/rolled-back dependencies block downstream starts by default;
-   - budget/accounting/checkpoint denial becomes durable workflow attention state, not automatic limit relaxation;
-   - produce bounded final/intermediate unattended workflow report from durable task, budget and incident evidence with no raw paths/credentials/output;
-   - restart/resume must reload immutable workflow definition and re-evaluate current task/evidence/budgets before any new start; never replay a previously started node solely from workflow state;
+3. **COMPLETE — Milestone 7.** Sentinel, durable DAG, bounded automatic progression, budgets/checkpoints, human pause, sanitized report and restart-safe unattended execution.
+4. **NEXT — Milestone 8 Slice 1: read-only orchestration dashboard contract.**
+   - compose existing sanitized project/workspace/task/workflow/incident/supervisor evidence into one bounded snapshot;
+   - no raw workspace roots, credentials, session/Hub IDs, model output, validation stdout/stderr, diff contents or private checkpoint refs;
+   - read-only only; do not add shell/filesystem/process/runtime mutation controls;
+   - define deterministic limits/pagination or truncation markers so dashboard retrieval remains bounded;
+   - represent stale/unavailable evidence explicitly rather than fabricating freshness;
    - cloud tests first; no live shared-runtime writes.
-7. **LATER — Milestone 8 advanced UI / multi-worker.**
+5. **AFTER DASHBOARD CONTRACT — Milestone 8 Slice 2 sequential specialist handoff.**
+6. **LATER — Multi-worker concurrency only after explicit workspace locking/conflict policy.**
 
 ---
 
 # Progress Log — Recent Closures
 
-- 2026-09-25: Milestone 5 closed on accumulated physical + cloud evidence; no additional heavy local owner-loss proof required.
-- 2026-09-25: Planner completed through `5f83903b61494c458474d2ab3f2402101170a0c4`; CI `#448` / `36098312588`.
-- 2026-09-25: Reviewer completed through `19024c79c178b9c9e58854065fa98d2d4a029cd1`; CI `#454` / `36098699621`.
-- 2026-09-25: Durable supervisor decisions/human escalation completed through `ce0620427e821a66ffd64942720f2bc0b942b055`; CI `#462` / `36099296457`.
-- 2026-09-25: **Milestone 6 COMPLETE.** Planner/Reviewer supervision remains subordinate to durable orchestrator authority.
-- 2026-09-25: Sentinel incident core completed through `c4756161ee558cbfe05817f0f9901081fcdf2455`; CI `#470` / `36099791355`.
-- 2026-09-25: Sentinel registered-workspace query + read-only MCP exposure completed through `9b34d88effae9317eb6f5504c58d64654abbd063`; CI `#480` / `36100230922`.
-- 2026-09-25: Unattended DAG contract/selection completed through `aa3e5fe13f6d85cf7f6bd6b159c4aaccd7aa0e65`; CI `#486` / `36103577443`.
-- 2026-09-25: Durable workflow store completed through `8be4ed2638489430bd088fe2273984c8152e4582`; CI `#490` / `36103856012`.
-- 2026-09-25: Authority-free automatic progression primitive completed through `7e9282ee7e3e8e16363991339a42a28da555b918`; CI `#494` / `36104036934`.
-- 2026-09-25: Unattended budget/checkpoint guard completed through `1d4acd984103bf3be6752edcc3aa1c88f4650780`; CI `#502` / `36104641333`.
-- 2026-09-25: Durable budget decisions + budget-gated one-start progression completed through `5333385737810f935ead4092e1d29760a2cbac99`; CI `#508` / `36104849331`.
+- 2026-09-25: Milestone 6 COMPLETE — Planner, Reviewer and durable supervisor decisions cloud-tested through CI `#462`.
+- 2026-09-25: Sentinel incident/read-only MCP slices completed through CI `#480`.
+- 2026-09-25: Unattended DAG/store/progression completed through CI `#494`.
+- 2026-09-25: Unattended budgets/checkpoint gating completed through CI `#508`.
+- 2026-09-25: Human attention/report/restart closure completed with report `9c5f74053a09ccafe9b548766d241c62b682614f`, tests `01de3fd211e86efe91708bf990acf75cf2ecd359`, restart reconciliation `3815abb742efc92b8390a19e7e00f226efc06d8e`, tests `7787f2d494cd1f99fc51a019379e07c53c101ee1`; CI `#518` / `36105316586` passed.
+- 2026-09-25: **Milestone 7 COMPLETE.** Unattended progression remains task-authority bounded and restart-safe, with durable reactive incident visibility.
 
 ---
 
 # Current Next Step
 
-Begin **Milestone 7 Slice 3 — workflow human-escalation + final report + safe resume** only. Derive workflow attention/blocking from existing durable task states and budget/checkpoint decisions rather than creating new execution authority. Build a bounded sanitized workflow report from durable evidence. On process restart, reload the immutable workflow and current task state, rebuild budget/evidence, and select only still-`created` runnable nodes; previously active/terminal/escalated nodes must never be replayed from stale workflow state. Add cloud tests first; do not perform live shared-runtime writes.
+Begin **Milestone 8 Slice 1 — read-only orchestration dashboard contract** only. Compose existing sanitized evidence into a bounded operator-facing snapshot without exposing raw machine/runtime/private task data and without adding a new mutation surface. Cloud tests first; do not perform live shared-runtime writes.
 
 ---
 
