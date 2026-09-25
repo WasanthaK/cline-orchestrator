@@ -14,29 +14,54 @@ Detailed implementation history remains in Git history. This tracker keeps the c
 ## End Goal
 
 ```text
-ChatGPT
-Planner / Architect / Reviewer
-          |
-          v
-Cline Orchestrator Plugin / MCP
-Task-level authority + Safety Preview
-          |
-          v
-Orchestrator
-Durable state + safety + supervision
-          |
-          v
-Cline Hub
-Authoritative shared runtime
-       /       \
-      v         v
-VS Code Cline   Cline session
-          |
-          v
-Workspace / Git / validation
+                         ChatGPT
+                Planner / Architect / Reviewer
+                           |
+                           v
+                Project / Workspace Registry
+                           |
+                           v
+                     Safety Preview
+                           |
+                   Human authorization
+                           |
+                           v
+                 ORCHESTRATOR CONTROL PLANE
+             +-------------+--------------+
+             |             |              |
+          Planner       Reviewer       Sentinel
+             |             |              |
+             +-------------+--------------+
+                           |
+                     Workflow Engine
+                    DAG + Budgets + Policy
+                           |
+                   Concurrency Scheduler
+                           |
+              +------------+------------+
+              |            |            |
+           Worker A      Worker B     Worker C
+              |            |            |
+              v            v            v
+         Cline Hub     Cline Hub     Cline Hub
+           owner         owner         owner
+              |            |            |
+              v            v            v
+        Workspace A   Workspace B   Workspace C
+              |            |            |
+              +------------+------------+
+                           |
+                 validation / Git / evidence
+                           |
+                           v
+                    Operator Console
 ```
 
-The system should support long-running and unattended coding work while preserving human control, reversible workspace changes, durable project memory, bounded model context, fail-closed authority, reactive incident visibility, and evidence-based completion.
+The system should support long-running and unattended software-engineering work while preserving human control, reversible workspace changes, durable project memory, bounded model context, fail-closed authority, reactive incident visibility, evidence-based completion, safe parallelism, secure remote supervision, and explicit release/deployment authority.
+
+The core invariant is:
+
+> **ChatGPT decides what should be attempted. The orchestrator decides what is permitted. Cline performs only permitted work.**
 
 ---
 
@@ -57,6 +82,11 @@ The system should support long-running and unattended coding work while preservi
 13. **Specialist handoff is provenance, not authority.** A handoff can identify the next bounded role and durable evidence, but it grants no machine/write authority and cannot keep stale task/Safety Plan authority alive.
 14. **Concurrency admission is coordination, not authority.** A writer slot, lock claim, lease renewal or scheduler decision never grants task/Safety Plan/filesystem authority; every admitted writer must independently revalidate current durable authority before acquisition and again immediately before execution.
 15. **Delegation is not authority.** Native agent spawning, teams, plugins, runtime extensions and extra executors remain disabled unless a separately reviewed adapter proves that every side effect still traverses the current owner-targeted safe-executor boundary. A config/tool/executor drift toward a delegated execution surface must fail closed. Future concurrent write adapters must additionally validate the current fenced workspace lease before every write-capable side effect.
+16. **Remote access is transport, not authority.** Secure remote connectivity may carry requests and sanitized evidence but must not enlarge task, workspace, tool, command, release, secret or deployment authority.
+17. **Release authority is separate from edit authority.** Code editing, commit, push, pull-request creation, merge and deployment are distinct capabilities and must be separately admitted.
+18. **Distributed coordination requires real fencing.** A multi-gateway or multi-machine topology must not rely on single-process locking assumptions; split-brain writers must fail closed.
+19. **A user-visible control never bypasses service policy.** Operator UI actions must invoke the same trusted orchestration services and authority checks as non-UI callers.
+20. **Production readiness requires failure proof.** Features that increase autonomy, delegation, distribution or release power require deterministic failure/restart/chaos evidence before being considered complete.
 
 ---
 
@@ -355,6 +385,374 @@ This does **not** enable subagents, teams, provider-owned execution or live conc
 
 ---
 
+# Milestone 9 — Controlled Live Multi-Workspace Runtime
+
+## Objective
+
+Turn the Milestone 8 concurrency/lease contracts into real orchestrator-managed parallel execution across independently registered workspaces without weakening task authority, Safety Plan enforcement, owner-targeted safe executors, checkpoint/rollback safety, or human escalation.
+
+Native Cline teams, native subagents and provider-owned execution remain disabled in this milestone.
+
+## Slice 9A — Lease-aware owner-targeted executor boundary
+
+- [ ] Introduce a trusted runtime adapter that binds an admitted worker to the current durable task, Safety Plan, project/workspace/profile revision, owner identity and fenced workspace lease.
+- [ ] Require current task/Safety Plan authority revalidation before worker acquisition and immediately before execution.
+- [ ] Require current fenced-lease validation immediately before every write-capable `editor`/`applyPatch` side effect.
+- [ ] Treat lease ownership as coordination only; a valid lease without valid task/Safety Plan authority must still fail closed.
+- [ ] Lease loss, expiry, fence mismatch, authority revision or abort signal must prevent all subsequent writes by that worker.
+- [ ] Reads remain bounded by existing registered workspace/Safety Plan policy and do not gain broader authority from lease possession.
+- [ ] Cloud tests deliberately inject stale lease, stale fence, task revision drift, profile drift, Safety Plan drift and post-start lease loss.
+
+## Slice 9B — Live scheduler/runtime integration
+
+- [ ] Connect `writer-concurrency-scheduler` to orchestrator-owned Cline Hub sessions through the lease-aware trusted adapter.
+- [ ] Enforce configurable total writer budget and one live writer per workspace.
+- [ ] Permit concurrency only across distinct workspaces in the first live implementation.
+- [ ] Every live writer uses a distinct orchestrator-owned owner session; no silent takeover of an existing VS Code-created write session.
+- [ ] Scheduler admission continues to start only already-approved durable tasks and grants no new path/tool/command authority.
+- [ ] Existing workflow budget/checkpoint accounting remains authoritative and may not be bypassed by concurrency.
+
+## Slice 9C — Failure, restart and stale-writer safety
+
+- [ ] Worker crash releases or expires coordination state without allowing stale writes after restart.
+- [ ] Hub disconnect, owner loss and gateway restart recover through durable handoff/revalidation rather than stale session replay.
+- [ ] Lease-heartbeat failure aborts the live worker adapter and transitions the task to a durable safe state.
+- [ ] A stale/expired worker cannot resurrect or silently reacquire its prior fence/lease identity.
+- [ ] Duplicate workers for one workspace cannot both pass immediate pre-write fencing checks.
+- [ ] Restart reconciliation derives authority from current durable registry/task/Safety Plan/lease state, never cached scheduler position.
+
+## Slice 9D — Disposable physical proof
+
+- [ ] Use isolated disposable repositories/workspaces before shared development workspaces.
+- [ ] Prove two independent workspaces can execute write tasks concurrently with separate leases and owner sessions.
+- [ ] Prove same-workspace competing writer admission is denied.
+- [ ] Prove forced lease loss during a task prevents later writes.
+- [ ] Prove one worker failure does not corrupt or broaden authority of another worker.
+- [ ] Prove validation, final diff safety and rollback independently for both concurrent tasks.
+- [ ] Prove gateway restart/stale-worker behavior in the disposable environment.
+- [ ] Any proof requiring mutation of the user's shared local Cline/Hub/VS Code runtime requires explicit user authorization immediately before that proof.
+
+## Completion Gate
+
+Milestone 9 is complete only when the orchestrator can safely run independent write-capable coding jobs concurrently on multiple registered workspaces, while a stale or unfenced worker is physically unable to perform a write through the trusted executor boundary.
+
+## Status
+
+**PLANNED — first future implementation milestone. Plan approved for inclusion on 2026-09-25; implementation has not started. Shared-runtime physical proof remains separately gated by explicit user authorization.**
+
+---
+
+# Milestone 10 — Interactive Operator Control Plane
+
+## Objective
+
+Evolve the passive operator visualization into a safe operational console without creating a privileged UI execution path.
+
+## Acceptance
+
+- [ ] Preserve read-only sanitized project/workspace/task/workflow/incident/handoff/concurrency views.
+- [ ] Add bounded service-backed actions for pause, resume, abort, approve/reject human escalation, request review, retry admitted validation, rollback, workflow pause/resume and worker drain where supported.
+- [ ] Every UI action calls the same trusted orchestration service/policy boundary used by non-UI callers.
+- [ ] No generic filesystem, shell, Hub, process, raw command or credential surface is exposed.
+- [ ] Destructive/high-risk actions require explicit confirmation and durable audit evidence.
+- [ ] UI state cannot grant authority, widen Safety Plans, edit policy, mint leases, enable tools or convert read-only views into direct machine access.
+- [ ] CSRF/request forgery, stale action, replay, authorization drift and race-condition tests fail closed.
+- [ ] VS Code/web rendering keeps CSP/network restrictions appropriate to the new narrowly-scoped action transport.
+
+## Completion Gate
+
+A human can operate normal orchestrator lifecycle and escalation flows from the console without requiring CLI access and without any UI shortcut around task/service safety boundaries.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Milestone 11 — Secure Remote ChatGPT Control Plane
+
+## Objective
+
+Allow ChatGPT to supervise the local orchestrator from any conversation, with or without a ChatGPT Project, through authenticated secure transport while retaining the same registry, Safety Preview and task-level authority model.
+
+## Acceptance
+
+- [ ] Define remote transport threat model and trust boundaries before implementation.
+- [ ] Preserve explicit machine-local project/workspace registration; raw paths or fuzzy names never self-authorize.
+- [ ] Use authenticated, revocable, short-lived remote sessions/device identity.
+- [ ] Keep Hub/Cline credentials local and never expose them through ChatGPT-facing transport.
+- [ ] Remote callers receive opaque registered IDs and sanitized evidence only.
+- [ ] A new write-capable task still requires Safety Preview/approved task envelope and cannot be authorized merely by transport authentication.
+- [ ] Implement replay protection, rate limits, audit evidence and explicit connection revocation.
+- [ ] Remote disconnect/reconnect cannot revive stale task/worker authority.
+- [ ] Security tests cover stolen/replayed token, wrong device, wrong workspace ID, expired session and stale Safety Plan.
+
+## Completion Gate
+
+An authorized user can safely start/supervise registered local project work from ChatGPT away from the workstation without exposing machine-level credentials or widening task authority.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Milestone 12 — Distributed / Multi-Machine Orchestration
+
+## Objective
+
+Scale from a single gateway process/machine to multiple orchestrator workers or machines while preserving one-writer-per-workspace safety through a separately reviewed distributed fencing backend.
+
+## Acceptance
+
+- [ ] Select and document a transactional lease/fencing backend suitable for multi-gateway ownership.
+- [ ] Replace single-process lock assumptions with monotonic fencing semantics that stale processes cannot bypass.
+- [ ] Add distributed worker registry, heartbeats, ownership transfer and durable task/event coordination.
+- [ ] Preserve current task/Safety Plan authority checks independently of distributed lease admission.
+- [ ] Version worker/control-plane protocol and reject incompatible peers safely.
+- [ ] Prove network partition cannot produce two successful write-authorized owners for one workspace.
+- [ ] Prove machine crash, scheduler crash, clock skew, duplicate worker and control-plane restart fail closed or recover deterministically.
+- [ ] Multi-machine execution must not imply access to workspaces not explicitly registered on a worker/machine.
+
+## Completion Gate
+
+Multiple machines may safely contribute workers to one orchestration control plane without split-brain writes or authority leakage.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Milestone 13 — Advanced Multi-Agent Delegation
+
+## Objective
+
+Add bounded specialist collaboration only after live parallel workers and distributed fencing boundaries are proven. Delegation remains a planning/evidence mechanism unless each machine side effect traverses the existing trusted executor boundary.
+
+## Acceptance
+
+- [ ] Define explicit specialist roles such as architect, implementer, test specialist and reviewer with bounded context/tool surfaces.
+- [ ] Each delegated role binds to a current durable task/Safety Plan and carries provenance, not inherited machine authority.
+- [ ] A specialist requiring machine work submits an action/task proposal through the orchestrator rather than directly gaining shell/filesystem authority.
+- [ ] Native Cline team/subagent support remains disabled until a reviewed adapter proves all side effects route through current owner-targeted executors and, for writes, current fenced-lease checks.
+- [ ] Child/delegated work cannot expand scope, validation commands, plugins, MCP/network tools, secret access or release authority.
+- [ ] Delegation depth/count/token/tool/time budgets are explicit and fail closed.
+- [ ] Parent cancellation/authority revision invalidates delegated work safely.
+- [ ] Tests prove a delegated agent cannot mint authority, spawn an unreviewed executor, bypass tool default-deny or retain stale owner/lease authority.
+
+## Completion Gate
+
+Multiple AI specialists can collaborate on one approved engineering objective without creating a second machine-authorization path.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Milestone 14 — Autonomous Software-Engineering Loops
+
+## Objective
+
+Use the proven task/workflow/supervision infrastructure to support repeatable engineering loops such as issue-to-change, CI-failure repair proposals, dependency maintenance and long-running milestone execution.
+
+## Acceptance
+
+- [ ] GitHub issue/work-item ingestion creates proposals only; external text never grants task authority.
+- [ ] Planner may decompose an approved objective into independently authorized/bounded tasks and dependencies.
+- [ ] CI failure observations may trigger diagnosis/proposal but cannot self-authorize repairs beyond existing scope.
+- [ ] Dependency-update workflows use isolated changes, validation, review and rollback gates.
+- [ ] Long-running project execution uses durable project memory/context rotation rather than unbounded conversation context.
+- [ ] Workflow-level completion requires all child task validation/diff-safety evidence and required human decisions.
+- [ ] Reactive automation respects global/task/workflow budgets and cannot loop indefinitely.
+- [ ] Automatic follow-up never silently upgrades edit, network, release or deployment authority.
+
+## Completion Gate
+
+The orchestrator can carry an approved software-engineering objective through decomposition, execution, validation, review and bounded repair over long periods without requiring one model conversation to retain the whole project.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Milestone 15 — GitHub Delivery and Release Authority
+
+## Objective
+
+Introduce commit, push, pull-request, merge and deployment capabilities as separately reviewed authority classes rather than consequences of write access.
+
+## Authority Model
+
+```text
+edit authority
+    != commit authority
+    != push authority
+    != pull-request authority
+    != merge authority
+    != deployment authority
+```
+
+## Acceptance
+
+- [ ] Define separate policy grants and audit evidence for commit, push, PR creation/update, merge and deployment.
+- [ ] Default coding tasks remain unable to push/merge/deploy.
+- [ ] Protected branches and destructive Git operations remain denied unless specifically authorized by policy/human action.
+- [ ] PR creation uses checkpoint-relative validated diff evidence and sanitized task provenance.
+- [ ] CI/status observation is read-only unless a separately authorized repair workflow is created.
+- [ ] Merge requires configured human/policy gate; model review text alone cannot merge.
+- [ ] Deployment requires explicit environment-specific authorization and cannot inherit from merge or edit authority.
+- [ ] Rollback/recovery procedures are defined separately for source changes and deployed systems.
+
+## Completion Gate
+
+An approved task may progress through a controlled PR lifecycle, while each escalation from editing toward release remains separately visible, auditable and revocable.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Milestone 16 — Production Security, Reliability and Observability
+
+## Objective
+
+Prove the system is resilient and operable under realistic failures and hostile inputs before product release.
+
+## Security Acceptance
+
+- [ ] Formal threat model covers prompt injection, repository instructions, connector abuse, replay, credential exposure, tool/plugin drift, dependency/supply-chain risk and privilege confusion.
+- [ ] Credential storage/rotation/revocation is documented and tested.
+- [ ] Audit evidence integrity and tamper detection are defined for security-relevant actions.
+- [ ] Protocol inputs and persisted state have schema/version/migration validation.
+- [ ] Dependency upgrade process preserves reviewed Cline/Core safety assumptions.
+
+## Reliability Acceptance
+
+- [ ] Durable store backup/recovery and migration strategy.
+- [ ] Crash/restart recovery across gateway, worker, Hub, model endpoint and storage failures.
+- [ ] Corrupt/incomplete state fails closed with actionable human evidence.
+- [ ] Rolling-upgrade/version compatibility policy for workers/control plane.
+- [ ] Bounded retry/backoff avoids recovery storms and duplicate side effects.
+
+## Observability Acceptance
+
+- [ ] Structured logs, metrics and traces for task/workflow/worker/lease/validation/recovery flows.
+- [ ] Health, queue depth, latency, token/tool usage, failure class, lease contention and human-attention metrics.
+- [ ] Sanitization prevents secrets/raw private state from leaking into telemetry.
+
+## Chaos Acceptance
+
+- [ ] Deterministically test worker kill, Hub loss, orchestrator restart, storage outage, model outage and network partition at critical execution points.
+- [ ] Every chaos case either recovers from durable evidence or stops in a documented fail-closed/human state.
+
+## Completion Gate
+
+The orchestrator is operationally observable and survives representative failures without unsafe duplicate writes, lost rollback authority or silent authority expansion.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Milestone 17 — Productization and Installation
+
+## Objective
+
+Turn the engineering system into an installable, supportable product with safe defaults and a clear first-run experience.
+
+## Acceptance
+
+- [ ] Supported installation/update/uninstall path for the target desktop/server environments.
+- [ ] Detect/connect compatible Cline Hub generation without silently upgrading reviewed dependencies.
+- [ ] First-run flow: register machine, add project, add workspace, select safety profile, run Safety Preview, connect ChatGPT, start first task.
+- [ ] Provide safe built-in profiles such as observe-only, safe-editing, development, maintainer and separately gated release profiles.
+- [ ] Configuration export/backup excludes credentials and machine secrets by default.
+- [ ] Diagnostics bundle is sanitized and useful for support.
+- [ ] Upgrade/migration path preserves durable tasks/projects/audit state or fails safely before mutation.
+- [ ] Documentation clearly distinguishes task, edit, Git, remote and release authority.
+
+## Completion Gate
+
+A new user can install, configure and run a first safe task without hand-editing internal state or understanding the implementation architecture.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Milestone 18 — Production Release
+
+## Objective
+
+Prove the complete end-to-end product lifecycle and declare the first production-ready release.
+
+## End-to-End Acceptance
+
+- [ ] ChatGPT request resolves only to an explicitly registered project/workspace.
+- [ ] Safety Preview and human authorization create a bounded durable task/workflow.
+- [ ] Planner/workflow decomposition preserves task authority boundaries.
+- [ ] Multiple safe workers may execute concurrently only with current fencing and owner-targeted executor checks.
+- [ ] Context rotation, owner loss, restart and model/runtime recovery preserve durable continuity.
+- [ ] Validation, Reviewer, bounded repair and human escalation behave as designed.
+- [ ] Completion requires validation + diff safety + required human/release evidence.
+- [ ] PR/release operations use separately granted authority.
+- [ ] Operator console and remote ChatGPT supervision cannot bypass service policy.
+- [ ] Production security/reliability/chaos acceptance is green.
+- [ ] Installation/upgrade/support documentation and recovery procedures are complete.
+
+## Release Invariants
+
+- Machine access is never implied.
+- Workspace access is never inferred.
+- Worker count never increases authority.
+- Agent delegation never increases authority.
+- A model cannot approve itself.
+- A stale worker cannot write.
+- A UI cannot bypass policy.
+- A workflow cannot expand scope.
+- Edit authority never silently becomes push/merge/deploy authority.
+
+## Completion Gate
+
+The product can carry an explicitly approved software-engineering objective from ChatGPT request through safe implementation, supervision, validation, human escalation and separately authorized delivery/release while retaining durable evidence and fail-closed recovery throughout.
+
+## Status
+
+**PLANNED**
+
+---
+
+# Roadmap Sequence
+
+| Milestone | Deliverable | State |
+|---|---|---|
+| 1 | Foundation | Complete |
+| 2 | Reversible editing / Git safety | Complete |
+| 3 | Context durability | Complete |
+| 4 | Durable project memory | Complete |
+| 5 | ChatGPT / MCP / Cline Hub shared runtime | Complete |
+| 6 | GPT Supervisor | Complete |
+| 7 | Unattended workflows | Complete |
+| 8 | UI + concurrency safety contracts | Complete |
+| 9 | Controlled live multi-workspace workers | **Next / planned** |
+| 10 | Interactive operator control plane | Planned |
+| 11 | Secure remote ChatGPT control | Planned |
+| 12 | Distributed / multi-machine orchestration | Planned |
+| 13 | Safe multi-agent delegation | Planned |
+| 14 | Autonomous engineering loops | Planned |
+| 15 | GitHub delivery / release authority | Planned |
+| 16 | Production security / reliability / observability | Planned |
+| 17 | Productization / installer / first-run UX | Planned |
+| 18 | Production release | Planned |
+
+---
+
 # Current Capability Snapshot
 
 | Capability | Status |
@@ -384,8 +782,16 @@ This does **not** enable subagents, teams, provider-owned execution or live conc
 | Rich passive operator visualization | **Complete / cloud tested** |
 | Owner-targeted team/subagent no-bypass invariant | **Complete / cloud tested** |
 | Milestone 8 advanced UI / multi-worker safety contract | **COMPLETE** |
-| Concurrent live machine-runtime orchestration | Not enabled |
-| Native team/subagent execution | Not enabled |
+| Concurrent live machine-runtime orchestration | Planned — Milestone 9 |
+| Interactive operator actions | Planned — Milestone 10 |
+| Secure remote ChatGPT control | Planned — Milestone 11 |
+| Distributed/multi-machine scheduler | Planned — Milestone 12 |
+| Native/specialist multi-agent delegation | Planned — Milestone 13; native teams remain disabled now |
+| Autonomous engineering loops | Planned — Milestone 14 |
+| Push/PR/merge/deploy authority | Planned — Milestone 15; disabled by default now |
+| Production hardening/chaos proof | Planned — Milestone 16 |
+| Product installer/first-run UX | Planned — Milestone 17 |
+| Production release | Planned — Milestone 18 |
 
 ---
 
@@ -413,12 +819,16 @@ This does **not** enable subagents, teams, provider-owned execution or live conc
 20. Current task state retains detailed metrics for the latest run only. Multi-run historical usage that cannot be reconstructed causes unattended budget accounting to fail closed.
 21. Budgeted workflow progression still starts one node per durable usage snapshot; cross-workspace concurrency must not reuse stale workflow accounting to start multiple nodes from the same workflow pass.
 22. Restart reconciliation never trusts stale workflow position and never replays active/terminal/escalated tasks.
-23. Dashboard/operator UI remains a presentation/query layer; UI convenience cannot become a shortcut around MCP/service safety boundaries.
+23. Dashboard/operator UI remains a presentation/query layer until Milestone 10; UI convenience cannot become a shortcut around MCP/service safety boundaries.
 24. Specialist handoffs carry provenance/evidence only and are revalidated against current task authority on every durable append; they cannot preserve stale scope or worker identity.
-25. Live concurrent machine-runtime writes remain disabled. A future live adapter must keep owner-targeted safe executors authoritative and validate the current fenced lease before every write-capable side effect.
-26. Durable workspace locks and concurrency admission are single-gateway-process primitives. Multiple independent gateway processes require a separately reviewed distributed fencing backend and must fail closed until then.
+25. Live concurrent machine-runtime writes remain disabled until Milestone 9 implementation/proof. The live adapter must keep owner-targeted safe executors authoritative and validate the current fenced lease before every write-capable side effect.
+26. Durable workspace locks and concurrency admission are single-gateway-process primitives. Multiple independent gateway processes require Milestone 12 distributed fencing and must fail closed until then.
 27. A lease heartbeat failure aborts the scheduler lease session, but trusted worker adapters must honor the abort signal and validate current lease state before every coordinated side effect; lease possession alone never authorizes a write.
-28. The owner-targeted Hub invariant protects the current first-pilot surface from silent config/tool/executor drift. It is not permission to enable native teams/subagents; any such feature requires a separately reviewed adapter and new acceptance evidence.
+28. The owner-targeted Hub invariant protects the current surface from silent config/tool/executor drift. It is not permission to enable native teams/subagents; Milestone 13 requires a separately reviewed delegation adapter and new acceptance evidence.
+29. Remote transport is not implemented; current MCP remains local. Milestone 11 must not turn connectivity into machine authority.
+30. Push, merge, deploy, destructive Git, secret access and external-network mutation remain separately gated and are not implied by completion of Milestones 9–14.
+31. Milestone 9 disposable physical proof may use isolated runtimes, but any mutation/restart of the user's shared local Hub/Cline/VS Code runtime still requires explicit user authorization immediately before the proof.
+32. Production release cannot be inferred from feature completeness; Milestones 16–18 require security, reliability, chaos, installation and end-to-end release evidence.
 
 ---
 
@@ -427,13 +837,13 @@ This does **not** enable subagents, teams, provider-owned execution or live conc
 1. **COMPLETE — Milestones 1–5.** Foundation, reversible editing, context durability, project memory, machine MCP/Hub shared runtime and physical safety acceptance.
 2. **COMPLETE — Milestone 6.** Supervisor contract, Planner, Reviewer, durable decisions and human escalation.
 3. **COMPLETE — Milestone 7.** Sentinel, durable DAG, bounded automatic progression, budgets/checkpoints, human pause, sanitized report and restart-safe unattended execution.
-4. **COMPLETE — Milestone 8 Slice 1.** Read-only orchestration dashboard contract.
-5. **COMPLETE — Milestone 8 Slice 2.** Sequential specialist handoff.
-6. **COMPLETE — Milestone 8 Slice 3A.** Workspace locking/conflict contract; CI `#551`.
-7. **COMPLETE — Milestone 8 Slice 3B.** Bounded concurrency budgets/scheduler contract; CI `#559` and `#569`; live shared-runtime concurrency not enabled.
-8. **COMPLETE — Milestone 8 Slice 3C.** Read-only operator view model plus passive browser/VS Code HTML renderer; CI `36112455733` and `#583` / `36112658367`.
-9. **COMPLETE — Milestone 8 Slice 3D.** Owner-targeted no-bypass invariant for native spawn/teams/plugins/extra tools/executors; CI `#588` / `36114475941`.
-10. **GATED / NOT AUTHORIZED — any live concurrent machine-runtime adapter, native team/subagent execution, distributed scheduler, UI write action, push/deploy/destructive Git, secret access, external-network mutation, or system change.** Such work requires a new explicitly reviewed plan and any required user authorization before implementation/proof.
+4. **COMPLETE — Milestone 8.** Dashboard, specialist handoff, workspace locking, bounded concurrency scheduler contract, passive operator visualization and owner-targeted no-bypass invariant.
+5. **NEXT — Milestone 9 Slice 9A.** Implement and cloud-test the lease-aware owner-targeted executor adapter. This is code/contract work only; do not enable shared-runtime live concurrency yet.
+6. **THEN — Milestone 9 Slice 9B.** Wire the scheduler to orchestrator-owned Hub sessions only after Slice 9A is green.
+7. **THEN — Milestone 9 Slice 9C.** Prove worker/lease/restart/stale-owner failure behavior.
+8. **GATED PHYSICAL PROOF — Milestone 9 Slice 9D.** Use disposable isolation first. Obtain explicit user authorization before any proof that mutates/restarts the shared local Cline/Hub/VS Code runtime.
+9. **FUTURE IN ORDER — Milestones 10–18.** Do not jump ahead merely because later interfaces are convenient.
+10. **STILL GATED — native team/subagent execution, multi-gateway distributed scheduling, push/merge/deploy/destructive Git, secret access, external-network mutation or system changes** until their corresponding milestone/policy gate and any required explicit user authorization are satisfied.
 
 ---
 
@@ -452,12 +862,13 @@ This does **not** enable subagents, teams, provider-owned execution or live conc
 - 2026-09-25: Milestone 8 Slice 3C operator view model and passive renderer completed through `8b1c96107b12616104384fbf87c25a36a6cfcd29`, `8f75b891803ff4959b67d4ed6f2f92925c8cdb8a`, tests/fixes through `ed3c428860e0e34acaa63b861b627cffafb63bda`; CI `36112455733` and `#583` / `36112658367` passed.
 - 2026-09-25: Milestone 8 Slice 3D owner-targeted delegation boundary completed with invariant `744fc21566e3e2352bb4317f5ad88bd4c2788555`, tests `108b7c74ab220e2678ca522e12bf408bc266ba0a`; CI `#588` / `36114475941` passed.
 - 2026-09-25: **Milestone 8 COMPLETE at the cloud-tested contract/UI level.** Live concurrent writes, native teams/subagents and distributed scheduling remain intentionally disabled and are not implied by milestone completion.
+- 2026-09-25: **Canonical roadmap extended through Milestone 18.** Milestone 9 is now the first planned implementation milestone; native delegation remains later than proven live/distributed ownership boundaries, and release/deployment authority remains independently gated.
 
 ---
 
 # Current Next Step
 
-**No further implementation item is authorized by this master plan.** Preserve the current safe state: live concurrent machine-runtime writes and native team/subagent execution remain disabled. Before enabling either, create a new explicitly reviewed milestone/adapter plan that keeps owner-targeted safe executors authoritative, requires current fenced-lease validation before every concurrent write-capable side effect, defines disposable/isolation proof, and obtains explicit authorization for any shared-runtime mutation.
+**Milestone 9 Slice 9A — lease-aware owner-targeted executor adapter.** Implement only the trusted contract and cloud tests that require current task/Safety Plan authority plus current fenced-lease validation immediately before every write-capable side effect. Do **not** enable shared-runtime live concurrency, native teams/subagents, distributed scheduling, UI write actions, push/merge/deploy, secret access, external-network mutation or system changes as part of Slice 9A.
 
 ---
 
