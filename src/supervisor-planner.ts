@@ -23,13 +23,25 @@ export interface SupervisorPlannerProposalV1 {
   validationAuthority: "proposal_only";
 }
 
+export interface SupervisorPlannerModelRequest {
+  schemaVersion: 1;
+  supervisorTaskId: string;
+  taskId: string;
+  prompt: string;
+}
+
+export interface SupervisorPlannerModel {
+  plan(request: SupervisorPlannerModelRequest): Promise<unknown>;
+}
+
 export class SupervisorPlannerError extends Error {
   constructor(
     message: string,
     public readonly code:
       | "proposal_invalid"
       | "task_mismatch"
-      | "prompt_too_large",
+      | "prompt_too_large"
+      | "planner_failed",
   ) {
     super(message);
     this.name = "SupervisorPlannerError";
@@ -198,4 +210,32 @@ export function validateSupervisorPlannerProposal(
     ),
     validationAuthority: "proposal_only",
   };
+}
+
+/**
+ * Executes one planner turn through an injected model adapter and validates the
+ * untrusted result locally before returning it. The adapter receives planning
+ * text only; it is not given a workspace handle, tool executor, shell, or any
+ * method that can mutate orchestrator authority.
+ */
+export async function runSupervisorPlanner(
+  task: SupervisorTaskV1,
+  model: SupervisorPlannerModel,
+): Promise<SupervisorPlannerProposalV1> {
+  const prompt = renderSupervisorPlannerPrompt(task);
+  let raw: unknown;
+  try {
+    raw = await model.plan({
+      schemaVersion: 1,
+      supervisorTaskId: task.supervisorTaskId,
+      taskId: task.taskId,
+      prompt,
+    });
+  } catch (error) {
+    throw new SupervisorPlannerError(
+      `Planner model failed: ${error instanceof Error ? error.message : String(error)}`,
+      "planner_failed",
+    );
+  }
+  return validateSupervisorPlannerProposal(task, raw);
 }
