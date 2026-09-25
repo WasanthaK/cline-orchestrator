@@ -49,15 +49,16 @@ function activeWriter(overrides: Partial<ActiveWriterEvidenceV1> = {}): ActiveWr
 
 test("budget is explicit, bounded and fixes one writer per workspace", () => {
   assert.deepEqual(validateWriterConcurrencyBudget(budget()), budget());
-  for (const invalid of [
+  const invalidBudgets: unknown[] = [
     budget({ maxActiveWriters: 0 }),
     budget({ maxActiveWriters: CONCURRENCY_BUDGET_LIMITS.maxActiveWriters + 1 }),
     budget({ maxStartsPerPass: 0 }),
     budget({ maxStartsPerPass: CONCURRENCY_BUDGET_LIMITS.maxStartsPerPass + 1 }),
-    { ...budget(), maxActiveWritersPerWorkspace: 2 } as WriterConcurrencyBudgetV1,
-  ]) {
+    { ...budget(), maxActiveWritersPerWorkspace: 2 },
+  ];
+  for (const invalid of invalidBudgets) {
     assert.throws(
-      () => validateWriterConcurrencyBudget(invalid),
+      () => validateWriterConcurrencyBudget(invalid as WriterConcurrencyBudgetV1),
       (error: unknown) => error instanceof ConcurrencyBudgetError && error.code === "budget_invalid",
     );
   }
