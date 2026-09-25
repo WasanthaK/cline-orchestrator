@@ -18,6 +18,7 @@ const EXPECTED_TOOLS = [
   "get_task_diff",
   "get_task_events",
   "get_workspace_status",
+  "list_incidents",
   "list_projects",
   "list_workspaces",
   "preview_task",
@@ -117,6 +118,8 @@ test("MCP tools expose only task-level authority with accurate safety annotation
 
     const byName = new Map(tools.map((tool: any) => [tool.name, tool]));
     assert.equal((byName.get("list_projects") as any)?.annotations?.readOnlyHint, true);
+    assert.equal((byName.get("list_incidents") as any)?.annotations?.readOnlyHint, true);
+    assert.equal((byName.get("list_incidents") as any)?.annotations?.destructiveHint, false);
     assert.equal((byName.get("preview_task") as any)?.annotations?.readOnlyHint, true);
     assert.equal((byName.get("start_task") as any)?.annotations?.readOnlyHint, false);
     assert.equal((byName.get("rollback_task") as any)?.annotations?.destructiveHint, true);
@@ -129,6 +132,9 @@ test("MCP tools expose only task-level authority with accurate safety annotation
       "session_attach",
       "hub_command",
       "daemon_control",
+      "restart_ollama",
+      "restart_cline",
+      "resolve_incident_by_model",
     ];
     for (const name of forbiddenNames) assert.equal(byName.has(name), false);
 
