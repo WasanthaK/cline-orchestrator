@@ -7,6 +7,7 @@ import {
   assertLiveProofOptIn,
   createDisposableProofWorkspace,
   createLiveProofIsolation,
+  stopLiveProofHubGracefully,
 } from "./live-proof-isolation.js";
 import { environmentWorkerProfileResolver } from "./mcp-main.js";
 import { rollbackTask } from "./rollback.js";
@@ -171,6 +172,7 @@ async function main(): Promise<void> {
 
   const isolation = await createLiveProofIsolation();
   const workspaceRoots: string[] = [];
+  let hubMayHaveStarted = false;
   try {
     Object.assign(process.env, isolation.environment);
     const rootA = await createDisposableProofWorkspace();
@@ -207,6 +209,9 @@ async function main(): Promise<void> {
       `[disposable multi-workspace proof: hub=${isolation.hubAddress}; workspaces=2; registry=isolated]\n`,
     );
 
+    // From this point Cline may spawn the isolated detached Hub. Cleanup below must
+    // confirm Cline-owned graceful shutdown before deleting any proof data roots.
+    hubMayHaveStarted = true;
     const schedulePromise = scheduler.schedule([taskA.id, taskB.id]);
     const overlapPromise = waitForTwoDistinctLiveLeases(
       locks,
@@ -287,13 +292,15 @@ async function main(): Promise<void> {
       },
     }, null, 2)}\n`);
   } finally {
-    // These are disposable repository/data roots only. The script deliberately does
-    // not discover or kill generic processes. Any isolated Hub lifecycle shutdown
-    // must use a reviewed Cline-owned lifecycle API before physical execution.
-    for (const root of workspaceRoots) {
-      await rm(root, { recursive: true, force: true }).catch(() => undefined);
+    if (hubMayHaveStarted) {
+      // Fail closed: if the pinned Cline lifecycle cannot confirm shutdown, preserve
+      // all disposable roots rather than deleting files under a possibly-live Hub.
+      await stopLiveProofHubGracefully();
     }
-    await rm(isolation.root, { recursive: true, force: true }).catch(() => undefined);
+    for (const root of workspaceRoots) {
+      await rm(root, { recursive: true, force: true });
+    }
+    await rm(isolation.root, { recursive: true, force: true });
   }
 }
 
