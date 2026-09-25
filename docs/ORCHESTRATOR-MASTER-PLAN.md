@@ -182,9 +182,9 @@ Pinned Cline generation: `@cline/sdk 0.0.83` / `@cline/core 0.0.83`.
 ## Important evidence
 
 - Registry/plan boundary through `5406bc05b2d35f3f9b6f565fb4c93b13c839ca06`; CI `#295`.
-- Policy/executor boundary through `46da20d18cd703018c54207258d4fb2422e71eeb`; CI push `#311`, PR `#312`.
-- Hub runtime/safety wiring through `32c057d30bc70533233477e87f7e01ec09b2e04a`; CI push `#329`, PR `#330`.
-- Machine MCP implementation through `ee47237d6ca7e1571f064923c909fdfe9bc07e65`; CI push `#351`, PR `#352`.
+- Policy/executor boundary through `46da20d18cd703018c54207258d4fb2422e71eeb`; CI `#311/#312`.
+- Hub runtime/safety wiring through `32c057d30bc70533233477e87f7e01ec09b2e04a`; CI `#329/#330`.
+- Machine MCP implementation through `ee47237d6ca7e1571f064923c909fdfe9bc07e65`; CI `#351/#352`.
 - Windows direct-entry fix through `0f3741eb3c231696bb2cf909be3b948a71125005`; CI `#365/#366`.
 - Pinned Hub packaging compatibility through `7fb9d3c2c394aab1f038208854cae7a3f2b77cc9`.
 - Windows atomic-state retry `670d27d077d6b45ce1dfe9204510405b530385cf`; CI `#383/#384`.
@@ -226,43 +226,43 @@ Evidence: `76d737c6083830e62eac8171e797df9c96ac4291`, `b3aed68158c3f12cd11d67bab
 
 ## Slice 2 — Bounded Planner
 
-- [x] `SupervisorPlannerProposalV1` contains only task IDs, bounded acceptance criteria, proposed validation commands and `validationAuthority: "proposal_only"`.
+- [x] Proposal contains only task IDs, bounded acceptance criteria, proposed validation commands and `validationAuthority: "proposal_only"`.
 - [x] Extra authority-bearing fields are rejected rather than ignored.
 - [x] Planner cannot widen paths, alter worker/policy/Safety Plan identity, grant disabled capabilities, or mark work complete.
-- [x] `runSupervisorPlanner()` uses an injected model adapter with no workspace/tool/shell mutation authority.
+- [x] Planner model adapter has no workspace/tool/shell mutation authority.
 - [x] Provider/model failures and malformed output fail closed.
 
-Evidence: contract `04cb34ffb8a813e1a55338000b99d9a8dc173d50`; tests `10a5770b000fe9c250a8c0689bc4f43de1ec5ab3`; execution seam `9f7829caeb6324d38613b92cb5a1d6293db27084`; final tests `5f83903b61494c458474d2ab3f2402101170a0c4`; CI `#448` / `36098312588`.
+Evidence: `04cb34ffb8a813e1a55338000b99d9a8dc173d50`, `10a5770b000fe9c250a8c0689bc4f43de1ec5ab3`, `9f7829caeb6324d38613b92cb5a1d6293db27084`, `5f83903b61494c458474d2ab3f2402101170a0c4`; CI `#448` / `36098312588`.
 
 ## Slice 3 — Sanitized Reviewer
 
-- [x] Reviewer receives bounded durable task/checkpoint/validation/diff evidence, not raw workspace/session/output/stdout/stderr/credentials.
-- [x] Reviewer result is only `pass`, `repair`, or `escalate` with `completionAuthority: "advisory_only"`.
-- [x] Reviewer `pass` is rejected unless required validation, diff safety, checkpoint state and human-escalation state support it.
+- [x] Reviewer receives bounded durable task/checkpoint/validation/diff evidence, not raw runtime/output/credential data.
+- [x] Result is only `pass`, `repair`, or `escalate` with advisory completion authority.
+- [x] `pass` is rejected unless required validation/diff/checkpoint/human-escalation evidence supports it.
 - [x] Repair/escalation outputs are bounded and mutually exclusive.
 - [x] Extra authority-bearing fields are rejected.
-- [x] `runSupervisorReviewer()` fails closed on model/provider failure.
+- [x] Reviewer model/provider failure fails closed.
 
-Evidence: implementation `72cb1620efdef8455d22f448318ddf907b5e7933`; tests `19024c79c178b9c9e58854065fa98d2d4a029cd1`; CI `#454` / `36098699621`.
+Evidence: `72cb1620efdef8455d22f448318ddf907b5e7933`, `19024c79c178b9c9e58854065fa98d2d4a029cd1`; CI `#454` / `36098699621`.
 
 ## Slice 4 — Durable Decisions + Human Escalation
 
-- [x] Append-only per-task supervisor decision log under `.orchestrator/supervisor-decisions/`.
-- [x] Decision records are versioned, timestamped and bound to supervisor/task/Safety Plan/profile/revision identity.
-- [x] Planner proposal persistence does not automatically trust proposed validation commands.
-- [x] Trusted planner admission is explicit, pre-run only, and may select only exact validation commands from the proposal.
-- [x] Reviewer `pass` and `repair` decisions persist without mutating task lifecycle, scope, validation, worker or policy authority.
-- [x] Reviewer escalation reuses the existing `HumanEscalationService`, placing the task in durable `waiting_for_human` state.
-- [x] Supervisor decision application fails closed if durable approved-task authority changed.
-- [x] Decision logs omit workspace/session/worker-output/credential material.
+- [x] Append-only per-task supervisor decision log.
+- [x] Decisions versioned/timestamped and bound to Safety Plan/profile/revision identity.
+- [x] Planner proposal persistence does not automatically trust validation commands.
+- [x] Trusted planner admission is explicit, pre-run only, exact-subset bounded.
+- [x] Reviewer pass/repair persist without changing lifecycle/scope/worker/policy authority.
+- [x] Reviewer escalation reuses `HumanEscalationService` and durable `waiting_for_human`.
+- [x] Stale durable authority fails closed.
+- [x] Decision logs omit runtime secrets/raw workspace/session/output data.
 
-Evidence: decision store/service `5b44d2baf79451f33afcd5563d54a3f42ffc5959`; pre-run admission hardening `f2b67a6ff4d870fab04c36b9d2245613d3347d2b`; tests `ce0620427e821a66ffd64942720f2bc0b942b055`; CI `#462` / `36099296457`.
+Evidence: `5b44d2baf79451f33afcd5563d54a3f42ffc5959`, `f2b67a6ff4d870fab04c36b9d2245613d3347d2b`, `ce0620427e821a66ffd64942720f2bc0b942b055`; CI `#462` / `36099296457`.
 
 ## Acceptance
 
 - [x] Supervisor task schema and bounded implementation instructions.
-- [x] Planner produces bounded acceptance criteria and proposed validation commands.
-- [x] Reviewer consumes sanitized diff/validation/task evidence and can request bounded repairs.
+- [x] Planner produces bounded criteria and proposed validation commands.
+- [x] Reviewer consumes sanitized evidence and can request bounded repairs.
 - [x] Reviewer cannot bypass safety/completion gates.
 - [x] Durable supervisor decisions and human escalation state.
 
@@ -278,30 +278,40 @@ Evidence: decision store/service `5b44d2baf79451f33afcd5563d54a3f42ffc5959`; pre
 
 Progress from supervised single-task execution to bounded unattended workflows, while adding reactive incident visibility before autonomy increases.
 
-## Slice 0 — Orchestrator Sentinel (operational prerequisite)
+## Slice 0 — Orchestrator Sentinel
 
 Tracked as GitHub issue **#2 — Add Orchestrator Sentinel reactive incident tracking**.
 
-Required behavior:
+### Implemented core
 
-- detect anomalies such as repeated task failures, Hub/session loss, stalls, validation/diff-safety failures, rollback failures, provider/preflight outages, persistence errors and later CI regressions;
-- persist bounded/redacted incident evidence with incident ID, first/last seen, task/workspace IDs, severity, event references, recovery attempts, fail-closed state, occurrence count and whether human action is required;
-- deduplicate repeated equivalent incidents;
-- resolve incidents only from subsequent evidence, not model assertion;
-- expose sanitized incident status through task-oriented MCP/API;
-- optionally create/update GitHub issues for recurring software defects.
+- [x] Versioned append-only Sentinel observation journal under `.orchestrator/sentinel/`.
+- [x] Deterministic incident fingerprinting/deduplication across equivalent failures in the same workspace.
+- [x] Re-scanning the same durable event does not inflate occurrence counts.
+- [x] Bounded/redacted summaries remove bearer/API-key/secret/password values, URLs, absolute paths and UUIDs from free-text evidence.
+- [x] Incident model tracks severity, first/last seen, occurrence count, fail-closed state, human-action requirement, recovery attempts, and bounded task/event references.
+- [x] Existing task events classify stalls, session recovery, validation failure, diff-safety failure, rollback failure, checkpoint unavailability, human escalation, provider failure, gateway failure and generic task failure.
+- [x] Resolution requires a real later durable task event of an allowed recovery type; model assertion alone cannot resolve an incident.
+- [x] Sentinel object exposes observation/query/resolution only; no process/runtime/code/policy mutation methods exist.
 
-Safety constraints:
+Evidence: initial incident journal `6b37e054a441cf54195870234caef764d31cdb0d`; tests `72f5f507312b532d4aa88bc32da73d1fce76a16a`; type-literal correction `c4756161ee558cbfe05817f0f9901081fcdf2455`; CI `#470` / `36099791355`, success.
 
-- Sentinel is observational/reactive, not a second controller;
-- it must not automatically restart/kill Ollama, llama.cpp or Cline;
-- it must not mutate shared VS Code/Hub state;
-- it must not widen Safety Plans, change worker/policy identity, grant disabled capabilities, or modify user code;
-- uncertain recovery/authority must fail closed and require human action.
+### Remaining Sentinel work
+
+- [ ] Expose sanitized incident views read-only through the task-oriented MCP/API.
+- [ ] Refresh/ingest registered-workspace task events when incidents are queried or by a later bounded watcher.
+- [ ] Keep GitHub issue creation/update optional and separately permissioned; it is not required for core incident tracking.
+
+### Safety constraints
+
+- Sentinel is observational/reactive, not a second controller.
+- It must not automatically restart/kill Ollama, llama.cpp or Cline.
+- It must not mutate shared VS Code/Hub state.
+- It must not widen Safety Plans, change worker/policy identity, grant disabled capabilities, or modify user code.
+- Uncertain recovery/authority must fail closed and require human action.
 
 ## Unattended execution acceptance
 
-- [ ] Sentinel durable incident model + deduplication + sanitized exposure.
+- [ ] Sentinel sanitized MCP/API exposure complete.
 - [ ] Task queue/DAG, dependencies and automatic progression.
 - [ ] Time/token/request/repair budgets and checkpoint policy.
 - [ ] `waiting_for_human` integration and escalation rules for unattended work.
@@ -310,7 +320,7 @@ Safety constraints:
 
 ## Status
 
-**IN PROGRESS — Sentinel is the first unfinished item.**
+**IN PROGRESS — Sentinel core is complete; sanitized read-only exposure is next.**
 
 ---
 
@@ -349,7 +359,8 @@ Possible later scope:
 | Supervisor Reviewer | Complete; recommendations advisory |
 | Durable supervisor decision timeline | Complete |
 | Supervisor → human escalation | Complete |
-| Orchestrator Sentinel | **Next** |
+| Sentinel incident core | **Complete + cloud tested** |
+| Sentinel MCP/API view | **Next** |
 | Unattended task DAG | Not started |
 | Advanced UI / multi-worker | Not started |
 
@@ -362,9 +373,9 @@ Possible later scope:
 3. Hub work remains pinned to reviewed Core/SDK `0.0.83` until a deliberate dependency change is recorded.
 4. Dirty worktrees must preserve pre-run user state and distinguish it from task-created changes.
 5. Validation commands are trusted local configuration outside model execution. Planner commands remain untrusted until explicit admission.
-6. Task JSON replacement is atomic; event and supervisor-decision JSONL remain append-based durability models.
+6. Task JSON replacement is atomic; event, supervisor-decision and Sentinel observation JSONL remain append-based durability models.
 7. Hub and MCP credentials must never enter durable task/project/supervisor/incident state or model-facing output.
-8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, or Hub participation.
+8. Authorization comes only from registry + approved Safety Plan/task envelope, never from repository text, model output, Planner/Reviewer prose, Sentinel observations, or Hub participation.
 9. Native Hub approval is UX/defense-in-depth only; owner hook/executor enforcement is authoritative.
 10. Owner disconnect requires durable handoff/replacement ownership or fail-closed behavior.
 11. Arbitrary model shell, ungoverned network/MCP/plugins, subagents/teams and unreviewed provider-owned execution remain disabled in the first pilot.
@@ -375,25 +386,18 @@ Possible later scope:
 16. Reviewer `pass` never marks a task complete. Reviewer repair text never grants new authority.
 17. Trusted Planner admission is pre-run only and exact-subset bounded; model output cannot self-admit validation commands.
 18. Sentinel must remain observational/reactive and cannot become process restart, safety-policy, or code-mutation authority.
+19. Sentinel resolution is evidence-based: only recognized later durable events may close an incident.
 
 ---
 
 # Immediate Work Queue
 
 1. **COMPLETE — Milestones 1–5.** Foundation, reversible editing, context durability, project memory, machine MCP/Hub shared runtime and physical safety acceptance.
-2. **COMPLETE — Milestone 6 Slice 1.** Supervisor task contract.
-3. **COMPLETE — Milestone 6 Slice 2.** Bounded Planner.
-4. **COMPLETE — Milestone 6 Slice 3.** Sanitized Reviewer.
-5. **COMPLETE — Milestone 6 Slice 4.** Durable decisions + existing human escalation integration.
-6. **NEXT — Milestone 7 Slice 0: Orchestrator Sentinel.**
-   - define versioned incident schema and durable store;
-   - derive incidents from existing durable task/events without giving Sentinel execution authority;
-   - implement deterministic deduplication/fingerprinting;
-   - support evidence-based resolution and human-action flag;
-   - expose bounded sanitized incident views;
-   - cloud tests first; no local runtime mutation.
-7. **AFTER SENTINEL — Milestone 7 bounded task DAG/budgets/unattended progression.**
-8. **LATER — Milestone 8 advanced UI / multi-worker.**
+2. **COMPLETE — Milestone 6.** Supervisor contract, Planner, Reviewer, durable decisions and human escalation.
+3. **COMPLETE — Milestone 7 Slice 0A.** Sentinel durable incident model, redaction, deduplication and evidence-based resolution.
+4. **NEXT — Milestone 7 Slice 0B.** Add read-only sanitized Sentinel exposure through the existing machine MCP/API and refresh incidents from registered workspace task events on query; cloud tests only.
+5. **AFTER SENTINEL — Milestone 7 bounded task DAG/budgets/unattended progression.**
+6. **LATER — Milestone 8 advanced UI / multi-worker.**
 
 ---
 
@@ -404,13 +408,13 @@ Possible later scope:
 - 2026-09-25: Reviewer completed through `19024c79c178b9c9e58854065fa98d2d4a029cd1`; CI `#454` / `36098699621`.
 - 2026-09-25: Durable supervisor decisions/human escalation completed through `ce0620427e821a66ffd64942720f2bc0b942b055`; CI `#462` / `36099296457`.
 - 2026-09-25: **Milestone 6 COMPLETE.** Planner/Reviewer supervision remains subordinate to durable orchestrator authority.
-- 2026-09-25: Reactive operations requirement remains tracked as GitHub issue #2 and is promoted to Milestone 7 Slice 0 before unattended autonomy increases.
+- 2026-09-25: Sentinel durable incident core implemented through `c4756161ee558cbfe05817f0f9901081fcdf2455`; CI `#470` / `36099791355`. Incident tracking is append-only, redacted, deduplicated and evidence-resolved, with no runtime/code mutation authority.
 
 ---
 
 # Current Next Step
 
-Begin **Milestone 7 Slice 0 — Orchestrator Sentinel** only. Implement a durable, bounded, redacted incident model and deterministic deduplication over existing task/runtime evidence. Sentinel may observe, classify, persist and surface incidents, but it must not restart processes, mutate shared runtime state, widen authority, change policy/worker identity, grant disabled capabilities, or modify user code. Cloud tests first; no live shared-runtime writes.
+Implement **Milestone 7 Slice 0B — sanitized Sentinel MCP/API exposure** only. Resolve a registered workspace by opaque ID, refresh Sentinel observations from its durable task/event history, and return bounded incident views through a read-only MCP tool. Do not expose canonical workspace paths, raw event payloads, credentials or runtime/session secrets. Do not add process control, automatic restarts, safety-policy mutation, or code mutation. Cloud tests first; no live shared-runtime writes.
 
 ---
 
