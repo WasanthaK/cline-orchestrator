@@ -5,8 +5,10 @@ import path from "node:path";
 import test from "node:test";
 import {
   assertFirstPilotWorkerSurface,
+  assertOwnerTargetedHubSafetyBoundary,
   createHubSafetySessionContributions,
   HubSafetyConfigurationError,
+  type HubSafetySessionContributions,
 } from "./hub-safety-runtime.js";
 import { SafeExecutorError } from "./safe-executors.js";
 import { TaskStore } from "./state.js";
@@ -79,6 +81,27 @@ function hookContext(toolName: string, input: unknown) {
   };
 }
 
+function cloneSafety(safety: HubSafetySessionContributions): HubSafetySessionContributions {
+  return {
+    localRuntime: {
+      hooks: safety.localRuntime.hooks,
+      configExtensions: [],
+    },
+    capabilities: {
+      ...safety.capabilities,
+      toolExecutors: { ...(safety.capabilities.toolExecutors ?? {}) },
+    },
+    toolPolicies: Object.fromEntries(
+      Object.entries(safety.toolPolicies).map(([name, policy]) => [name, { ...policy }]),
+    ),
+    configOverrides: {
+      ...safety.configOverrides,
+      pluginPaths: [...safety.configOverrides.pluginPaths],
+      agentPluginPaths: [...safety.configOverrides.agentPluginPaths],
+    },
+  };
+}
+
 test("Hub safety contributions expose only owner-targeted pilot executors and disable unsafe surfaces", async () => {
   const root = await setupWorkspace();
   const task = approvedTask(root);
@@ -99,6 +122,34 @@ test("Hub safety contributions expose only owner-targeted pilot executors and di
   assert.equal(safety.configOverrides.enableSpawnAgent, false);
   assert.equal(safety.configOverrides.enableAgentTeams, false);
   assert.deepEqual(safety.localRuntime.configExtensions, []);
+  assert.doesNotThrow(() => assertOwnerTargetedHubSafetyBoundary(safety));
+});
+
+test("owner-targeted Hub boundary fails closed if native spawn, teams, plugins, extra tools, or executors appear", async () => {
+  const root = await setupWorkspace();
+  const task = approvedTask(root);
+  await new TaskStore(root).save(task);
+  const base = createHubSafetySessionContributions(task, root, worker());
+
+  const spawnEnabled = cloneSafety(base);
+  (spawnEnabled.configOverrides as any).enableSpawnAgent = true;
+  assert.throws(() => assertOwnerTargetedHubSafetyBoundary(spawnEnabled), HubSafetyConfigurationError);
+
+  const teamsEnabled = cloneSafety(base);
+  (teamsEnabled.configOverrides as any).enableAgentTeams = true;
+  assert.throws(() => assertOwnerTargetedHubSafetyBoundary(teamsEnabled), HubSafetyConfigurationError);
+
+  const pluginEnabled = cloneSafety(base);
+  (pluginEnabled.configOverrides as any).pluginPaths = ["plugin.js"];
+  assert.throws(() => assertOwnerTargetedHubSafetyBoundary(pluginEnabled), HubSafetyConfigurationError);
+
+  const extraTool = cloneSafety(base);
+  extraTool.toolPolicies.spawn_agent = { enabled: true, autoApprove: true };
+  assert.throws(() => assertOwnerTargetedHubSafetyBoundary(extraTool), HubSafetyConfigurationError);
+
+  const extraExecutor = cloneSafety(base);
+  (extraExecutor.capabilities.toolExecutors as any).executeCommand = async () => ({ exitCode: 0 });
+  assert.throws(() => assertOwnerTargetedHubSafetyBoundary(extraExecutor), HubSafetyConfigurationError);
 });
 
 test("Hub beforeTool understands SDK read_files payloads and fails shell/network closed", async () => {
