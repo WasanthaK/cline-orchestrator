@@ -42,6 +42,11 @@ test("disposable workspace builder creates a clean independent Git baseline", as
       windowsHide: true,
     });
     assert.equal(status.stdout, "");
+    const autocrlf = await execFile("git", ["-C", root, "config", "--local", "--get", "core.autocrlf"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    assert.equal(autocrlf.stdout.trim(), "false");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
