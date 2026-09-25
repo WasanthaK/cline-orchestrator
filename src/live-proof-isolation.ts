@@ -7,6 +7,9 @@ import { promisify } from "node:util";
 
 const execFile = promisify(execFileCallback);
 
+export const LIVE_PROOF_OPT_IN_ENV = "ORCH_LIVE_PROOF_OPT_IN";
+export const LIVE_PROOF_OPT_IN_VALUE = "CONFIRMED_DISPOSABLE_ONLY";
+
 export interface LiveProofIsolation {
   root: string;
   registryPath: string;
@@ -15,6 +18,22 @@ export interface LiveProofIsolation {
   hubPort: number;
   hubAddress: string;
   environment: Record<string, string>;
+}
+
+/**
+ * Defense-in-depth guard for scripts that may start an isolated local Hub/runtime.
+ * This deliberately does not represent user authorization by itself; callers must
+ * still obtain the externally required authorization before executing a physical
+ * proof. The opt-in only prevents accidental invocation from a shell/CI job.
+ */
+export function assertLiveProofOptIn(
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
+  if (environment[LIVE_PROOF_OPT_IN_ENV] !== LIVE_PROOF_OPT_IN_VALUE) {
+    throw new Error(
+      `Physical live proof is disabled. Set ${LIVE_PROOF_OPT_IN_ENV}=${LIVE_PROOF_OPT_IN_VALUE} only for an explicitly authorized disposable proof.`,
+    );
+  }
 }
 
 async function allocateLoopbackPort(): Promise<number> {
