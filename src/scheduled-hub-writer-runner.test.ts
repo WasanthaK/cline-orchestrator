@@ -76,6 +76,7 @@ class FakeHubRuntime implements ClineRuntime {
     this.harness.active += 1;
     this.harness.maxActive = Math.max(this.harness.maxActive, this.harness.active);
     try {
+      await this.harness.waitForConcurrentSends();
       const editor = this.startInput?.capabilities?.toolExecutors?.editor;
       assert.equal(typeof editor, "function");
       await editor(
@@ -87,7 +88,6 @@ class FakeHubRuntime implements ClineRuntime {
         this.workspaceRoot,
         { agentId: "fake", conversationId: this.sessionId, iteration: 1 },
       );
-      await new Promise((resolve) => setTimeout(resolve, 25));
       return { finishReason: "completed", text: "done" };
     } finally {
       this.harness.active -= 1;
@@ -106,6 +106,20 @@ class FakeHubRuntimeFactory implements ClineRuntimeFactory {
   disposed = 0;
   readonly startedWorkspaces: string[] = [];
   readonly createRequests: ClineRuntimeCreateRequest[] = [];
+  private sendArrivals = 0;
+  private releaseSendBarrier!: () => void;
+  private readonly sendBarrier = new Promise<void>((resolve) => {
+    this.releaseSendBarrier = resolve;
+  });
+
+  async waitForConcurrentSends(): Promise<void> {
+    this.sendArrivals += 1;
+    if (this.sendArrivals >= 2) this.releaseSendBarrier();
+    await Promise.race([
+      this.sendBarrier,
+      new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+  }
 
   async create(request: ClineRuntimeCreateRequest): Promise<ClineRuntime> {
     this.createRequests.push({ ...request });
