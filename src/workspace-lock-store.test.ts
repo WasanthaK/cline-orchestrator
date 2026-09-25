@@ -8,6 +8,7 @@ import { WorkspaceLockStore } from "./workspace-lock-store.js";
 
 const IDS = {
   workspace: "11111111-1111-4111-8111-111111111111",
+  workspace2: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   task1: "22222222-2222-4222-8222-222222222222",
   task2: "33333333-3333-4333-8333-333333333333",
   owner1: "44444444-4444-4444-8444-444444444444",
@@ -143,6 +144,81 @@ test("restart does not make a stale owner claim valid and expiry replacement rec
     await assert.rejects(
       () => afterRestart.validate(first.claim, new Date("2026-09-25T08:00:02.500Z")),
       (error: unknown) => error instanceof WorkspaceLockError && error.code === "stale_claim",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("renewal extends only the exact live fenced claim and makes the prior claim stale", async () => {
+  const { root, store } = await tempStore();
+  try {
+    const first = await store.acquire(
+      {
+        workspaceId: IDS.workspace,
+        taskId: IDS.task1,
+        ownerInstanceId: IDS.owner1,
+        leaseMs: 2_000,
+      },
+      { now: () => T0, idFactory: idFactory(IDS.lease1, IDS.fence1) },
+    );
+
+    const renewed = await store.renew(first.claim, 60_000, {
+      now: () => new Date("2026-09-25T08:00:01.000Z"),
+    });
+    assert.equal(renewed.claim.leaseId, first.claim.leaseId);
+    assert.equal(renewed.claim.fenceToken, first.claim.fenceToken);
+    assert.equal(renewed.claim.stateRevision, first.claim.stateRevision + 1);
+    assert.equal(renewed.claim.expiresAt, "2026-09-25T08:01:01.000Z");
+
+    await assert.rejects(
+      () => store.validate(first.claim, new Date("2026-09-25T08:00:01.500Z")),
+      (error: unknown) => error instanceof WorkspaceLockError && error.code === "stale_claim",
+    );
+    await store.validate(renewed.claim, new Date("2026-09-25T08:00:59.000Z"));
+
+    await assert.rejects(
+      () => store.renew(renewed.claim, 60_000, {
+        now: () => new Date("2026-09-25T08:01:02.000Z"),
+      }),
+      (error: unknown) => error instanceof WorkspaceLockError && error.code === "lease_expired",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("live enumeration is durable, excludes expired leases and fails closed on unsupported files", async () => {
+  const { root, store } = await tempStore();
+  try {
+    await store.acquire(
+      {
+        workspaceId: IDS.workspace,
+        taskId: IDS.task1,
+        ownerInstanceId: IDS.owner1,
+        leaseMs: 60_000,
+      },
+      { now: () => T0, idFactory: idFactory(IDS.lease1, IDS.fence1) },
+    );
+    await store.acquire(
+      {
+        workspaceId: IDS.workspace2,
+        taskId: IDS.task2,
+        ownerInstanceId: IDS.owner2,
+        leaseMs: 1_000,
+      },
+      { now: () => T0, idFactory: idFactory(IDS.lease2, IDS.fence2) },
+    );
+
+    const live = await new WorkspaceLockStore(root).listActive(
+      new Date("2026-09-25T08:00:02.000Z"),
+    );
+    assert.deepEqual(live.map((state) => state.workspaceId), [IDS.workspace]);
+
+    await writeFile(path.join(root, "workspace-locks", "unexpected.tmp"), "x", "utf8");
+    await assert.rejects(
+      () => store.listActive(new Date("2026-09-25T08:00:02.000Z")),
+      (error: unknown) => error instanceof WorkspaceLockError && error.code === "lock_invalid",
     );
   } finally {
     await rm(root, { recursive: true, force: true });
