@@ -8,9 +8,9 @@ import {
   type LeaseAwareWriterAuthorityV1,
 } from "./lease-aware-hub-safety-runtime.js";
 import { LeaseAwareHubRuntimeFactory } from "./lease-aware-hub-runtime.js";
-import { preflightProvider, type ProviderPreflightResult } from "./provider-preflight.js";
+import { preflightProvider } from "./provider-preflight.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
-import type { OrchestratorTask, WorkerConfig } from "./types.js";
+import type { OrchestratorTask, ProviderPreflightResult, WorkerConfig } from "./types.js";
 import type { RegisteredWorkspace, WorkspaceRegistry } from "./workspace-registry.js";
 import type {
   ApprovedWriterBindingV1,
@@ -98,7 +98,7 @@ function assertFreshScheduledTask(task: OrchestratorTask): void {
       "task_not_runnable",
     );
   }
-  if (task.pendingEscalation || task.status === "waiting_for_human") {
+  if (task.pendingEscalation) {
     throw new ScheduledHubWriterError(
       `Task ${task.id} has unresolved human attention and cannot be scheduled`,
       "task_not_runnable",
