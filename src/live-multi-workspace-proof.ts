@@ -431,7 +431,7 @@ async function main(): Promise<void> {
         maxActiveWritersPerWorkspace: 1,
       },
       faultRunner,
-      { leaseMs: 30_000, heartbeatMs: 10 },
+      { leaseMs: 30_000, heartbeatMs: 250 },
     );
     const faultResult = await faultScheduler.schedule([faultTaskA.id, healthyTaskB.id]);
     if (!faultLocks.faultInjected) fail("physical lease-loss fault was not injected");
@@ -439,7 +439,17 @@ async function main(): Promise<void> {
       fail(`faulted workspace did not fail closed: ${JSON.stringify(faultResult)}`);
     }
     if (!faultResult.completedTaskIds.includes(healthyTaskB.id)) {
-      fail(`healthy workspace did not complete independently: ${JSON.stringify(faultResult)}`);
+      const healthy = await new TaskStore(workspaceB.canonicalRoot).load(healthyTaskB.id);
+      fail(`healthy workspace did not complete independently: ${JSON.stringify({
+        result: faultResult,
+        healthyTask: {
+          status: healthy.status,
+          finishReason: healthy.finishReason,
+          error: healthy.error,
+          validationPassed: healthy.lastValidation?.passed,
+          diffSafetyPassed: healthy.lastDiffSafety?.passed,
+        },
+      })}`);
     }
     if (faultResult.completedTaskIds.includes(faultTaskA.id)) {
       fail("faulted workspace incorrectly reported completion after lease loss");

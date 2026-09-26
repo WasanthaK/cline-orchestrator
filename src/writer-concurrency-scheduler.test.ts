@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import test from "node:test";
 import { WorkspaceLockStore } from "./workspace-lock-store.js";
 import {
@@ -41,6 +42,7 @@ class FakeRunner implements WriterAuthorityRunner {
   constructor(
     private readonly bindings: Map<string, ApprovedWriterBindingV1>,
     private readonly mutateOnRevalidation?: (taskId: string, count: number, value: ApprovedWriterBindingV1) => ApprovedWriterBindingV1,
+    private readonly runMs = 15,
   ) {}
 
   async revalidateApprovedTask(taskId: string): Promise<ApprovedWriterBindingV1> {
@@ -58,7 +60,7 @@ class FakeRunner implements WriterAuthorityRunner {
     this.started.push(taskId);
     this.active += 1;
     this.maxActive = Math.max(this.maxActive, this.active);
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await sleep(this.runMs);
     await lease.validateCurrent();
     this.active -= 1;
   }
@@ -70,6 +72,65 @@ const BUDGET = {
   maxStartsPerPass: 2,
   maxActiveWritersPerWorkspace: 1 as const,
 };
+
+class SlowRenewLockStore extends WorkspaceLockStore {
+  activeRenewals = 0;
+  maxActiveRenewals = 0;
+  renewalCount = 0;
+  validationDuringRenewal = 0;
+  releaseDuringRenewal = 0;
+
+  override async renew(claim: Parameters<WorkspaceLockStore["renew"]>[0], leaseMs: number) {
+    this.activeRenewals += 1;
+    this.maxActiveRenewals = Math.max(this.maxActiveRenewals, this.activeRenewals);
+    this.renewalCount += 1;
+    try {
+      await sleep(35);
+      return await super.renew(claim, leaseMs);
+    } finally {
+      this.activeRenewals -= 1;
+    }
+  }
+
+  override async validate(claim: Parameters<WorkspaceLockStore["validate"]>[0], now?: Date) {
+    if (this.activeRenewals > 0) this.validationDuringRenewal += 1;
+    return await super.validate(claim, now);
+  }
+
+  override async release(claim: Parameters<WorkspaceLockStore["release"]>[0]) {
+    if (this.activeRenewals > 0) this.releaseDuringRenewal += 1;
+    return await super.release(claim);
+  }
+}
+
+test("slow heartbeats do not overlap renewal, validation, or release of the current claim", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cline-writer-slow-heartbeat-"));
+  try {
+    const locks = new SlowRenewLockStore(root);
+    const runner = new FakeRunner(
+      new Map([[IDS.task1, binding(IDS.task1, IDS.workspace1, IDS.owner1)]]),
+      undefined,
+      170,
+    );
+    const scheduler = new WriterConcurrencyScheduler(
+      locks,
+      { ...BUDGET, maxActiveWriters: 1, maxStartsPerPass: 1 },
+      runner,
+      { leaseMs: 1_000, heartbeatMs: 5 },
+    );
+
+    const result = await scheduler.schedule([IDS.task1]);
+    assert.deepEqual(result.completedTaskIds, [IDS.task1]);
+    assert.deepEqual(result.failures, []);
+    assert.ok(locks.renewalCount >= 2);
+    assert.equal(locks.maxActiveRenewals, 1);
+    assert.equal(locks.validationDuringRenewal, 0);
+    assert.equal(locks.releaseDuringRenewal, 0);
+    assert.equal((await locks.listActive()).length, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("scheduler runs bounded writers concurrently only across distinct workspaces and releases leases", async () => {
   const { root, locks } = await tempLocks();

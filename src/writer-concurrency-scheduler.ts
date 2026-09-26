@@ -78,6 +78,9 @@ class ManagedWriterLeaseSession implements WriterLeaseSession {
   private readonly abortController = new AbortController();
   private timer: NodeJS.Timeout | undefined;
   private heartbeatFailure: unknown;
+  private operationTail: Promise<void> = Promise.resolve();
+  private renewalQueued = false;
+  private closed = false;
 
   constructor(
     private readonly store: WorkspaceLockStore,
@@ -97,31 +100,47 @@ class ManagedWriterLeaseSession implements WriterLeaseSession {
     return structuredClone(this.claimValue);
   }
 
+  private serializeLeaseOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.operationTail.then(operation, operation);
+    this.operationTail = next.then(() => undefined, () => undefined);
+    return next;
+  }
+
   async validateCurrent(): Promise<void> {
-    if (this.heartbeatFailure) throw this.heartbeatFailure;
-    await this.store.validate(this.claimValue);
+    await this.serializeLeaseOperation(async () => {
+      if (this.heartbeatFailure) throw this.heartbeatFailure;
+      if (this.closed) throw new Error("Writer lease session is closed");
+      await this.store.validate(this.claimValue);
+    });
   }
 
   startHeartbeat(): void {
-    const tick = async () => {
-      try {
-        const renewed = await this.store.renew(this.claimValue, this.leaseMs);
-        this.claimValue = renewed.claim;
-      } catch (error) {
-        this.heartbeatFailure = error;
-        this.abortController.abort(error);
-        if (this.timer) clearInterval(this.timer);
-        this.timer = undefined;
-      }
-    };
-    this.timer = setInterval(() => { void tick(); }, this.heartbeatMs);
+    this.timer = setInterval(() => {
+      if (this.renewalQueued || this.closed) return;
+      this.renewalQueued = true;
+      void this.serializeLeaseOperation(async () => {
+        if (this.closed || this.heartbeatFailure) return;
+        try {
+          const renewed = await this.store.renew(this.claimValue, this.leaseMs);
+          this.claimValue = renewed.claim;
+        } catch (error) {
+          this.heartbeatFailure = error;
+          this.abortController.abort(error);
+          if (this.timer) clearInterval(this.timer);
+          this.timer = undefined;
+        }
+      }).finally(() => { this.renewalQueued = false; });
+    }, this.heartbeatMs);
     this.timer.unref?.();
   }
 
   async close(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    await this.store.release(this.claimValue);
+    this.closed = true;
+    await this.serializeLeaseOperation(async () => {
+      await this.store.release(this.claimValue);
+    });
   }
 }
 
