@@ -173,12 +173,13 @@ async function parentMain(): Promise<void> {
     });
     assertDisposableWorkspaceRoot(workspace.canonicalRoot);
     const goal = "Read src/demo.ts. Replace the exact line 'export const value = 1;' with 'export const value = 401;'. Do not modify any other file. Re-read src/demo.ts and report completion.";
-    const preview = await new SafetyPlanService(registry).preview({
+    const safetyPlans = new SafetyPlanService(registry);
+    const preview = await safetyPlans.preview({
       workspaceId: workspace.workspaceId,
       goal,
       requestedScope: ["src/demo.ts"],
     });
-    const { task } = await startApprovedTask(new SafetyPlanService(registry), preview.planToken);
+    const { task } = await startApprovedTask(safetyPlans, preview.planToken);
     const store = new TaskStore(root);
     const locksPath = path.join(isolation.root, "scheduled-coordination");
     const locks = new WorkspaceLockStore(locksPath);
