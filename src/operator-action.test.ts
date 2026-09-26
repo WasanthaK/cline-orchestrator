@@ -107,6 +107,60 @@ test("operator rejects only a confirmed pending escalation through the machine s
   });
 });
 
+test("operator approval closes the old envelope, audits once, requires a new preview, and rejects replay", async () => {
+  await withPendingEscalation(async ({ actions, service, taskId, workspaceId, escalationId }) => {
+    const preview = await actions.previewEscalationApproval(taskId);
+    assert.equal(preview.action, "approve_escalation");
+    assert.equal(preview.workspaceId, workspaceId);
+    assert.equal(preview.escalationId, escalationId);
+    assert.match(preview.confirmationText, /new Safety Preview/i);
+    assert.equal(JSON.stringify(preview).includes("src/demo.ts"), false);
+
+    await assert.rejects(
+      actions.approveEscalation({ taskId, confirmationToken: preview.confirmationToken, confirmed: false as true }),
+      (error: unknown) => error instanceof OperatorActionError && error.code === "invalid_action",
+    );
+
+    const result = await actions.approveEscalation({
+      taskId,
+      confirmationToken: preview.confirmationToken,
+      confirmed: true,
+    });
+    assert.equal(result.nextAction, "new_safety_preview_required");
+    assert.equal(result.task.status, "aborted");
+    assert.equal(result.task.pendingEscalation?.status, "approved");
+    assert.equal((await service.getTaskEvents(taskId)).filter((item) => item.type === "human_escalation_approved").length, 1);
+
+    await assert.rejects(
+      actions.approveEscalation({ taskId, confirmationToken: preview.confirmationToken, confirmed: true }),
+      (error: unknown) => error instanceof OperatorActionError && error.code === "invalid_action",
+    );
+    await assert.rejects(actions.previewEscalationApproval(taskId), OperatorActionError);
+  });
+});
+
+test("approval confirmation fails closed after safety-profile drift without granting broader authority", async () => {
+  await withPendingEscalation(async ({ actions, registry, store, taskId, workspaceId }) => {
+    const preview = await actions.previewEscalationApproval(taskId);
+    await registry.updateSafetyProfile(workspaceId, {
+      policyVersion: "policy-v2",
+      allowedPathPatterns: ["src/**"],
+      protectedPathPatterns: [".env*"],
+      validationCommands: [],
+      workerProfileId: "test",
+      maxChangedFiles: 1,
+    });
+
+    await assert.rejects(
+      actions.approveEscalation({ taskId, confirmationToken: preview.confirmationToken, confirmed: true }),
+      (error: unknown) => error instanceof MachineGatewayError && error.code === "task_binding_stale",
+    );
+    assert.equal((await store.load(taskId)).status, "waiting_for_human");
+    assert.equal((await store.load(taskId)).pendingEscalation?.status, "pending");
+    assert.equal((await store.events(taskId)).some((event) => event.type === "human_escalation_approved"), false);
+  });
+});
+
 test("stale task and profile changes fail closed and burn the preview token", async () => {
   await withPendingEscalation(async ({ actions, service, registry, store, taskId, workspaceId, escalationId }) => {
     const preview = await actions.previewEscalationRejection(taskId);
