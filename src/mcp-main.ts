@@ -7,6 +7,7 @@ import {
   readMcpGatewayConfig,
   startMachineMcpHttpServer,
 } from "./mcp-gateway.js";
+import { localOperatorConfigFromEnvironment, startLocalOperatorControlServer } from "./local-operator-control.js";
 import { SafetyPlanService } from "./safety-plan.js";
 import type { ReasoningEffort, WorkerConfig } from "./types.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
@@ -131,8 +132,13 @@ async function main(): Promise<void> {
     environmentWorkerProfileResolver(),
   );
   const config = readMcpGatewayConfig();
+  const operatorConfig = localOperatorConfigFromEnvironment();
+  if (operatorConfig && operatorConfig.port === config.port && config.host !== "::1") {
+    throw new Error("ORCH_OPERATOR_PORT must differ from the loopback MCP port");
+  }
   const recovery = await service.recoverInterruptedTasks();
   const server = startMachineMcpHttpServer(service, config);
+  const operatorServer = operatorConfig ? startLocalOperatorControlServer(service, operatorConfig) : undefined;
 
   if (recovery.scanned > 0) {
     process.stderr.write(
@@ -142,12 +148,14 @@ async function main(): Promise<void> {
   process.stderr.write(
     `[cline-orchestrator MCP: listening on ${config.host}:${config.port}${config.path}; tunnel=${config.tunnelPublicUrl ? "configured" : "not configured"}]\n`,
   );
+  if (operatorConfig) process.stderr.write(`[cline-orchestrator operator: local control on ${operatorConfig.host}:${operatorConfig.port}/operator]\n`);
 
   let closing = false;
   const shutdown = async (signal: string) => {
     if (closing) return;
     closing = true;
     process.stderr.write(`[cline-orchestrator MCP: shutting down after ${signal}]\n`);
+    if (operatorServer) await new Promise<void>((resolve) => operatorServer.close(() => resolve()));
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await service.close();
   };
