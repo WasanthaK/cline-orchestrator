@@ -78,7 +78,7 @@ test("denies lexical traversal and resolved symlink write escapes", async () => 
   );
   assert.equal(traversal.decision, "DENY");
 
-  await symlink(outside, path.join(root, "src", "linked"), "dir");
+  await symlink(outside, path.join(root, "src", "linked"), process.platform === "win32" ? "junction" : "dir");
   const symlinkResult = await evaluatePreExecutionPolicy(
     { kind: "edit", paths: ["src/linked/new.txt"], operation: "create" },
     { workspaceRoot: root, binding: binding() },

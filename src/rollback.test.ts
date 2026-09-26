@@ -25,6 +25,7 @@ async function withRepo<T>(fn: (dir: string, store: TaskStore) => Promise<T>): P
     await git(dir, "init");
     await git(dir, "config", "user.name", "Rollback Test");
     await git(dir, "config", "user.email", "rollback@example.invalid");
+    await git(dir, "config", "core.autocrlf", "false");
     await writeFile(path.join(dir, "app.txt"), "base\n", "utf8");
     await git(dir, "add", "app.txt");
     await git(dir, "commit", "-m", "base");

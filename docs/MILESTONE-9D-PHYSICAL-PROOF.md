@@ -24,6 +24,21 @@ change the operator's registered projects.
 First run `npm run typecheck` and `npm test`. Then, after choosing an available
 local worker and deliberately opting into the disposable live proof:
 
+For a `llama.cpp` server listening on `127.0.0.1:8080` with alias
+`qwen38-27b-192k`, configure the repository's OpenAI-compatible worker in
+PowerShell and check the server's reported model ID:
+
+```powershell
+$env:ORCH_PROVIDER = "ollama-openai"
+$env:ORCH_BASE_URL = "http://127.0.0.1:8080"
+$env:ORCH_MODEL = "qwen38-27b-192k"
+(Invoke-RestMethod http://127.0.0.1:8080/v1/models).data.id
+```
+
+The reported ID must match `ORCH_MODEL`. The `ollama-openai` setting selects
+the orchestrator's OpenAI-compatible provider and appends `/v1` to this base
+URL. It does not start, stop, or reconfigure the model server.
+
 ```bash
 ORCH_LIVE_PROOF_OPT_IN=CONFIRMED_DISPOSABLE_ONLY npm run proof:multi-workspace
 ORCH_LIVE_PROOF_OPT_IN=CONFIRMED_DISPOSABLE_ONLY npm run proof:scheduled-restart

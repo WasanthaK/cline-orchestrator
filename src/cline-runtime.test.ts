@@ -99,7 +99,7 @@ test("Hub resume workspace verification accepts canonical aliases and rejects a 
   const workspace = await mkdtemp(path.join(os.tmpdir(), "orch-runtime-workspace-"));
   const aliasParent = await mkdtemp(path.join(os.tmpdir(), "orch-runtime-alias-"));
   const alias = path.join(aliasParent, "workspace-link");
-  await symlink(workspace, alias, "dir");
+  await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
 
   const canonical = await realpath(workspace);
   await verifyRuntimeSessionWorkspace(

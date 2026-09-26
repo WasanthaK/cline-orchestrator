@@ -457,6 +457,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 - 2026-09-25: Milestone 9B complete; real scheduler/Hub integration cloud proof through stable branch-head CI `#614` / `36122721492`.
 - 2026-09-25: Milestone 9C complete; mid-flight lease-loss fail-safe CI `#620`, worker-crash/stale-executor CI `#622`, explicit fenced restart recovery CI `#628`, active Hub owner-loss/handoff recovery CI `#630`.
 - 2026-09-25: Milestone 9D harness review added a bounded overlap barrier and an isolated scheduled restart proof command. Local Node test runner: 262 passed; typecheck passed. No new physical proof has run. Next: run the three gated proofs on a suitable local provider and review their evidence before changing any 9D acceptance checkbox.
+- 2026-09-26: Windows test feedback identified fixture-only failures: directory symlink permissions and Git `core.autocrlf` inheritance. Use junctions in the two directory-link tests and force LF in the two temporary Git repository fixtures. Local typecheck and 262 tests pass; Windows rerun and physical proofs remain pending. The proof guide now configures the user's `llama.cpp` OpenAI-compatible endpoint explicitly.
 
 ---
 

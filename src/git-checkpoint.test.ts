@@ -29,6 +29,7 @@ async function withRepo<T>(fn: (dir: string) => Promise<T>): Promise<T> {
     await git(dir, "init");
     await git(dir, "config", "user.name", "Checkpoint Test");
     await git(dir, "config", "user.email", "checkpoint@example.invalid");
+    await git(dir, "config", "core.autocrlf", "false");
     await writeFile(path.join(dir, "tracked.txt"), "base\n", "utf8");
     await git(dir, "add", "tracked.txt");
     await git(dir, "commit", "-m", "base");
