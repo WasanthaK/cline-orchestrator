@@ -11,6 +11,7 @@ import { LeaseAwareHubRuntimeFactory } from "./lease-aware-hub-runtime.js";
 import { preflightProvider } from "./provider-preflight.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
 import type { OrchestratorTask, ProviderPreflightResult, WorkerConfig } from "./types.js";
+import { buildValidationRepairPrompt, runValidationCommands, validationFailureMessage } from "./validation.js";
 import type { RegisteredWorkspace, WorkspaceRegistry } from "./workspace-registry.js";
 import type {
   ApprovedWriterBindingV1,
@@ -91,6 +92,7 @@ function assertCurrentTaskBinding(task: OrchestratorTask, workspace: RegisteredW
     || !Array.isArray(task.approvedAllowedPathPatterns)
     || !Array.isArray(task.approvedProtectedPathPatterns)
     || !sameStrings(task.approvedProtectedPathPatterns, workspace.safetyProfile.protectedPathPatterns)
+    || !sameStrings(task.validationCommands, workspace.safetyProfile.validationCommands)
   ) {
     throw new ScheduledHubWriterError(
       `Task ${task.id} no longer matches current registered workspace authority`,
@@ -380,9 +382,59 @@ export class ScheduledHubWriterAuthorityRunner implements WriterAuthorityRunner 
       }
       await lease.validateCurrent();
 
-      const result = recovering
+      let result = recovering
         ? await runner.resume(located.task, instruction)
         : await runner.start(located.task);
+      while (result.status === "validating") {
+        await lease.validateCurrent();
+        const commands = result.validationCommands ?? [];
+        if (commands.length === 0) {
+          throw new ScheduledHubWriterError(
+            "Scheduled Hub worker entered validation without approved commands",
+            "worker_result_invalid",
+          );
+        }
+        const validation = await runValidationCommands(located.workspace.canonicalRoot, commands, {
+          timeoutMs: worker.validationTimeoutMs,
+          maxOutputChars: worker.maxValidationOutputChars,
+          signal: lease.signal,
+        });
+        await lease.validateCurrent();
+        const latest = await located.store.load(taskId);
+        if (latest.status === "aborted") {
+          throw new ScheduledHubWriterError(LEASE_LOST_ABORT_REASON, "lease_lost");
+        }
+        latest.lastValidation = validation;
+        if (validation.passed) {
+          latest.status = "completed";
+          latest.finishReason = "completed";
+          latest.error = undefined;
+          await lease.validateCurrent();
+          await located.store.save(latest); // Also applies the final diff safety gate.
+          result = latest;
+          break;
+        }
+
+        const failure = validationFailureMessage(validation);
+        const repairsUsed = latest.validationRepairCount ?? 0;
+        if (repairsUsed >= worker.maxValidationRepairs) {
+          latest.status = "validation_failed";
+          latest.finishReason = "validation_failed";
+          latest.error = failure;
+          await lease.validateCurrent();
+          await located.store.save(latest);
+          result = latest;
+          break;
+        }
+
+        latest.validationRepairCount = repairsUsed + 1;
+        latest.status = "repairing";
+        latest.finishReason = undefined;
+        latest.error = failure;
+        await lease.validateCurrent();
+        await located.store.save(latest);
+        result = await runner.resume(latest, buildValidationRepairPrompt(latest, validation));
+      }
       if (abortPromise) await abortPromise;
       if (leaseLost || lease.signal.aborted) {
         throw new ScheduledHubWriterError(LEASE_LOST_ABORT_REASON, "lease_lost");

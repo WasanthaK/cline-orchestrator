@@ -347,7 +347,21 @@ async function main(): Promise<void> {
     const [schedule, overlap] = await Promise.all([schedulePromise, overlapPromise]);
 
     if (schedule.failures.length > 0) {
-      fail(`parallel scheduler reported failures: ${JSON.stringify(schedule.failures)}`);
+      const taskStates = await Promise.all([
+        { workspace: workspaceA, taskId: taskA.id },
+        { workspace: workspaceB, taskId: taskB.id },
+      ].map(async ({ workspace, taskId }) => {
+        const task = await new TaskStore(workspace.canonicalRoot).load(taskId);
+        return {
+          taskId,
+          status: task.status,
+          finishReason: task.finishReason,
+          error: task.error,
+          validationPassed: task.lastValidation?.passed,
+          diffSafetyPassed: task.lastDiffSafety?.passed,
+        };
+      }));
+      fail(`parallel scheduler reported failures: ${JSON.stringify({ failures: schedule.failures, taskStates })}`);
     }
     if (schedule.reservedTaskIds.length !== 2 || schedule.completedTaskIds.length !== 2) {
       fail(`parallel scheduler did not reserve and complete exactly two tasks: ${JSON.stringify(schedule)}`);

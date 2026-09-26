@@ -141,6 +141,7 @@ async function setupRegisteredWorkspace(
   projectId: string,
   root: string,
   displayName: string,
+  validationCommands: string[] = [],
 ): Promise<RegisteredWorkspace> {
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(path.join(root, "src", "a.txt"), "a\n", "utf8");
@@ -154,7 +155,7 @@ async function setupRegisteredWorkspace(
       policyVersion: "policy-1",
       allowedPathPatterns: ["src/**"],
       protectedPathPatterns: ["src/protected/**"],
-      validationCommands: [],
+      validationCommands,
       workerProfileId: "pilot-safe",
       maxChangedFiles: 10,
     },
@@ -180,7 +181,7 @@ async function saveApprovedTask(workspace: RegisteredWorkspace): Promise<Orchest
     approvedAllowedPathPatterns: ["src/**"],
     approvedProtectedPathPatterns: [...workspace.safetyProfile.protectedPathPatterns],
     workerProfileId: workspace.safetyProfile.workerProfileId,
-    validationCommands: [],
+    validationCommands: [...workspace.safetyProfile.validationCommands],
     expectedChangedPaths: ["src/**"],
   };
   await new TaskStore(workspace.canonicalRoot).save(task);
@@ -192,8 +193,8 @@ test("real scheduler runs two fresh orchestrator-owned Hub writers concurrently 
   try {
     const registry = new WorkspaceRegistry(path.join(root, "registry.json"));
     const project = await registry.registerProject("Project");
-    const workspace1 = await setupRegisteredWorkspace(registry, project.projectId, path.join(root, "w1"), "W1");
-    const workspace2 = await setupRegisteredWorkspace(registry, project.projectId, path.join(root, "w2"), "W2");
+    const workspace1 = await setupRegisteredWorkspace(registry, project.projectId, path.join(root, "w1"), "W1", ["git diff --check"]);
+    const workspace2 = await setupRegisteredWorkspace(registry, project.projectId, path.join(root, "w2"), "W2", ["git diff --check"]);
     const task1 = await saveApprovedTask(workspace1);
     const task2 = await saveApprovedTask(workspace2);
 
@@ -239,6 +240,8 @@ test("real scheduler runs two fresh orchestrator-owned Hub writers concurrently 
     const persisted2 = await new TaskStore(workspace2.canonicalRoot).load(task2.id);
     assert.equal(persisted1.status, "completed");
     assert.equal(persisted2.status, "completed");
+    assert.equal(persisted1.lastValidation?.passed, true);
+    assert.equal(persisted2.lastValidation?.passed, true);
     assert.equal(persisted1.lastDiffSafety?.passed, true);
     assert.equal(persisted2.lastDiffSafety?.passed, true);
     assert.ok(persisted1.lastRunCheckpoint?.available);
@@ -246,6 +249,63 @@ test("real scheduler runs two fresh orchestrator-owned Hub writers concurrently 
     assert.ok(persisted1.clineSessionId);
     assert.ok(persisted2.clineSessionId);
     assert.notEqual(persisted1.clineSessionId, persisted2.clineSessionId);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("failed scheduled validation is durable and does not fail the other workspace", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "orch-scheduled-validation-"));
+  try {
+    const registry = new WorkspaceRegistry(path.join(root, "registry.json"));
+    const project = await registry.registerProject("Project");
+    const good = await setupRegisteredWorkspace(registry, project.projectId, path.join(root, "good"), "Good", ["git diff --check"]);
+    const bad = await setupRegisteredWorkspace(registry, project.projectId, path.join(root, "bad"), "Bad", ["git diff --exit-code"]);
+    const goodTask = await saveApprovedTask(good);
+    const badTask = await saveApprovedTask(bad);
+    const runner = new ScheduledHubWriterAuthorityRunner(
+      registry,
+      async () => worker(),
+      new FakeHubRuntimeFactory(),
+      async () => preflightOk(),
+    );
+    const locks = new WorkspaceLockStore(path.join(root, "coordination"));
+    const scheduler = new WriterConcurrencyScheduler(locks, {
+      schemaVersion: 1,
+      maxActiveWriters: 2,
+      maxStartsPerPass: 2,
+      maxActiveWritersPerWorkspace: 1,
+    }, runner, { leaseMs: 2_000, heartbeatMs: 500 });
+
+    const result = await scheduler.schedule([goodTask.id, badTask.id]);
+    assert.deepEqual(result.completedTaskIds, [goodTask.id]);
+    assert.deepEqual(result.failures, [{ taskId: badTask.id, code: "worker_failed" }]);
+    assert.equal((await new TaskStore(good.canonicalRoot).load(goodTask.id)).lastValidation?.passed, true);
+    const failed = await new TaskStore(bad.canonicalRoot).load(badTask.id);
+    assert.equal(failed.status, "validation_failed");
+    assert.equal(failed.lastValidation?.passed, false);
+    assert.equal((await locks.listActive()).length, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("scheduled runner rejects validation commands changed after approval", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "orch-scheduled-validation-binding-"));
+  try {
+    const registry = new WorkspaceRegistry(path.join(root, "registry.json"));
+    const project = await registry.registerProject("Project");
+    const workspace = await setupRegisteredWorkspace(registry, project.projectId, path.join(root, "w1"), "W1", ["git diff --check"]);
+    const task = await saveApprovedTask(workspace);
+    task.validationCommands = ["git status"];
+    await new TaskStore(workspace.canonicalRoot).save(task);
+    const runner = new ScheduledHubWriterAuthorityRunner(
+      registry,
+      async () => worker(),
+      new FakeHubRuntimeFactory(),
+      async () => preflightOk(),
+    );
+    await assert.rejects(runner.revalidateApprovedTask(task.id), /no longer matches current registered workspace authority/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
