@@ -130,10 +130,24 @@ async function waitForChildReady(child: ChildProcess, taskId: string): Promise<v
 async function stopChild(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
   if (!child.kill("SIGKILL")) fail("could not terminate the proof-owned gateway child");
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    sleep(15_000).then(() => fail("proof-owned gateway child did not exit")),
-  ]);
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      child.off("error", onError);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onExit = () => finish();
+    const onError = (error: Error) => finish(error);
+    const timer = setTimeout(() => finish(new Error("proof-owned gateway child did not exit")), 15_000);
+    child.once("exit", onExit);
+    child.once("error", onError);
+    if (child.exitCode !== null || child.signalCode !== null) finish();
+  });
 }
 
 async function waitForLeaseExpiry(locks: WorkspaceLockStore, workspaceId: string): Promise<void> {

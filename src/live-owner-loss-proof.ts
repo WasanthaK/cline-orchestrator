@@ -227,12 +227,24 @@ function waitForChildReady(child: ChildProcess, timeoutMs = 120_000): Promise<{
 
 async function waitForChildExit(child: ChildProcess, timeoutMs = 15_000): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    sleep(timeoutMs).then(() => {
-      throw new Error(`owner child did not terminate within ${timeoutMs}ms`);
-    }),
-  ]);
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      child.off("error", onError);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onExit = () => finish();
+    const onError = (error: Error) => finish(error);
+    const timer = setTimeout(() => finish(new Error(`owner child did not terminate within ${timeoutMs}ms`)), timeoutMs);
+    child.once("exit", onExit);
+    child.once("error", onError);
+    if (child.exitCode !== null || child.signalCode !== null) finish();
+  });
 }
 
 async function registerIsolatedProofWorkspace(
