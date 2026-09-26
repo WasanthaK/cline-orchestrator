@@ -15,6 +15,7 @@ import {
   MachineGatewayError,
   MachineOrchestratorService,
 } from "./machine-orchestrator.js";
+import { OperatorActionError, OperatorActionService } from "./operator-action.js";
 import { SafetyPlanService } from "./safety-plan.js";
 import { TaskStore } from "./state.js";
 import type { OrchestratorTask, WorkerConfig } from "./types.js";
@@ -261,5 +262,84 @@ test("rollback fails closed when the task's durable safety binding is stale", as
     const events = await store.events(taskId);
     assert.equal(events.some((event) => event.type === "rollback_requested"), false);
     assert.equal(events.some((event) => event.type === "rollback_completed"), false);
+  });
+});
+
+test("operator rollback requires the previewed checkpoint, audits once, and rejects replay", async () => {
+  await withCompletedTask(async ({ service, store, taskId, workspaceId, checkpointId }) => {
+    const actions = new OperatorActionService(service);
+    const preview = await actions.previewTaskRollback(taskId);
+    assert.equal(preview.action, "rollback_task");
+    assert.equal(preview.workspaceId, workspaceId);
+    assert.equal(preview.checkpointId, checkpointId);
+    assert.match(preview.confirmationText, /pre-run checkpoint/i);
+
+    await assert.rejects(
+      actions.rollbackTask({
+        taskId,
+        checkpointId: "0".repeat(32),
+        confirmationToken: preview.confirmationToken,
+        confirmed: true,
+      }),
+      (error: unknown) => error instanceof OperatorActionError && error.code === "invalid_action",
+    );
+
+    const rolledBack = await actions.rollbackTask({
+      taskId,
+      checkpointId,
+      confirmationToken: preview.confirmationToken,
+      confirmed: true,
+    });
+    assert.equal(rolledBack.status, "rolled_back");
+    const events = await store.events(taskId);
+    assert.equal(events.filter((event) => event.type === "rollback_requested").length, 1);
+    assert.equal(events.filter((event) => event.type === "rollback_completed").length, 1);
+
+    await assert.rejects(
+      actions.rollbackTask({ taskId, checkpointId, confirmationToken: preview.confirmationToken, confirmed: true }),
+      (error: unknown) => error instanceof OperatorActionError && error.code === "invalid_action",
+    );
+    await assert.rejects(
+      actions.previewTaskRollback(taskId),
+      (error: unknown) => error instanceof OperatorActionError && error.code === "invalid_action",
+    );
+  });
+});
+
+test("operator rollback burns a stale preview when task state changes", async () => {
+  await withCompletedTask(async ({ service, store, taskId, checkpointId }) => {
+    const actions = new OperatorActionService(service);
+    const preview = await actions.previewTaskRollback(taskId);
+    const task = await store.load(taskId);
+    task.finishReason = "changed-after-preview";
+    task.updatedAt = new Date(Date.parse(task.updatedAt) + 1_000).toISOString();
+    await store.save(task);
+
+    await assert.rejects(
+      actions.rollbackTask({ taskId, checkpointId, confirmationToken: preview.confirmationToken, confirmed: true }),
+      (error: unknown) => error instanceof OperatorActionError && error.code === "stale_action",
+    );
+    assert.equal((await store.load(taskId)).status, "completed");
+    assert.equal((await store.events(taskId)).some((event) => event.type === "rollback_requested"), false);
+    await assert.rejects(
+      actions.rollbackTask({ taskId, checkpointId, confirmationToken: preview.confirmationToken, confirmed: true }),
+      (error: unknown) => error instanceof OperatorActionError && error.code === "invalid_action",
+    );
+  });
+});
+
+test("operator rollback confirmation expires before invoking the machine rollback service", async () => {
+  await withCompletedTask(async ({ service, store, taskId, checkpointId }) => {
+    let now = Date.parse("2026-09-26T00:00:00.000Z");
+    const actions = new OperatorActionService(service, () => now);
+    const preview = await actions.previewTaskRollback(taskId);
+    now += 60_000;
+
+    await assert.rejects(
+      actions.rollbackTask({ taskId, checkpointId, confirmationToken: preview.confirmationToken, confirmed: true }),
+      (error: unknown) => error instanceof OperatorActionError && error.code === "expired_action",
+    );
+    assert.equal((await store.load(taskId)).status, "completed");
+    assert.equal((await store.events(taskId)).some((event) => event.type === "rollback_requested"), false);
   });
 });
