@@ -55,6 +55,20 @@ npm run proof:owner-loss
 Remove-Item Env:ORCH_LIVE_PROOF_OPT_IN
 ```
 
+For a quieter terminal, save one proof's complete output and show its last
+lines, including the exit code:
+
+```powershell
+$log = Join-Path $PWD "multi-workspace-proof.log"
+npm run proof:multi-workspace *> $log
+$proofExitCode = $LASTEXITCODE
+Get-Content $log -Tail 60
+"Proof exit code: $proofExitCode"
+```
+
+A zero exit code and the `"passed": true` result are both required. If
+cleanup also fails, the final error includes the original proof failure.
+
 The first command must print `"proof": "disposable-multi-workspace"` and
 `"passed": true`. Its `parallel` evidence must show two simultaneous distinct
 workspace leases, `overlappingHubSendsObserved: true`, distinct owner sessions,

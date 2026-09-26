@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,8 @@ import {
   assertLiveProofOptIn,
   createDisposableProofWorkspace,
   createLiveProofIsolation,
+  preserveLiveProofFailure,
+  removeDisposableProofRoot,
   stopLiveProofHubGracefully,
 } from "./live-proof-isolation.js";
 import { RestartAwareMachineOrchestratorService } from "./machine-recovery.js";
@@ -306,6 +308,7 @@ async function parentMain(): Promise<void> {
 
   let recoveryService: RestartAwareMachineOrchestratorService | undefined;
   let taskId: string | undefined;
+  let proofError: unknown;
   try {
     const ready = await waitForChildReady(child);
     taskId = ready.taskId;
@@ -413,17 +416,22 @@ async function parentMain(): Promise<void> {
         },
       }, null, 2)}\n`,
     );
+  } catch (error) {
+    proofError = error;
+    throw error;
   } finally {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGKILL");
-      await waitForChildExit(child).catch(() => undefined);
+    try {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        await waitForChildExit(child).catch(() => undefined);
+      }
+      await recoveryService?.close().catch(() => undefined);
+      if (hubMayHaveStarted) await stopLiveProofHubGracefully();
+      await removeDisposableProofRoot(workspaceRoot);
+      await removeDisposableProofRoot(isolation.root);
+    } catch (cleanupError) {
+      preserveLiveProofFailure(proofError, cleanupError);
     }
-    await recoveryService?.close().catch(() => undefined);
-    if (hubMayHaveStarted) {
-      await stopLiveProofHubGracefully();
-    }
-    await rm(workspaceRoot, { recursive: true, force: true });
-    await rm(isolation.root, { recursive: true, force: true });
   }
 }
 

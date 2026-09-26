@@ -1,4 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
@@ -12,6 +12,8 @@ import {
   assertLiveProofOptIn,
   createDisposableProofWorkspace,
   createLiveProofIsolation,
+  preserveLiveProofFailure,
+  removeDisposableProofRoot,
   stopLiveProofHubGracefully,
 } from "./live-proof-isolation.js";
 import { LiveProofSendBarrier } from "./live-proof-send-barrier.js";
@@ -296,6 +298,7 @@ async function main(): Promise<void> {
   const isolation = await createLiveProofIsolation();
   const workspaceRoots: string[] = [];
   let hubMayHaveStarted = false;
+  let proofError: unknown;
   try {
     Object.assign(process.env, isolation.environment);
     const rootA = await createDisposableProofWorkspace();
@@ -499,16 +502,20 @@ async function main(): Promise<void> {
         bothRolledBack: true,
       },
     }, null, 2)}\n`);
+  } catch (error) {
+    proofError = error;
+    throw error;
   } finally {
-    if (hubMayHaveStarted) {
-      // Fail closed: if the pinned Cline lifecycle cannot confirm shutdown, preserve
-      // all disposable roots rather than deleting files under a possibly-live Hub.
-      await stopLiveProofHubGracefully();
+    try {
+      if (hubMayHaveStarted) {
+        // Preserve all roots if the pinned Cline lifecycle cannot confirm shutdown.
+        await stopLiveProofHubGracefully();
+      }
+      for (const root of workspaceRoots) await removeDisposableProofRoot(root);
+      await removeDisposableProofRoot(isolation.root);
+    } catch (cleanupError) {
+      preserveLiveProofFailure(proofError, cleanupError);
     }
-    for (const root of workspaceRoots) {
-      await rm(root, { recursive: true, force: true });
-    }
-    await rm(isolation.root, { recursive: true, force: true });
   }
 }
 

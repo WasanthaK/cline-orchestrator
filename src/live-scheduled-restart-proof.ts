@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,8 @@ import {
   assertLiveProofOptIn,
   createDisposableProofWorkspace,
   createLiveProofIsolation,
+  preserveLiveProofFailure,
+  removeDisposableProofRoot,
   stopLiveProofHubGracefully,
 } from "./live-proof-isolation.js";
 import { environmentWorkerProfileResolver } from "./mcp-main.js";
@@ -148,6 +150,7 @@ async function parentMain(): Promise<void> {
   const roots: string[] = [];
   let child: ChildProcess | undefined;
   let hubMayHaveStarted = false;
+  let proofError: unknown;
   try {
     Object.assign(process.env, isolation.environment);
     const root = await createDisposableProofWorkspace();
@@ -281,11 +284,18 @@ async function parentMain(): Promise<void> {
       diffSafetyPassed: completed.lastDiffSafety?.passed === true,
       rolledBack: true,
     }, null, 2)}\n`);
+  } catch (error) {
+    proofError = error;
+    throw error;
   } finally {
-    if (child) await stopChild(child);
-    if (hubMayHaveStarted) await stopLiveProofHubGracefully();
-    for (const root of roots) await rm(root, { recursive: true, force: true });
-    await rm(isolation.root, { recursive: true, force: true });
+    try {
+      if (child) await stopChild(child);
+      if (hubMayHaveStarted) await stopLiveProofHubGracefully();
+      for (const root of roots) await removeDisposableProofRoot(root);
+      await removeDisposableProofRoot(isolation.root);
+    } catch (cleanupError) {
+      preserveLiveProofFailure(proofError, cleanupError);
+    }
   }
 }
 

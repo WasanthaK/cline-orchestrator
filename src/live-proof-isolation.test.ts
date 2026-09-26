@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile as execFileCallback } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -12,6 +13,8 @@ import {
   hasLiveProofHubShutdownSurface,
   LIVE_PROOF_OPT_IN_ENV,
   LIVE_PROOF_OPT_IN_VALUE,
+  preserveLiveProofFailure,
+  removeDisposableProofRoot,
 } from "./live-proof-isolation.js";
 
 const execFile = promisify(execFileCallback);
@@ -84,4 +87,31 @@ test("disposable workspace guard accepts only orchestrator-live-proof-* roots", 
     () => assertDisposableWorkspaceRoot(path.join(path.parse(process.cwd()).root, "tmp", "cline-orchestrator")),
     /disposable orchestrator-live-proof/i,
   );
+});
+
+test("cleanup retains the proof failure when removal also fails", () => {
+  const proofError = new Error("scheduler failed");
+  const cleanupError = new Error("EBUSY");
+  assert.throws(
+    () => preserveLiveProofFailure(proofError, cleanupError),
+    (error: unknown) => error instanceof AggregateError
+      && error.errors[0] === proofError
+      && error.errors[1] === cleanupError
+      && /scheduler failed.*EBUSY/.test(error.message),
+  );
+  assert.throws(() => preserveLiveProofFailure(undefined, cleanupError), (error) => error === cleanupError);
+});
+
+test("proof cleanup removes generated roots and refuses unrelated directories", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "orchestrator-live-proof-"));
+  const unrelated = await mkdtemp(path.join(os.tmpdir(), "unrelated-proof-"));
+  try {
+    await assert.rejects(removeDisposableProofRoot(unrelated), /non-disposable proof root/);
+    assert.equal((await stat(unrelated)).isDirectory(), true);
+    await removeDisposableProofRoot(root);
+    await assert.rejects(stat(root), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(unrelated, { recursive: true, force: true });
+  }
 });

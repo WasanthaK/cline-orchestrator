@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -64,6 +64,24 @@ export async function stopLiveProofHubGracefully(): Promise<void> {
 
 export function hasLiveProofHubShutdownSurface(): boolean {
   return typeof (ClineHub as unknown as ClineHubLifecycleSurface).stopLocalHubServerGracefully === "function";
+}
+
+/** Windows can retain a recently closed Hub or Git handle briefly after shutdown. */
+export async function removeDisposableProofRoot(root: string): Promise<void> {
+  const base = path.basename(path.resolve(root)).toLowerCase();
+  if (!base.startsWith("orchestrator-live-proof-") && !base.startsWith("cline-orchestrator-owner-loss-")) {
+    throw new Error(`Refusing to remove a non-disposable proof root: ${root}`);
+  }
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+}
+
+export function preserveLiveProofFailure(primaryError: unknown, cleanupError: unknown): never {
+  if (primaryError === undefined) throw cleanupError;
+  const describe = (error: unknown): string => error instanceof Error ? error.message : String(error);
+  throw new AggregateError(
+    [primaryError, cleanupError],
+    `Proof failed: ${describe(primaryError)}; cleanup also failed: ${describe(cleanupError)}`,
+  );
 }
 
 async function allocateLoopbackPort(): Promise<number> {
