@@ -7,7 +7,10 @@ import {
 import { buildUnattendedWorkflowReport, type UnattendedWorkflowReportV1 } from "./unattended-report.js";
 import type { SentinelIncidentV1 } from "./sentinel.js";
 import type { OrchestratorTask } from "./types.js";
-import type { WorkflowTaskEvidence } from "./unattended-workflow.js";
+import {
+  selectRunnableWorkflowNodes,
+  type WorkflowTaskEvidence,
+} from "./unattended-workflow.js";
 import { UnattendedWorkflowStore } from "./unattended-workflow-store.js";
 
 export interface UnattendedResumeTaskReader {
@@ -28,6 +31,16 @@ export interface UnattendedResumeResult {
     | "budget_or_checkpoint_blocked";
 }
 
+export class UnattendedResumeError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "expected_task_changed",
+  ) {
+    super(message);
+    this.name = "UnattendedResumeError";
+  }
+}
+
 function evidenceForTask(task: OrchestratorTask, validationRequired: boolean): WorkflowTaskEvidence {
   return {
     taskId: task.id,
@@ -43,6 +56,11 @@ function evidenceForTask(task: OrchestratorTask, validationRequired: boolean): W
  * Restart-safe reconciliation for one immutable workflow. It never trusts stored
  * workflow position. Every call reloads all current task states, rebuilds evidence
  * and budgets, and starts only a node that is still `created` after all gates.
+ *
+ * When expectedTaskId is supplied, the caller is pinning a prior read/preview to
+ * the exact next runnable node. A different current candidate fails closed before
+ * budget accounting or any starter invocation. The injected starter must still
+ * independently revalidate current task authority immediately before execution.
  */
 export async function resumeUnattendedWorkflow(
   workflowId: string,
@@ -52,6 +70,7 @@ export async function resumeUnattendedWorkflow(
     taskReader: UnattendedResumeTaskReader;
     budget: UnattendedExecutionBudgetV1;
     starter: BudgetedUnattendedTaskStarter;
+    expectedTaskId?: string;
     incidents?: SentinelIncidentV1[];
     now?: Date;
   },
@@ -84,6 +103,17 @@ export async function resumeUnattendedWorkflow(
     const task = tasks.find((item) => item.id === node.taskId)!;
     return evidenceForTask(task, node.validationRequired);
   });
+
+  if (options.expectedTaskId) {
+    const currentCandidate = selectRunnableWorkflowNodes(workflow, evidence).runnable[0]?.taskId;
+    if (currentCandidate !== options.expectedTaskId) {
+      throw new UnattendedResumeError(
+        "Workflow runnable task changed after it was previewed",
+        "expected_task_changed",
+      );
+    }
+  }
+
   const advanced = await advanceUnattendedWorkflowWithBudget(
     workflow,
     evidence,
