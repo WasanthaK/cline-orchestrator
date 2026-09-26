@@ -582,6 +582,7 @@ class WorkspaceController {
 
 export class MachineOrchestratorService {
   private readonly controllers = new Map<string, WorkspaceController>();
+  private readonly escalationDecisions = new Set<string>();
 
   constructor(
     readonly registry: WorkspaceRegistry,
@@ -893,49 +894,52 @@ export class MachineOrchestratorService {
     task: PublicTaskView;
     nextAction: "new_safety_preview_required";
   }> {
-    const located = await this.locateTask(taskId);
-    const task = located.task;
-    assertTaskBindingCurrent(task, located.workspace);
-    escalationId = requireUuid(escalationId, "escalation_id");
-    const escalation = task.pendingEscalation;
-    if (!escalation || escalation.escalationId !== escalationId || escalation.status !== "pending") {
-      throw new MachineGatewayError("Pending escalation does not match", "invalid_task_state");
-    }
-
-    escalation.status = "approved";
-    task.status = "aborted";
-    task.finishReason = "aborted";
-    task.abortReason = "Scope expansion was approved; a new Safety Preview is required before any broader authority is granted";
-    await located.store.save(task);
-    await located.store.appendEvent(task.id, "human_escalation_approved", {
-      status: task.status,
-      message: "Escalation approved; original task envelope remains immutable and is closed",
-      data: { escalationId },
-    });
-    return { task: publicTask(task), nextAction: "new_safety_preview_required" };
+    const task = await this.decideEscalation(taskId, escalationId, "approved");
+    return { task, nextAction: "new_safety_preview_required" };
   }
 
   async rejectEscalation(taskId: string, escalationId: string): Promise<PublicTaskView> {
-    const located = await this.locateTask(taskId);
-    const task = located.task;
-    assertTaskBindingCurrent(task, located.workspace);
-    escalationId = requireUuid(escalationId, "escalation_id");
-    const escalation = task.pendingEscalation;
-    if (!escalation || escalation.escalationId !== escalationId || escalation.status !== "pending") {
-      throw new MachineGatewayError("Pending escalation does not match", "invalid_task_state");
-    }
+    return await this.decideEscalation(taskId, escalationId, "rejected");
+  }
 
-    escalation.status = "rejected";
-    task.status = "aborted";
-    task.finishReason = "aborted";
-    task.abortReason = "Safety escalation rejected by user";
-    await located.store.save(task);
-    await located.store.appendEvent(task.id, "human_escalation_rejected", {
-      status: task.status,
-      message: "Safety escalation rejected; task closed",
-      data: { escalationId },
-    });
-    return publicTask(task);
+  private async decideEscalation(
+    taskId: string,
+    escalationId: string,
+    decision: "approved" | "rejected",
+  ): Promise<PublicTaskView> {
+    taskId = requireUuid(taskId, "task_id");
+    escalationId = requireUuid(escalationId, "escalation_id");
+    if (this.escalationDecisions.has(taskId)) {
+      throw new MachineGatewayError("A safety decision is already in progress for this task", "invalid_task_state");
+    }
+    this.escalationDecisions.add(taskId);
+    try {
+      const located = await this.locateTask(taskId);
+      const task = located.task;
+      assertTaskBindingCurrent(task, located.workspace);
+      const escalation = task.pendingEscalation;
+      if (task.status !== "waiting_for_human" || !escalation || escalation.escalationId !== escalationId || escalation.status !== "pending") {
+        throw new MachineGatewayError("Pending escalation does not match", "invalid_task_state");
+      }
+
+      escalation.status = decision;
+      task.status = "aborted";
+      task.finishReason = "aborted";
+      task.abortReason = decision === "approved"
+        ? "Scope expansion was approved; a new Safety Preview is required before any broader authority is granted"
+        : "Safety escalation rejected by user";
+      await located.store.save(task);
+      await located.store.appendEvent(task.id, decision === "approved" ? "human_escalation_approved" : "human_escalation_rejected", {
+        status: task.status,
+        message: decision === "approved"
+          ? "Escalation approved; original task envelope remains immutable and is closed"
+          : "Safety escalation rejected; task closed",
+        data: { escalationId },
+      });
+      return publicTask(task);
+    } finally {
+      this.escalationDecisions.delete(taskId);
+    }
   }
 
   async rollbackTask(taskId: string, requestedCheckpointId: string): Promise<PublicTaskView> {

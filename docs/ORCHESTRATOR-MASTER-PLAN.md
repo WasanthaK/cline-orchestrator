@@ -278,7 +278,11 @@ Milestone 9 is complete only when the orchestrator can physically run independen
 
 Planned: bounded service-backed pause/resume/abort/escalation/review/validation/rollback/workflow/worker actions, same policy boundary as non-UI callers, no generic shell/filesystem/Hub/process/credential surface, confirmation/audit for high-risk actions, replay/stale-action/authorization-drift tests.
 
-**Status: PLANNED**
+- [x] Establish the first bounded, service-backed operator action: preview and confirm rejection of a pending safety escalation. The in-process token is short-lived, single-use and tied to the current task/safety snapshot; execution calls the existing machine service, which revalidates authority and records the decision. Concurrent opposite decisions are single-winner within one gateway process.
+- [ ] Connect the action to an authenticated local operator surface with an explicit human confirmation step; retain the existing passive visualization until that boundary is in place.
+- [ ] Add the remaining bounded task, workflow and worker actions with their confirmation, audit, replay, stale-state and authority-drift checks.
+
+**Status: IN PROGRESS — first action boundary implemented locally; UI wiring and remaining actions pending.**
 
 ---
 
@@ -381,7 +385,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 | 7 | Unattended workflows | Complete |
 | 8 | UI + concurrency safety contracts | Complete |
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
-| 10 | Interactive operator control plane | Planned |
+| 10 | Interactive operator control plane | In progress — first action boundary |
 | 11 | Secure remote ChatGPT control | Planned |
 | 12 | Distributed / multi-machine orchestration | Planned |
 | 13 | Safe multi-agent delegation | Planned |
@@ -456,7 +460,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 3. **COMPLETE — Milestone 9 Slice 9B.** Scheduler/runtime integration; stable branch-head CI `#614` / `36122721492`.
 4. **COMPLETE — Milestone 9 Slice 9C.** Lease loss, worker crash, owner loss and gateway restart/stale-writer behavior; CI `#620`, `#622`, `#628`, `#630`.
 5. **COMPLETE — Milestone 9 Slice 9D.** Three isolated disposable physical commands passed with exit 0; branch-head CI `#668` / `36226493586` succeeded.
-6. **NEXT — Milestone 10 Interactive Operator Control Plane.** Begin with a bounded service-backed action contract and tests against the existing policy boundary; keep shared runtime disabled pending separate authorization/review.
+6. **NEXT — Milestone 10 Interactive Operator Control Plane.** Review the first service-backed action in CI, then bind it to an authenticated local operator confirmation surface; keep shared runtime disabled pending separate authorization/review.
 7. **STILL GATED — native teams/subagents, distributed scheduling, UI write actions, push/merge/deploy/destructive Git, secrets, external-network mutation or system changes** until their milestone/policy gate is satisfied.
 
 ---
@@ -473,12 +477,13 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 - 2026-09-26: Windows test feedback identified fixture-only failures: directory symlink permissions and Git `core.autocrlf` inheritance. Use junctions in the two directory-link tests and force LF in the two temporary Git repository fixtures. Local typecheck and 262 tests pass; Windows rerun and physical proofs remain pending. The proof guide now configures the user's `llama.cpp` OpenAI-compatible endpoint explicitly.
 - 2026-09-26: Three disposable live proofs on the Windows PC exited 0 using the local `llama.cpp` model; cross-workspace overlap, same-workspace denial, stale-write fencing, fault isolation, validation, checkpoint recovery and rollback were observed. Code HEAD `3fd26d6`; CI `#666` failed one test that raced workspace idle. A test-only idle wait passes local typecheck and 268 tests; green follow-up CI remains pending.
 - 2026-09-26: Milestone 9D closed: test idle wait and physical evidence on `14e9991bd4312e51cbb02beb5403326d9d3fe522`; branch-head CI `#668` / `36226493586` passed. Shared runtime concurrency remains disabled pending separate authorization/review.
+- 2026-09-26: Milestone 10 first local slice: a short-lived, single-use escalation rejection preview/confirmation calls the existing machine service; stale/replayed decisions and competing approval/rejection fail closed, with the service's durable decision audit. Typecheck and focused integration tests passed. The passive visualization remains unchanged; CI review and local UI binding are next.
 
 ---
 
 # Current Next Step
 
-**Milestone 10 — Interactive Operator Control Plane.** Define the first bounded service-backed operator action using the existing machine service policy boundary, then add replay/stale-action/authorization-drift tests. Keep shared live runtime concurrency disabled; obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
+**Milestone 10 — Interactive Operator Control Plane.** Review the first bounded escalation rejection action in CI, then connect it to an authenticated local operator surface with explicit human confirmation. Keep shared live runtime concurrency disabled; obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
 
 ---
 
