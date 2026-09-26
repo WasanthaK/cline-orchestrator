@@ -857,6 +857,20 @@ export class ClineRunner {
       return escalated;
     }
 
+    // A Hub can return a normal "completed" response after an abort request. Keep
+    // the durable abort authoritative even when the remote model ignores abort.
+    const current = await this.store.load(task.id);
+    if (this.abortRequestedTaskIds.has(task.id) || task.status === "aborted" || current.status === "aborted") {
+      task.status = "aborted";
+      task.finishReason = "aborted";
+      task.abortRequestedAt ??= current.abortRequestedAt;
+      task.abortReason ??= current.abortReason;
+      task.error = undefined;
+      this.finishRunMetrics(task);
+      await this.store.save(task);
+      return task;
+    }
+
     task.finishReason = result?.finishReason;
     task.lastOutput = typeof result?.text === "string" ? result.text : undefined;
     task.status = this.statusFromFinishReason(task.finishReason);

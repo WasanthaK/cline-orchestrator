@@ -162,6 +162,9 @@ class LeaseLossFakeRuntime implements ClineRuntime {
       this.harness.staleWriteBlocked = true;
     }
 
+    if (this.harness.completesAfterAbort) {
+      return { finishReason: "completed", text: "fake Hub ignored the abort" };
+    }
     throw new Error("fake Hub send interrupted after lease loss");
   }
 
@@ -177,6 +180,8 @@ class LeaseLossFakeRuntime implements ClineRuntime {
 }
 
 class LeaseLossFakeRuntimeFactory implements ClineRuntimeFactory {
+  constructor(readonly completesAfterAbort = false) {}
+
   sendStarted = false;
   staleWriteBlocked = false;
   staleWriteSucceeded = false;
@@ -272,7 +277,7 @@ class CrashFakeRuntimeFactory implements ClineRuntimeFactory {
   }
 }
 
-test("heartbeat lease loss aborts an active scheduled Hub worker and blocks its stale write", async () => {
+for (const completesAfterAbort of [false, true]) test(`heartbeat lease loss aborts the worker when Hub ${completesAfterAbort ? "returns completed" : "throws"} after abort`, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "orch-scheduled-lease-loss-"));
   try {
     const registry = new WorkspaceRegistry(path.join(root, "registry.json"));
@@ -284,7 +289,7 @@ test("heartbeat lease loss aborts an active scheduled Hub worker and blocks its 
     );
     const task = await saveApprovedTask(workspace);
 
-    const runtime = new LeaseLossFakeRuntimeFactory();
+    const runtime = new LeaseLossFakeRuntimeFactory(completesAfterAbort);
     const runner = new ScheduledHubWriterAuthorityRunner(
       registry,
       async () => worker(),
