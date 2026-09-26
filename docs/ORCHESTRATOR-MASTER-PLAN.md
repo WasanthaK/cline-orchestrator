@@ -280,9 +280,11 @@ Planned: bounded service-backed pause/resume/abort/escalation/review/validation/
 
 - [x] Establish the first bounded, service-backed operator action: preview and confirm rejection of a pending safety escalation. The in-process token is short-lived, single-use and tied to the current task/safety snapshot; execution calls the existing machine service, which revalidates authority and records the decision. Concurrent opposite decisions are single-winner within one gateway process.
 - [x] Connect the action to a separate opt-in loopback browser surface with an operator token, short-lived browser session, CSRF/origin checks, session-bound preview and explicit confirmation. Keep the passive visualization unchanged. See `docs/MILESTONE-10-LOCAL-OPERATOR.md`.
+- [x] Add bounded task-abort preview/confirmation. It uses a 60-second single-use token consumed before awaiting, fingerprints current task/safety state, fails closed on task/profile drift, delegates only to `MachineOrchestratorService.abortTask`, and relies on the existing durable `abort_requested` audit event. Browser exposure remains unchanged.
+- [x] Add bounded safety-escalation approval preview/confirmation. Approval reuses `MachineOrchestratorService.approveEscalation`, revalidates current authority, records `human_escalation_approved`, closes the old immutable task envelope and returns `new_safety_preview_required`; it never enlarges the existing task authority. Browser exposure remains unchanged.
 - [ ] Add the remaining bounded task, workflow and worker actions with their confirmation, audit, replay, stale-state and authority-drift checks.
 
-**Status: IN PROGRESS — first action and local browser boundary implemented; remaining actions pending.**
+**Status: IN PROGRESS — escalation rejection/approval, local browser rejection boundary and bounded task abort are complete; remaining actions pending.**
 
 ---
 
@@ -385,7 +387,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 | 7 | Unattended workflows | Complete |
 | 8 | UI + concurrency safety contracts | Complete |
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
-| 10 | Interactive operator control plane | In progress — first action and local browser boundary |
+| 10 | Interactive operator control plane | In progress — escalation decisions, task abort and local rejection browser boundary |
 | 11 | Secure remote ChatGPT control | Planned |
 | 12 | Distributed / multi-machine orchestration | Planned |
 | 13 | Safe multi-agent delegation | Planned |
@@ -450,6 +452,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 19. Native Cline teams/subagents require Milestone 13 and cannot be enabled by configuration alone.
 20. Push, merge, deploy, destructive Git, secret access, external-network mutation and system changes remain separately gated.
 21. Any proof that mutates/restarts shared local Hub/Cline/VS Code runtime requires explicit user authorization immediately before that proof.
+22. Rollback is high-impact workspace mutation. Before exposing it as an operator action, `MachineOrchestratorService.rollbackTask` must revalidate the current durable task/workspace safety binding immediately before rollback, in addition to its existing checkpoint-id and idle-workspace guards.
 
 ---
 
@@ -460,8 +463,8 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 3. **COMPLETE — Milestone 9 Slice 9B.** Scheduler/runtime integration; stable branch-head CI `#614` / `36122721492`.
 4. **COMPLETE — Milestone 9 Slice 9C.** Lease loss, worker crash, owner loss and gateway restart/stale-writer behavior; CI `#620`, `#622`, `#628`, `#630`.
 5. **COMPLETE — Milestone 9 Slice 9D.** Three isolated disposable physical commands passed with exit 0; branch-head CI `#668` / `36226493586` succeeded.
-6. **NEXT — Milestone 10 Interactive Operator Control Plane.** Review the opt-in local confirmation surface in CI, then add the remaining bounded actions in small slices; keep shared runtime disabled pending separate authorization/review.
-7. **STILL GATED — native teams/subagents, distributed scheduling, UI write actions, push/merge/deploy/destructive Git, secrets, external-network mutation or system changes** until their milestone/policy gate is satisfied.
+6. **NEXT — Milestone 10 Interactive Operator Control Plane.** Continue adding one existing service-backed action per slice. Do not invent pause/resume state semantics. Before operator rollback, harden rollback with current durable binding revalidation and tests. Keep browser expansion and shared runtime changes separate.
+7. **STILL GATED — native teams/subagents, distributed scheduling, broader UI write actions, push/merge/deploy/destructive Git, secrets, external-network mutation or system changes** until their milestone/policy gate is satisfied.
 
 ---
 
@@ -478,13 +481,15 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 - 2026-09-26: Three disposable live proofs on the Windows PC exited 0 using the local `llama.cpp` model; cross-workspace overlap, same-workspace denial, stale-write fencing, fault isolation, validation, checkpoint recovery and rollback were observed. Code HEAD `3fd26d6`; CI `#666` failed one test that raced workspace idle. A test-only idle wait passes local typecheck and 268 tests; green follow-up CI remains pending.
 - 2026-09-26: Milestone 9D closed: test idle wait and physical evidence on `14e9991bd4312e51cbb02beb5403326d9d3fe522`; branch-head CI `#668` / `36226493586` passed. Shared runtime concurrency remains disabled pending separate authorization/review.
 - 2026-09-26: Milestone 10 first slice: a short-lived, single-use escalation rejection preview/confirmation calls the existing machine service; stale/replayed decisions and competing approval/rejection fail closed, with the service's durable decision audit. Branch-head CI `#672` passed. The passive visualization remains unchanged.
-- 2026-09-26: Milestone 10 local browser slice: a separate opt-in loopback page authenticates a local operator and requires a session-bound review and explicit rejection confirmation. Typecheck and 275 tests pass locally; CI review pending. The passive visualization and shared live runtime settings are unchanged.
+- 2026-09-26: Milestone 10 local browser slice verified in CI `#674` / `36228538110`: the separate opt-in loopback rejection page keeps operator authentication/session/CSRF/origin/confirmation checks separate from passive visualization.
+- 2026-09-26: Milestone 10 bounded task-abort slice completed through `e896672c54b110eeea6d047e32f24296131098a1`; short-lived single-use confirmation, task/safety fingerprinting, replay/expiry/drift tests and existing `abort_requested` audit path. CI `#680` / `36230631345` passed typecheck + full suite. Browser surface unchanged.
+- 2026-09-26: Milestone 10 bounded escalation-approval slice completed through `6564a345ea029987d777235df8617a4bd2e2f333`; confirmation reuses the existing machine decision service, closes the old envelope and requires a fresh Safety Preview. CI `#684` / `36231157774` passed typecheck + full suite. Rollback was inspected but deliberately not exposed because its machine service still needs current durable binding revalidation immediately before mutation.
 
 ---
 
 # Current Next Step
 
-**Milestone 10 — Interactive Operator Control Plane.** Review the opt-in local browser confirmation surface in CI, then implement remaining bounded actions in small slices. Keep shared live runtime concurrency disabled; obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
+**Milestone 10 — Interactive Operator Control Plane.** Inspect and harden the existing rollback service boundary so it revalidates current task/workspace safety authority immediately before rollback, then prove that authority/profile drift fails closed. Only after that prerequisite is green should rollback receive a separate short-lived operator preview/confirmation action. Do not add pause/resume semantics until a deliberate durable pause/resume state and service contract exists. Keep shared live runtime concurrency disabled and obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
 
 ---
 
