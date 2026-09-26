@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-09-25
+Last updated: 2026-09-26
 Branch: `phase-1/bootstrap`
 
 ## Purpose
@@ -244,20 +244,32 @@ Evidence:
   registry and Git roots; require actual overlapping Hub sends before reporting
   concurrent execution. Prepare a separate gated scheduled gateway restart
   harness. See `docs/MILESTONE-9D-PHYSICAL-PROOF.md`.
-- [ ] Use isolated disposable repositories/workspaces before shared development workspaces.
-- [ ] Prove two independent workspaces execute write tasks concurrently with separate leases/owner sessions.
-- [ ] Prove same-workspace competing writer admission is denied.
-- [ ] Prove forced lease loss prevents later writes.
-- [ ] Prove one worker failure cannot corrupt or broaden another worker's authority.
-- [ ] Prove validation, diff safety and rollback for both concurrent tasks.
-- [ ] Prove gateway restart/stale-worker behavior in isolation.
-- [ ] Obtain explicit user authorization immediately before any proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
+- [x] Use isolated disposable repositories/workspaces before shared development workspaces.
+- [x] Prove two independent workspaces execute write tasks concurrently with separate leases/owner sessions.
+- [x] Prove same-workspace competing writer admission is denied.
+- [x] Prove forced lease loss prevents later writes.
+- [x] Prove one worker failure cannot corrupt or broaden another worker's authority.
+- [x] Prove validation, diff safety and rollback for both concurrent tasks.
+- [x] Prove gateway restart/stale-worker behavior in isolation.
+- [ ] Obtain explicit user authorization immediately before any proof that mutates/restarts shared local Cline/Hub/VS Code runtime. No shared-runtime proof has been attempted; this gate applies if one is proposed.
+
+Physical evidence (2026-09-26): Windows PC, local `llama.cpp` at
+`127.0.0.1:8080`, alias `qwen38-27b-192k`, orchestrator worker
+`ollama-openai`. Branch `phase-1/bootstrap` code HEAD
+`3fd26d6c05df701e5adfaf5a1cdf14abc85ae48b`. The operator reported
+`"passed": true` and exit code 0 for `proof:multi-workspace` and
+`proof:scheduled-restart`; `proof:owner-loss` also exited 0 with the
+replacement/validation/rollback fields shown. Full evidence summary and
+operator TEMP log names: `docs/MILESTONE-9D-PHYSICAL-PROOF.md`.
+CI `#666` / `36222404791` failed one rollback test because it raced the
+transition to idle; a test-only wait for the public idle state passes local
+typecheck and all 268 tests. A green follow-up CI run is still required.
 
 ## Completion Gate
 
 Milestone 9 is complete only when the orchestrator can physically run independent write-capable coding jobs concurrently on multiple isolated registered workspaces and a stale/unfenced worker is physically unable to write through the trusted executor boundary.
 
-**Status: IN PROGRESS — Slices 9A, 9B and 9C COMPLETE; Slice 9D disposable physical proof is next. Shared live-runtime concurrency remains disabled.**
+**Status: IN PROGRESS — Slice 9D disposable physical proofs passed; CI test stabilization awaits a green run. Shared live-runtime concurrency remains disabled.**
 
 ---
 
@@ -367,7 +379,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 | 6 | GPT Supervisor | Complete |
 | 7 | Unattended workflows | Complete |
 | 8 | UI + concurrency safety contracts | Complete |
-| 9 | Controlled live multi-workspace workers | **In progress — 9A–9C complete, 9D next** |
+| 9 | Controlled live multi-workspace workers | **In progress — 9D physical proofs passed; CI follow-up pending** |
 | 10 | Interactive operator control plane | Planned |
 | 11 | Secure remote ChatGPT control | Planned |
 | 12 | Distributed / multi-machine orchestration | Planned |
@@ -401,8 +413,8 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 | Lease-aware owner write boundary | Complete / cloud tested — M9A |
 | Scheduler → orchestrator-owned Hub integration | Complete / cloud tested — M9B |
 | Failure/restart/stale-writer safety | Complete / cloud tested — M9C |
-| Disposable physical concurrent-runtime proof | Not yet proven — M9D next |
-| Shared live machine-runtime concurrency | Disabled pending M9D |
+| Disposable physical concurrent-runtime proof | Proven on isolated Windows workspaces — M9D |
+| Shared live machine-runtime concurrency | Disabled pending separate authorization/review |
 | Native team/subagent execution | Disabled — M13 |
 | Remote ChatGPT control | Disabled — M11 |
 | Distributed/multi-machine scheduler | Disabled — M12 |
@@ -429,7 +441,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 15. Locks/scheduler are single-gateway primitives until Milestone 12.
 16. Lease possession alone never authorizes writes; current durable authority + current fenced lease are both required immediately before a coordinated write.
 17. M9A–9C are cloud/fake-runtime safety and lifecycle proofs; they do **not** constitute the disposable physical live-runtime proof required by M9D.
-18. Shared live concurrent machine-runtime writes remain disabled until M9D succeeds.
+18. Shared live concurrent machine-runtime writes remain disabled after the isolated M9D proof pending separate authorization/review of shared-runtime use.
 19. Native Cline teams/subagents require Milestone 13 and cannot be enabled by configuration alone.
 20. Push, merge, deploy, destructive Git, secret access, external-network mutation and system changes remain separately gated.
 21. Any proof that mutates/restarts shared local Hub/Cline/VS Code runtime requires explicit user authorization immediately before that proof.
@@ -442,7 +454,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 2. **COMPLETE — Milestone 9 Slice 9A.** Lease-aware owner-targeted write boundary; CI `#596` / `36119645637`.
 3. **COMPLETE — Milestone 9 Slice 9B.** Scheduler/runtime integration; stable branch-head CI `#614` / `36122721492`.
 4. **COMPLETE — Milestone 9 Slice 9C.** Lease loss, worker crash, owner loss and gateway restart/stale-writer behavior; CI `#620`, `#622`, `#628`, `#630`.
-5. **NEXT / GATED PHYSICAL PROOF — Milestone 9 Slice 9D.** Use isolated disposable repositories/workspaces first. Prepare the proof harness without touching shared runtime; obtain explicit authorization immediately before any proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
+5. **NEXT — Milestone 9 Slice 9D CI closeout.** Land the test-only rollback idle-wait correction and verify a green branch-head CI run; keep shared runtime disabled pending separate authorization/review.
 6. **FUTURE IN ORDER — Milestones 10–18.**
 7. **STILL GATED — native teams/subagents, distributed scheduling, UI write actions, push/merge/deploy/destructive Git, secrets, external-network mutation or system changes** until their milestone/policy gate is satisfied.
 
@@ -458,12 +470,13 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 - 2026-09-25: Milestone 9C complete; mid-flight lease-loss fail-safe CI `#620`, worker-crash/stale-executor CI `#622`, explicit fenced restart recovery CI `#628`, active Hub owner-loss/handoff recovery CI `#630`.
 - 2026-09-25: Milestone 9D harness review added a bounded overlap barrier and an isolated scheduled restart proof command. Local Node test runner: 262 passed; typecheck passed. No new physical proof has run. Next: run the three gated proofs on a suitable local provider and review their evidence before changing any 9D acceptance checkbox.
 - 2026-09-26: Windows test feedback identified fixture-only failures: directory symlink permissions and Git `core.autocrlf` inheritance. Use junctions in the two directory-link tests and force LF in the two temporary Git repository fixtures. Local typecheck and 262 tests pass; Windows rerun and physical proofs remain pending. The proof guide now configures the user's `llama.cpp` OpenAI-compatible endpoint explicitly.
+- 2026-09-26: Three disposable live proofs on the Windows PC exited 0 using the local `llama.cpp` model; cross-workspace overlap, same-workspace denial, stale-write fencing, fault isolation, validation, checkpoint recovery and rollback were observed. Code HEAD `3fd26d6`; CI `#666` failed one test that raced workspace idle. A test-only idle wait passes local typecheck and 268 tests; green follow-up CI remains pending.
 
 ---
 
 # Current Next Step
 
-**Milestone 9 Slice 9D — disposable physical proof.** Run the three gated isolated commands in `docs/MILESTONE-9D-PHYSICAL-PROOF.md` with a working local provider and review their evidence. The proof must use disposable repositories/workspaces and preserve the current owner-targeted executor + fenced-lease boundary. Do not connect to, mutate or restart the user's shared local Cline/Hub/VS Code runtime without explicit user authorization immediately before that action.
+**Milestone 9 Slice 9D — CI closeout.** Publish the test-only wait for the public idle state, verify a green branch-head CI run, then close the milestone against the recorded disposable physical evidence. Keep shared live runtime concurrency disabled; obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
 
 ---
 

@@ -81,8 +81,7 @@ interrupts only its proof-owned gateway child, waits for the old fence to
 expire, and uses the scheduled restart reconciler to create a replacement
 owner. Its output must show `"proof": "disposable-scheduled-gateway-restart"`,
 `"passed": true`, a rejected old fence, a fresh owner session, validation,
-diff safety and rollback. This path remains **unproven physically** until the
-command actually passes on a suitable local machine.
+diff safety and rollback.
 
 The owner-loss command separately proves replacement session recovery,
 validation, diff safety, and rollback through the machine service.
@@ -98,3 +97,29 @@ Do not mark 9D complete or enable shared live runtime concurrency until all
 three physical commands pass with reviewable evidence. Record the branch
 HEAD, command output, provider/model identifier, and relevant CI run in the
 master plan without recording Hub credentials or local secrets.
+
+## 2026-09-26 Windows disposable proof evidence
+
+- Code HEAD: `3fd26d6c05df701e5adfaf5a1cdf14abc85ae48b` on
+  `phase-1/bootstrap`. Provider: local `llama.cpp` OpenAI-compatible server
+  (`ORCH_PROVIDER=ollama-openai`, `ORCH_BASE_URL=http://127.0.0.1:8080`,
+  `ORCH_MODEL=qwen38-27b-192k`). The user supplied the PowerShell output;
+  each command ended with `$LASTEXITCODE = 0` after the JSON result.
+- `proof:multi-workspace`: `passed: true`; two simultaneous distinct leases,
+  overlapping Hub sends and distinct owner sessions; both tasks passed
+  validation/diff safety and rolled back. The same-workspace competitor had
+  no runtime authority. Forced lease loss left the faulted task `aborted`,
+  blocked its stale write and allowed the healthy task to complete and roll
+  back. Log: `orchestrator-multi-workspace-proof.log` in the operator's TEMP.
+- `proof:scheduled-restart`: `passed: true`, task
+  `bbcfe362-7f78-47f9-93ab-b7edcbaa6682`; old fence rejected, new owner
+  session, checkpoint preserved, validation/diff safety passed and rollback
+  completed. Log: `orchestrator-scheduled-restart-proof.log` in TEMP.
+- `proof:owner-loss`: replacement owner completed with run count and session
+  generation moving from 1 to 2, recovery count 1, validation/diff safety
+  passed, and exact pre-proof contents restored by rollback. Log:
+  `orchestrator-owner-loss-proof.log` in TEMP.
+- CI `#666` (`36222404791`) on this code HEAD failed one test due to its
+  rollback call racing with the workspace's transition to idle. The test
+  now waits for the public idle state; local typecheck and 268 tests pass.
+  A green follow-up CI run remains required for milestone closeout.

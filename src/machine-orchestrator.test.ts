@@ -158,6 +158,15 @@ async function waitForStatus(
   assert.fail(`task ${taskId} did not reach ${expected}`);
 }
 
+async function waitForWorkspaceIdle(service: MachineOrchestratorService, workspaceId: string): Promise<void> {
+  for (let i = 0; i < 100; i += 1) {
+    const { runtime } = await service.getWorkspaceStatus(workspaceId);
+    if (!runtime.activeTaskId && !runtime.activeValidationTaskId && runtime.queuedJobs === 0 && !runtime.rollbackInProgress) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.fail(`workspace ${workspaceId} did not become idle`);
+}
+
 async function buildService(dir: string, baseUrl: string) {
   const registry = new WorkspaceRegistry(path.join(dir, "machine", "registry.json"));
   const project = await registry.registerProject("Test Project");
@@ -316,6 +325,7 @@ test("rollback requires the opaque checkpoint id and untrusted task ids cannot t
           error instanceof MachineGatewayError && error.code === "checkpoint_mismatch",
       );
 
+      await waitForWorkspaceIdle(service, workspace.workspaceId);
       const rolledBack = await service.rollbackTask(task.taskId, id!);
       assert.equal(rolledBack.status, "rolled_back");
 
