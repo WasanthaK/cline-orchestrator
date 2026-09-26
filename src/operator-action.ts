@@ -6,7 +6,7 @@ const MAX_PENDING = 64;
 const OPERATOR_ABORT_REASON = "Task aborted by local operator";
 
 type OperatorService = Pick<MachineOrchestratorService, "getTask" | "rejectEscalation"> &
-  Partial<Pick<MachineOrchestratorService, "abortTask" | "approveEscalation">>;
+  Partial<Pick<MachineOrchestratorService, "abortTask" | "approveEscalation" | "rollbackTask">>;
 
 export class OperatorActionError extends Error {
   constructor(message: string, readonly code: "invalid_action" | "stale_action" | "expired_action" | "capacity_exceeded") {
@@ -44,6 +44,16 @@ export interface TaskAbortPreview {
   confirmationToken: string;
 }
 
+export interface TaskRollbackPreview {
+  action: "rollback_task";
+  taskId: string;
+  workspaceId: string;
+  checkpointId: string;
+  confirmationText: string;
+  expiresAt: string;
+  confirmationToken: string;
+}
+
 interface PendingActionBase {
   taskId: string;
   fingerprint: string;
@@ -59,7 +69,12 @@ interface PendingAbort extends PendingActionBase {
   action: "abort_task";
 }
 
-type PendingAction = PendingEscalationDecision | PendingAbort;
+interface PendingRollback extends PendingActionBase {
+  action: "rollback_task";
+  checkpointId: string;
+}
+
+type PendingAction = PendingEscalationDecision | PendingAbort | PendingRollback;
 
 function pendingFingerprint(task: PublicTaskView): string {
   return JSON.stringify({
@@ -73,6 +88,11 @@ function pendingFingerprint(task: PublicTaskView): string {
     sessionGeneration: task.sessionGeneration,
     escalationId: task.pendingEscalation?.escalationId,
     escalationStatus: task.pendingEscalation?.status,
+    checkpointId: task.checkpoint?.checkpointId,
+    checkpointRunCount: task.checkpoint?.runCount,
+    checkpointCreatedAt: task.checkpoint?.createdAt,
+    checkpointAvailable: task.checkpoint?.available,
+    checkpointRestoredAt: task.checkpoint?.restoredAt,
     safetyPlanId: task.safety.safetyPlanId,
     policyVersion: task.safety.policyVersion,
     workerProfileId: task.safety.workerProfileId,
@@ -83,6 +103,10 @@ function pendingFingerprint(task: PublicTaskView): string {
 
 function isTerminal(task: PublicTaskView): boolean {
   return ["completed", "validation_failed", "failed", "aborted", "rolled_back"].includes(task.status);
+}
+
+function isRollbackEligible(task: PublicTaskView): boolean {
+  return ["completed", "validation_failed", "failed", "aborted"].includes(task.status);
 }
 
 /** Local, process-bound confirmation for bounded service-backed operator actions. */
@@ -201,8 +225,6 @@ export class OperatorActionService {
     if (!this.service.approveEscalation) {
       throw new OperatorActionError("Escalation approval is unavailable on this operator surface", "invalid_action");
     }
-    // Approval never enlarges the old task envelope. The machine service closes
-    // it, revalidates authority, audits the decision, and requires a new preview.
     return await this.service.approveEscalation(entry.taskId, entry.escalationId);
   }
 
@@ -258,5 +280,71 @@ export class OperatorActionService {
       throw new OperatorActionError("Task abort is unavailable on this operator surface", "invalid_action");
     }
     return await this.service.abortTask(entry.taskId, OPERATOR_ABORT_REASON);
+  }
+
+  async previewTaskRollback(taskId: string): Promise<TaskRollbackPreview> {
+    if (!this.service.rollbackTask) {
+      throw new OperatorActionError("Task rollback is unavailable on this operator surface", "invalid_action");
+    }
+    const task = await this.service.getTask(taskId);
+    const checkpoint = task.checkpoint;
+    if (!isRollbackEligible(task)) {
+      throw new OperatorActionError(`Task status ${task.status} is not eligible for rollback`, "invalid_action");
+    }
+    if (!checkpoint?.checkpointId || !checkpoint.available || checkpoint.restoredAt) {
+      throw new OperatorActionError("Task has no available rollback checkpoint", "invalid_action");
+    }
+    const now = this.now();
+    this.preparePending(now);
+    const expiresAtMs = now + TOKEN_LIFETIME_MS;
+    const confirmationToken = crypto.randomBytes(32).toString("hex");
+    this.pending.set(confirmationToken, {
+      action: "rollback_task",
+      taskId: task.taskId,
+      checkpointId: checkpoint.checkpointId,
+      fingerprint: pendingFingerprint(task),
+      expiresAtMs,
+    });
+    return {
+      action: "rollback_task",
+      taskId: task.taskId,
+      workspaceId: task.workspaceId,
+      checkpointId: checkpoint.checkpointId,
+      confirmationText: "Restore this workspace to the task's pre-run checkpoint using the orchestrator rollback guard",
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      confirmationToken,
+    };
+  }
+
+  async rollbackTask(input: {
+    taskId: string;
+    checkpointId: string;
+    confirmationToken: string;
+    confirmed: true;
+  }): Promise<PublicTaskView> {
+    if (input.confirmed !== true) {
+      throw new OperatorActionError("Explicit operator confirmation is required", "invalid_action");
+    }
+    const entry = this.pending.get(input.confirmationToken);
+    if (
+      !entry ||
+      entry.action !== "rollback_task" ||
+      entry.taskId !== input.taskId ||
+      entry.checkpointId !== input.checkpointId
+    ) {
+      throw new OperatorActionError("Operator confirmation is invalid or already used", "invalid_action");
+    }
+    this.pending.delete(input.confirmationToken);
+    if (this.now() >= entry.expiresAtMs) {
+      throw new OperatorActionError("Operator confirmation expired", "expired_action");
+    }
+    const current = await this.service.getTask(entry.taskId);
+    if (pendingFingerprint(current) !== entry.fingerprint) {
+      throw new OperatorActionError("Task, checkpoint, or safety authority changed after preview", "stale_action");
+    }
+    if (!this.service.rollbackTask) {
+      throw new OperatorActionError("Task rollback is unavailable on this operator surface", "invalid_action");
+    }
+    return await this.service.rollbackTask(entry.taskId, entry.checkpointId);
   }
 }
