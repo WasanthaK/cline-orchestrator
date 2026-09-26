@@ -944,6 +944,7 @@ export class MachineOrchestratorService {
 
   async rollbackTask(taskId: string, requestedCheckpointId: string): Promise<PublicTaskView> {
     const { task, workspace } = await this.locateTask(taskId);
+    assertTaskBindingCurrent(task, workspace);
     const expected = checkpointId(task);
     if (!expected || requestedCheckpointId.trim() !== expected) {
       throw new MachineGatewayError(
