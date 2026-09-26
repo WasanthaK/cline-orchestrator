@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { UnattendedExecutionBudgetV1 } from "./unattended-budget.js";
 import { UnattendedBudgetDecisionStore } from "./unattended-budget-store.js";
-import { resumeUnattendedWorkflow } from "./unattended-resume.js";
+import { UnattendedResumeError, resumeUnattendedWorkflow } from "./unattended-resume.js";
 import { createUnattendedWorkflow } from "./unattended-workflow.js";
 import { UnattendedWorkflowStore } from "./unattended-workflow-store.js";
 import type { OrchestratorTask } from "./types.js";
@@ -162,6 +162,7 @@ async function harness(taskValues: OrchestratorTask[]) {
     root,
     workflowStore,
     budgetDecisionStore,
+    tasks,
     started,
     options: {
       workflowStore,
@@ -190,6 +191,39 @@ test("restart reconciliation starts only the still-created runnable node", async
     assert.equal(result.action, "started");
     assert.equal(result.startedTaskId, IDS.task2);
     assert.deepEqual(h.started, [IDS.task2]);
+  } finally {
+    await rm(h.root, { recursive: true, force: true });
+  }
+});
+
+test("pinned workflow resume starts only the exact previewed runnable task", async () => {
+  const h = await harness([task1(), task2()]);
+  try {
+    const result = await resumeUnattendedWorkflow(IDS.workflow, {
+      ...h.options,
+      expectedTaskId: IDS.task2,
+    });
+    assert.equal(result.action, "started");
+    assert.equal(result.startedTaskId, IDS.task2);
+    assert.deepEqual(h.started, [IDS.task2]);
+  } finally {
+    await rm(h.root, { recursive: true, force: true });
+  }
+});
+
+test("pinned workflow resume fails closed before budget audit or start when the candidate changed", async () => {
+  const h = await harness([task1(), task2()]);
+  try {
+    await assert.rejects(
+      resumeUnattendedWorkflow(IDS.workflow, {
+        ...h.options,
+        expectedTaskId: IDS.task1,
+      }),
+      (error: unknown) =>
+        error instanceof UnattendedResumeError && error.code === "expected_task_changed",
+    );
+    assert.deepEqual(h.started, []);
+    assert.equal((await h.budgetDecisionStore.list(IDS.workflow)).length, 0);
   } finally {
     await rm(h.root, { recursive: true, force: true });
   }
