@@ -5,10 +5,8 @@ const TOKEN_LIFETIME_MS = 60_000;
 const MAX_PENDING = 64;
 const OPERATOR_ABORT_REASON = "Task aborted by local operator";
 
-type OperatorService = Pick<
-  MachineOrchestratorService,
-  "getTask" | "rejectEscalation" | "abortTask"
->;
+type OperatorService = Pick<MachineOrchestratorService, "getTask" | "rejectEscalation"> &
+  Partial<Pick<MachineOrchestratorService, "abortTask">>;
 
 export class OperatorActionError extends Error {
   constructor(message: string, readonly code: "invalid_action" | "stale_action" | "expired_action" | "capacity_exceeded") {
@@ -150,6 +148,9 @@ export class OperatorActionService {
   }
 
   async previewTaskAbort(taskId: string): Promise<TaskAbortPreview> {
+    if (!this.service.abortTask) {
+      throw new OperatorActionError("Task abort is unavailable on this operator surface", "invalid_action");
+    }
     const task = await this.service.getTask(taskId);
     if (isTerminal(task)) {
       throw new OperatorActionError(`Task is already ${task.status}`, "invalid_action");
@@ -194,6 +195,9 @@ export class OperatorActionService {
     const current = await this.service.getTask(entry.taskId);
     if (pendingFingerprint(current) !== entry.fingerprint) {
       throw new OperatorActionError("Task or safety authority changed after preview", "stale_action");
+    }
+    if (!this.service.abortTask) {
+      throw new OperatorActionError("Task abort is unavailable on this operator surface", "invalid_action");
     }
     // The machine service revalidates the durable workspace/task safety binding.
     // Its existing abort path records abort_requested before making the task terminal.
