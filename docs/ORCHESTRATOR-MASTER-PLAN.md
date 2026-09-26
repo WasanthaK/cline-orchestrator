@@ -251,7 +251,7 @@ Evidence:
 - [x] Prove one worker failure cannot corrupt or broaden another worker's authority.
 - [x] Prove validation, diff safety and rollback for both concurrent tasks.
 - [x] Prove gateway restart/stale-worker behavior in isolation.
-- [ ] Obtain explicit user authorization immediately before any proof that mutates/restarts shared local Cline/Hub/VS Code runtime. No shared-runtime proof has been attempted; this gate applies if one is proposed.
+- [x] Keep the shared local Cline/Hub/VS Code runtime untouched during the disposable proofs; require explicit user authorization immediately before any future proof that mutates or restarts it.
 
 Physical evidence (2026-09-26): Windows PC, local `llama.cpp` at
 `127.0.0.1:8080`, alias `qwen38-27b-192k`, orchestrator worker
@@ -263,13 +263,14 @@ replacement/validation/rollback fields shown. Full evidence summary and
 operator TEMP log names: `docs/MILESTONE-9D-PHYSICAL-PROOF.md`.
 CI `#666` / `36222404791` failed one rollback test because it raced the
 transition to idle; a test-only wait for the public idle state passes local
-typecheck and all 268 tests. A green follow-up CI run is still required.
+typecheck and all 268 tests. Branch-head CI `#668` / `36226493586` on
+`14e9991bd4312e51cbb02beb5403326d9d3fe522` completed successfully.
 
 ## Completion Gate
 
 Milestone 9 is complete only when the orchestrator can physically run independent write-capable coding jobs concurrently on multiple isolated registered workspaces and a stale/unfenced worker is physically unable to write through the trusted executor boundary.
 
-**Status: IN PROGRESS — Slice 9D disposable physical proofs passed; CI test stabilization awaits a green run. Shared live-runtime concurrency remains disabled.**
+**Status: COMPLETE — Slice 9D disposable physical proofs and branch-head CI passed. Shared live-runtime concurrency remains disabled pending separate authorization/review.**
 
 ---
 
@@ -379,7 +380,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 | 6 | GPT Supervisor | Complete |
 | 7 | Unattended workflows | Complete |
 | 8 | UI + concurrency safety contracts | Complete |
-| 9 | Controlled live multi-workspace workers | **In progress — 9D physical proofs passed; CI follow-up pending** |
+| 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Planned |
 | 11 | Secure remote ChatGPT control | Planned |
 | 12 | Distributed / multi-machine orchestration | Planned |
@@ -454,8 +455,8 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 2. **COMPLETE — Milestone 9 Slice 9A.** Lease-aware owner-targeted write boundary; CI `#596` / `36119645637`.
 3. **COMPLETE — Milestone 9 Slice 9B.** Scheduler/runtime integration; stable branch-head CI `#614` / `36122721492`.
 4. **COMPLETE — Milestone 9 Slice 9C.** Lease loss, worker crash, owner loss and gateway restart/stale-writer behavior; CI `#620`, `#622`, `#628`, `#630`.
-5. **NEXT — Milestone 9 Slice 9D CI closeout.** Land the test-only rollback idle-wait correction and verify a green branch-head CI run; keep shared runtime disabled pending separate authorization/review.
-6. **FUTURE IN ORDER — Milestones 10–18.**
+5. **COMPLETE — Milestone 9 Slice 9D.** Three isolated disposable physical commands passed with exit 0; branch-head CI `#668` / `36226493586` succeeded.
+6. **NEXT — Milestone 10 Interactive Operator Control Plane.** Begin with a bounded service-backed action contract and tests against the existing policy boundary; keep shared runtime disabled pending separate authorization/review.
 7. **STILL GATED — native teams/subagents, distributed scheduling, UI write actions, push/merge/deploy/destructive Git, secrets, external-network mutation or system changes** until their milestone/policy gate is satisfied.
 
 ---
@@ -471,12 +472,13 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 - 2026-09-25: Milestone 9D harness review added a bounded overlap barrier and an isolated scheduled restart proof command. Local Node test runner: 262 passed; typecheck passed. No new physical proof has run. Next: run the three gated proofs on a suitable local provider and review their evidence before changing any 9D acceptance checkbox.
 - 2026-09-26: Windows test feedback identified fixture-only failures: directory symlink permissions and Git `core.autocrlf` inheritance. Use junctions in the two directory-link tests and force LF in the two temporary Git repository fixtures. Local typecheck and 262 tests pass; Windows rerun and physical proofs remain pending. The proof guide now configures the user's `llama.cpp` OpenAI-compatible endpoint explicitly.
 - 2026-09-26: Three disposable live proofs on the Windows PC exited 0 using the local `llama.cpp` model; cross-workspace overlap, same-workspace denial, stale-write fencing, fault isolation, validation, checkpoint recovery and rollback were observed. Code HEAD `3fd26d6`; CI `#666` failed one test that raced workspace idle. A test-only idle wait passes local typecheck and 268 tests; green follow-up CI remains pending.
+- 2026-09-26: Milestone 9D closed: test idle wait and physical evidence on `14e9991bd4312e51cbb02beb5403326d9d3fe522`; branch-head CI `#668` / `36226493586` passed. Shared runtime concurrency remains disabled pending separate authorization/review.
 
 ---
 
 # Current Next Step
 
-**Milestone 9 Slice 9D — CI closeout.** Publish the test-only wait for the public idle state, verify a green branch-head CI run, then close the milestone against the recorded disposable physical evidence. Keep shared live runtime concurrency disabled; obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
+**Milestone 10 — Interactive Operator Control Plane.** Define the first bounded service-backed operator action using the existing machine service policy boundary, then add replay/stale-action/authorization-drift tests. Keep shared live runtime concurrency disabled; obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
 
 ---
 

@@ -122,4 +122,7 @@ master plan without recording Hub credentials or local secrets.
 - CI `#666` (`36222404791`) on this code HEAD failed one test due to its
   rollback call racing with the workspace's transition to idle. The test
   now waits for the public idle state; local typecheck and 268 tests pass.
-  A green follow-up CI run remains required for milestone closeout.
+  Branch-head CI `#668` (`36226493586`) on
+  `14e9991bd4312e51cbb02beb5403326d9d3fe522` completed successfully.
+  The three disposable proof commands and the CI gate are complete. Shared
+  runtime concurrency remains disabled pending separate authorization/review.
