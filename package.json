@@ -1,0 +1,35 @@
+{
+  "name": "cline-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first orchestration and supervision for long-running Cline coding sessions.",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "mcp": "tsx src/mcp-main.ts",
+    "proof:owner-loss": "tsx src/live-owner-loss-proof.ts",
+    "proof:owner-loss:diagnostic": "tsx src/live-owner-loss-diagnostic.ts",
+    "proof:multi-workspace": "tsx src/live-multi-workspace-proof.ts",
+    "proof:scheduled-restart": "tsx src/live-scheduled-restart-proof.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "start:mcp": "node dist/mcp-main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@cline/core": "0.0.83",
+    "@cline/sdk": "0.0.83",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

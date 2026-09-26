@@ -1,0 +1,129 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { TaskStore } from "./state.js";
+import type { DiffSafetyResult, OrchestratorTask, ValidationRun } from "./types.js";
+
+async function withStore<T>(fn: (store: TaskStore) => Promise<T>): Promise<T> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "cline-orchestrator-state-"));
+  try { return await fn(new TaskStore(dir)); }
+  finally { await rm(dir, { recursive: true, force: true }); }
+}
+
+function task(): OrchestratorTask {
+  const now = new Date().toISOString();
+  return { id: "validation-gate-test", goal: "Test validation gate", workspace: "/tmp/workspace", status: "waiting", createdAt: now, updatedAt: now, validationCommands: ["npm test"] };
+}
+
+function validation(passed: boolean): ValidationRun {
+  const now = new Date().toISOString();
+  return {
+    startedAt: now, completedAt: now, durationMs: 1, passed,
+    commandsRequested: 1, commandsRun: 1,
+    results: [{ command: "npm test", startedAt: now, completedAt: now, durationMs: 1, exitCode: passed ? 0 : 1, timedOut: false, aborted: false, stdout: "", stderr: passed ? "" : "failed" }],
+  };
+}
+
+function diffSafetyPassed(): DiffSafetyResult {
+  const now = new Date().toISOString();
+  return {
+    checkedAt: now,
+    passed: true,
+    finalDiffSummary: "0 changed path(s)",
+    summary: { changedFiles: 0, trackedFiles: 0, untrackedFiles: 0, trackedAdditions: 0, trackedDeletions: 0 },
+    changedPaths: [], warnings: [], failures: [],
+  };
+}
+
+test("Cline completed is atomically converted to validating until validation passes", async () => {
+  await withStore(async (store) => {
+    const value = task();
+    await store.save(value);
+    value.status = "completed";
+    value.finishReason = "completed";
+    await store.save(value);
+    assert.equal(value.status, "validating");
+    assert.equal(value.validationRunCount, 1);
+    assert.equal((await store.load(value.id)).status, "validating");
+    let eventTypes = (await store.events(value.id)).map((event) => event.type);
+    assert.ok(eventTypes.includes("validation_started"));
+    assert.equal(eventTypes.includes("completed"), false);
+
+    value.lastValidation = validation(true);
+    value.lastDiffSafety = diffSafetyPassed();
+    value.status = "completed";
+    await store.save(value);
+    assert.equal((await store.load(value.id)).status, "completed");
+    eventTypes = (await store.events(value.id)).map((event) => event.type);
+    assert.ok(eventTypes.includes("validation_passed"));
+    assert.ok(eventTypes.includes("diff_safety_passed"));
+    assert.ok(eventTypes.includes("completed"));
+  });
+});
+
+test("failed validation persists as validation_failed instead of generic completed", async () => {
+  await withStore(async (store) => {
+    const value = task();
+    value.id = "validation-failure-test";
+    await store.save(value);
+    value.status = "completed";
+    value.finishReason = "completed";
+    await store.save(value);
+    assert.equal(value.status, "validating");
+    value.lastValidation = validation(false);
+    value.status = "validation_failed";
+    value.finishReason = "validation_failed";
+    value.error = "Validation command failed";
+    await store.save(value);
+    const persisted = await store.load(value.id);
+    assert.equal(persisted.status, "validation_failed");
+    const eventTypes = (await store.events(value.id)).map((event) => event.type);
+    assert.ok(eventTypes.includes("validation_failed"));
+    assert.equal(eventTypes.includes("completed"), false);
+  });
+});
+
+test("failed validation with repair budget remains nonterminal and records repair lifecycle", async () => {
+  await withStore(async (store) => {
+    const value = task();
+    value.id = "validation-repair-test";
+    await store.save(value);
+    value.status = "completed";
+    value.finishReason = "completed";
+    await store.save(value);
+    assert.equal(value.status, "validating");
+    value.lastValidation = validation(false);
+    value.validationRepairCount = 1;
+    value.status = "repairing";
+    value.finishReason = undefined;
+    value.error = "Validation command failed";
+    await store.save(value);
+    const persisted = await store.load(value.id);
+    assert.equal(persisted.status, "repairing");
+    const eventTypes = (await store.events(value.id)).map((event) => event.type);
+    assert.ok(eventTypes.includes("validation_failed"));
+    assert.ok(eventTypes.includes("validation_repairing"));
+    assert.equal(eventTypes.includes("completed"), false);
+  });
+});
+
+test("repair model turn does not replace the original git-before baseline", async () => {
+  await withStore(async (store) => {
+    const value = task();
+    value.id = "validation-repair-git-baseline";
+    value.status = "repairing";
+    value.runCount = 1;
+    value.lastRunGit = { before: { capturedAt: "2026-09-21T00:00:00.000Z", available: true, root: "/repo", branch: "feature", head: "0123456789abcdef", dirty: true, changedFiles: 2 } };
+    await store.save(value);
+    value.status = "running";
+    value.runCount = 2;
+    await store.save(value);
+    const persisted = await store.load(value.id);
+    assert.equal(persisted.lastRunGit?.before?.capturedAt, "2026-09-21T00:00:00.000Z");
+    assert.equal(persisted.lastRunGit?.before?.head, "0123456789abcdef");
+    const eventTypes = (await store.events(value.id)).map((event) => event.type);
+    assert.equal(eventTypes.includes("run_started"), false);
+  });
+});
