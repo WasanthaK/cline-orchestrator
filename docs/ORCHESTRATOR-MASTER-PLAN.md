@@ -36,7 +36,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 8 | UI + concurrency safety contracts | Complete |
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
-| 11 | Secure remote ChatGPT control | In progress — Slice 11A complete; no remote listener |
+| 11 | Secure remote ChatGPT control | In progress — Slices 11A–11B complete; no remote listener |
 | 12 | Distributed / multi-machine orchestration | Planned |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
@@ -107,7 +107,25 @@ Implemented/proven:
 
 Evidence: contract `4f1bf14d685512945aebfe995d6d4f12466532ab`; tests `4f14c8e656ce376c07ce4a2724809a5f39eba4e0`; threat model `10e34cb064f9f50712f4673e7476170464589ad5`; CI `#741` / `36313678449` passed typecheck + full suite.
 
-**Status: IN PROGRESS — Slice 11A complete; remote transport remains disabled.**
+## Slice 11B — Machine-local remote registration store — COMPLETE
+
+Implemented/proven:
+
+- durable machine-local registration create/list/get/update/revoke;
+- opaque registration/machine/principal IDs only;
+- strict admission through the current M10 operator capability manifest;
+- normalized deterministic capability projection;
+- revision starts at 1 and increments monotonically for every update/revocation;
+- updates/revocation require exact `expectedRevision` and concurrent same-revision mutations are single-winner;
+- revoked registration is terminal;
+- atomic snapshot replacement via temporary file + rename with restrictive file mode;
+- corrupt or duplicate durable state fails closed;
+- sanitized public views expose only registration metadata/capability names and no token, credential, workspace path or Safety Plan material;
+- persisted registration can be fed to the 11A session-current assertion, so capability reduction/revision change/revocation invalidate stale session claims.
+
+Evidence: shared registration normalization boundary `3a8ccc933f72f3587c179f6b86cebc10de0a21b8`; store `992498981f0226e9e5b43d1f652dd866a64073e3`; focused tests `32691d4f567b08cb6fe05aed5f79006288632be1`; CI `#749` / `36322675458` passed typecheck + full suite.
+
+**Status: IN PROGRESS — Slices 11A–11B complete; remote authentication/session issuance and network transport remain disabled.**
 
 ---
 
@@ -126,8 +144,9 @@ Evidence: contract `4f1bf14d685512945aebfe995d6d4f12466532ab`; tests `4f14c8e656
 | Lease-aware parallel writer safety | Complete — M9 |
 | Isolated physical concurrent-runtime proof | Complete — M9D |
 | Remote threat/session authority contract | Complete — M11A |
-| Remote registration store | Not implemented — M11B next |
-| Remote authentication/listener | Disabled |
+| Remote registration store | Complete — M11B |
+| Remote authentication/session issuance | Disabled — M11C next |
+| Remote listener | Disabled |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
 | Distributed scheduler | Disabled — M12 |
@@ -145,17 +164,18 @@ Evidence: contract `4f1bf14d685512945aebfe995d6d4f12466532ab`; tests `4f14c8e656
 6. Push, merge, deploy, destructive Git, secret access, external-network mutation and system changes remain separately gated.
 7. Remote authentication is transport identity only; it cannot become human approval, Safety Plan approval, task authority, credential authority or release authority.
 8. Local revocation, registration revision and capability reduction must win over stale remote state.
-9. No remote listener may be implemented until replay protection, rate limiting, durable sanitized audit and local registration storage are reviewed and tested.
+9. No remote listener may be implemented until replay protection, rate limiting and durable sanitized audit are reviewed and tested.
 
 ---
 
 # Immediate work queue
 
 1. **COMPLETE — Milestones 1–10.**
-2. **COMPLETE — Milestone 11 Slice 11A.** Threat model + remote-session authority contract; CI `#741` / `36313678449`. No remote listener exists.
-3. **NEXT — Milestone 11 Slice 11B: machine-local remote registration store.** Implement local durable registration create/list/get/update/revoke with opaque IDs, monotonic revision, atomic persistence, strict M10 capability projection and sanitized public views. Registration updates/revocation must invalidate prior session claims by revision/state. Do not issue authentication tokens and do not open a network listener.
-4. **STILL GATED — remote authentication/session issuance, replay cache, rate limiter, remote audit gateway and any external listener/relay** until 11B is complete and reviewed.
-5. **STILL GATED — shared-runtime changes, native teams/subagents, distributed scheduling, release actions, secrets and external-network mutation** until their later milestone gates.
+2. **COMPLETE — Milestone 11 Slice 11A.** Threat model + remote-session authority contract; CI `#741` / `36313678449`.
+3. **COMPLETE — Milestone 11 Slice 11B.** Machine-local registration store + stale-session invalidation; CI `#749` / `36322675458`.
+4. **NEXT — Milestone 11 Slice 11C: local session issuance + replay/rate/audit primitives.** Build a local-only session issuer that loads the current durable registration, creates short-lived claims, and records sanitized provenance. Add replay protection and per-registration/session rate limiting as trusted primitives before any remote listener exists. No external bind/relay/tunnel and no credential/token persistence.
+5. **STILL GATED — any external listener/relay/tunnel exposure** until 11C primitives are complete, reviewed and tested.
+6. **STILL GATED — shared-runtime changes, native teams/subagents, distributed scheduling, release actions, secrets and external-network mutation** until their later milestone gates.
 
 ---
 
@@ -165,9 +185,10 @@ Evidence: contract `4f1bf14d685512945aebfe995d6d4f12466532ab`; tests `4f14c8e656
 - 2026-09-27: M10 targeted scheduled-writer recovery completed through `9e491a03db6bc47e634c3b194a7049765aea56f1`; CI `#727`.
 - 2026-09-27: M10 capability boundary manifest `45b1fd891b555c8759f78c75bf795fe07d9fa7a0` + tests `2a731781316de4a4db5681f07188c024c50be3a1`; CI `#733`; M10 closed.
 - 2026-09-27: M11A remote authority contract `4f1bf14d685512945aebfe995d6d4f12466532ab`, tests `4f14c8e656ce376c07ce4a2724809a5f39eba4e0`, threat model `10e34cb064f9f50712f4673e7476170464589ad5`; CI `#741`; no listener/runtime change.
+- 2026-09-27: M11B registration normalization/store/tests through `32691d4f567b08cb6fe05aed5f79006288632be1`; CI `#749`; no listener/runtime change.
 
 ---
 
 # Current next step
 
-**Milestone 11 — Slice 11B: machine-local remote registration store.** Implement only local durable registration management and stale-session invalidation evidence. Keep remote token issuance and network transport disabled.
+**Milestone 11 — Slice 11C: local session issuance + replay/rate/audit primitives.** Implement only local trusted primitives first. Keep external network transport disabled until these controls are proven.
