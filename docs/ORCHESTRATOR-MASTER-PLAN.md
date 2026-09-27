@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 Branch: `phase-1/bootstrap`
 
 ## Purpose
@@ -9,7 +9,7 @@ This is the canonical execution plan for `cline-orchestrator`.
 
 Before implementation work: read this file, confirm branch/HEAD and the current milestone, implement only the first unfinished item, prefer GitHub-hosted CI over destructive local-runtime testing, then update this file with evidence and one concrete next action.
 
-Detailed implementation history remains in Git history. This tracker intentionally stays concise and keeps only current architecture, acceptance state, key evidence, constraints and ordered next work authoritative.
+Detailed implementation history remains in Git history and milestone-specific documents. This tracker intentionally keeps current architecture, acceptance state, key evidence, constraints and ordered next work authoritative.
 
 ## End Goal
 
@@ -181,114 +181,36 @@ Evidence: dashboard through CI `#526`; specialist handoff through `#540`; locks 
 
 # Milestone 9 — Controlled Live Multi-Workspace Runtime
 
-## Objective
+Acceptance: lease-aware owner-targeted write execution, scheduler-to-orchestrator-owned Hub integration, crash/restart/stale-writer safety and disposable physical multi-workspace proof. Lease possession remains coordination only; current durable authority and a current fenced lease are both required immediately before writes.
 
-Turn the Milestone 8 scheduler/lease contracts into real orchestrator-managed parallel execution across independently registered workspaces without weakening task authority, Safety Plan enforcement, owner-targeted safe executors, checkpoint/rollback safety or human escalation.
+Key evidence:
+- M9A adapter `9af0e30dfa740e4b36b959257dc0b9352658623a`; tests `6937640e02a6c75bab8c6a9e2bb8ec5ca173e2da`; CI `#596` / `36119645637`.
+- M9B runtime/scheduler integration through stable CI `#614` / `36122721492`.
+- M9C lease-loss, crash and restart safety through CI `#620`, `#622`, `#628`, `#630`.
+- M9D disposable physical proofs on Windows using local `llama.cpp` completed successfully; closure HEAD `14e9991bd4312e51cbb02beb5403326d9d3fe522`; branch-head CI `#668` / `36226493586`. See `docs/MILESTONE-9D-PHYSICAL-PROOF.md`.
 
-Native Cline teams, native subagents and provider-owned execution remain disabled in this milestone.
-
-## Slice 9A — Lease-aware owner-targeted executor boundary
-
-- [x] Bind admitted worker to current durable task/Safety Plan/project/workspace/profile/owner authority plus a fenced workspace lease.
-- [x] Revalidate durable authority immediately before each write-capable executor call.
-- [x] Require a current valid fenced lease for `editor` and `applyPatch`.
-- [x] Keep lease possession coordination-only; valid lease without matching durable authority fails closed.
-- [x] Fail closed on abort, invalid lease/fence replacement and authority/profile/Safety Plan drift.
-- [x] Permit heartbeat renewal to advance lease revision/expiry while preserving lease/fence identity.
-- [x] Keep reads/search under existing Safety Plan policy without writer-lease authority.
-- [x] Preserve the M5/M8 owner-targeted Hub executor/policy boundary.
-
-Evidence: adapter `9af0e30dfa740e4b36b959257dc0b9352658623a`; tests `6937640e02a6c75bab8c6a9e2bb8ec5ca173e2da`; CI `#596` / `36119645637`.
-
-## Slice 9B — Scheduler/runtime integration
-
-- [x] Connect `writer-concurrency-scheduler` to orchestrator-owned Hub sessions through the lease-aware trusted adapter.
-- [x] Enforce configurable total writer budget and one live writer per workspace.
-- [x] Permit concurrency only across distinct workspaces.
-- [x] Give every writer a distinct orchestrator-owned owner session; never silently take over an existing VS Code-created write session.
-- [x] Start only already-approved durable tasks; scheduler admission grants no new path/tool/command authority.
-- [x] Preserve existing task checkpoint/diff-safety accounting.
-- [x] Keep implementation/cloud tests isolated from the shared local live Cline/Hub runtime.
-
-Evidence:
-- runtime wrapper `a4b9d34e9c7e68a8f1fb77374427ef79f6cf8137`; wrapper tests `442f2c4053bfb046b93940a2ea759a1a6b705c24`;
-- scheduled writer runner through `bbf81b8710099eaa2690a439b90d2c1bfbee116a`;
-- real scheduler/lock/registry/fake-Hub tests `2db5cb5ab09bb4fa3f1808ba133d722dbcaefd92`; Git-baseline correction `c9c05bacd104f91a46c3fd1b6eee4efdcad90bff`;
-- deterministic concurrency barrier `e34ec64c9b40f936e64e5ab75a27e16d7f593e95`;
-- CI `#610` / `36122080710` and stable branch-head CI `#614` / `36122721492` passed typecheck + full suite.
-
-## Slice 9C — Failure, restart and stale-writer safety
-
-- [x] Worker crash releases/expires coordination state without permitting stale writes after restart.
-- [x] Hub disconnect/owner loss recover through durable handoff/revalidation rather than stale session replay.
-- [x] Gateway restart uses explicit recovery admission and a new fenced lease before replacement ownership.
-- [x] Heartbeat failure aborts the active Hub worker and transitions the task to a durable safe state.
-- [x] Expired/stale worker cannot resurrect or silently reacquire prior lease/fence identity.
-- [x] Duplicate writers for one workspace cannot both pass immediate pre-write fencing checks.
-- [x] Restart reconciliation derives authority from current durable registry/task/Safety Plan/checkpoint/lease evidence.
-- [x] Current authority/profile drift fails closed before recovery runtime creation.
-- [x] A still-live old writer lease causes restart recovery to defer rather than take over.
-
-Evidence:
-- lease-loss lifecycle abort `859e5926ff4fb5d319bcd8013f0efbee83914f86`;
-- deterministic mid-flight lease-loss proof `26bc387312af0c64381a8ca8cf69001c6920e6f8`, CI `#620` / `36123697383`;
-- worker-crash/stale-executor proof `5bf842ce2531d43dd0f8709d140038f0c0ed8230`, CI `#622` / `36123899455`;
-- explicit restart recovery permit `37a525528d29cfacaed298a1b3d54e78ee7a3933`;
-- scheduled restart reconciler `ace360368bcb079c024567bd836281b73b2291a9`;
-- expired-fence replacement/live-lease deferral/authority-drift tests `8532681548351985030cf7afaa72a8fd28358d23`, CI `#628` / `36124261939`;
-- active fenced Hub owner-loss/handoff replacement test `d673fa603a281798beefe6c27f06982a5f191df8`, CI `#630` / `36124422542`.
-
-## Slice 9D — Disposable physical proof
-
-- [x] Prepare a gated disposable multi-workspace harness with isolated Hub/data,
-  registry and Git roots; require actual overlapping Hub sends before reporting
-  concurrent execution. Prepare a separate gated scheduled gateway restart
-  harness. See `docs/MILESTONE-9D-PHYSICAL-PROOF.md`.
-- [x] Use isolated disposable repositories/workspaces before shared development workspaces.
-- [x] Prove two independent workspaces execute write tasks concurrently with separate leases/owner sessions.
-- [x] Prove same-workspace competing writer admission is denied.
-- [x] Prove forced lease loss prevents later writes.
-- [x] Prove one worker failure cannot corrupt or broaden another worker's authority.
-- [x] Prove validation, diff safety and rollback for both concurrent tasks.
-- [x] Prove gateway restart/stale-worker behavior in isolation.
-- [x] Keep the shared local Cline/Hub/VS Code runtime untouched during the disposable proofs; require explicit user authorization immediately before any future proof that mutates or restarts it.
-
-Physical evidence (2026-09-26): Windows PC, local `llama.cpp` at
-`127.0.0.1:8080`, alias `qwen38-27b-192k`, orchestrator worker
-`ollama-openai`. Branch `phase-1/bootstrap` code HEAD
-`3fd26d6c05df701e5adfaf5a1cdf14abc85ae48b`. The operator reported
-`"passed": true` and exit code 0 for `proof:multi-workspace` and
-`proof:scheduled-restart`; `proof:owner-loss` also exited 0 with the
-replacement/validation/rollback fields shown. Full evidence summary and
-operator TEMP log names: `docs/MILESTONE-9D-PHYSICAL-PROOF.md`.
-CI `#666` / `36222404791` failed one rollback test because it raced the
-transition to idle; a test-only wait for the public idle state passes local
-typecheck and all 268 tests. Branch-head CI `#668` / `36226493586` on
-`14e9991bd4312e51cbb02beb5403326d9d3fe522` completed successfully.
-
-## Completion Gate
-
-Milestone 9 is complete only when the orchestrator can physically run independent write-capable coding jobs concurrently on multiple isolated registered workspaces and a stale/unfenced worker is physically unable to write through the trusted executor boundary.
-
-**Status: COMPLETE — Slice 9D disposable physical proofs and branch-head CI passed. Shared live-runtime concurrency remains disabled pending separate authorization/review.**
+**Status: COMPLETE — shared live-runtime concurrency remains disabled pending separate authorization/review.**
 
 ---
 
 # Milestone 10 — Interactive Operator Control Plane
 
-Planned: bounded service-backed pause/resume/abort/escalation/review/validation/rollback/workflow/worker actions, same policy boundary as non-UI callers, no generic shell/filesystem/Hub/process/credential surface, confirmation/audit for high-risk actions, replay/stale-action/authorization-drift tests.
+Planned: bounded service-backed task/escalation/rollback/workflow/worker controls and safe review/validation interaction, same policy boundary as non-UI callers, no generic shell/filesystem/Hub/process/credential surface, confirmation/audit for high-risk actions, replay/stale-action/authorization-drift tests.
 
-- [x] Establish the first bounded, service-backed operator action: preview and confirm rejection of a pending safety escalation. The in-process token is short-lived, single-use and tied to the current task/safety snapshot; execution calls the existing machine service, which revalidates authority and records the decision. Concurrent opposite decisions are single-winner within one gateway process.
-- [x] Connect the action to a separate opt-in loopback browser surface with an operator token, short-lived browser session, CSRF/origin checks, session-bound preview and explicit confirmation. Keep the passive visualization unchanged. See `docs/MILESTONE-10-LOCAL-OPERATOR.md`.
-- [x] Add bounded task-abort preview/confirmation. It uses a 60-second single-use token consumed before awaiting, fingerprints current task/safety state, fails closed on task/profile drift, delegates only to `MachineOrchestratorService.abortTask`, and relies on the existing durable `abort_requested` audit event. Browser exposure remains unchanged.
-- [x] Add bounded safety-escalation approval preview/confirmation. Approval reuses `MachineOrchestratorService.approveEscalation`, revalidates current authority, records `human_escalation_approved`, closes the old immutable task envelope and returns `new_safety_preview_required`; it never enlarges the existing task authority. Browser exposure remains unchanged.
-- [x] Harden `MachineOrchestratorService.rollbackTask` so current durable task/workspace safety binding is revalidated before checkpoint authority is accepted or rollback begins. Registry profile drift and stale task binding now fail closed with `task_binding_stale` before `rollback_requested`, controller mutation or workspace restoration.
-- [x] Add bounded operator rollback preview/confirmation. The 60-second single-use token is tied to the current task/safety/checkpoint fingerprint and exact opaque checkpoint ID, is consumed before awaiting, rejects replay/expiry/stale state/checkpoint mismatch, delegates only to hardened `MachineOrchestratorService.rollbackTask`, and relies on existing `rollback_requested`/`rollback_completed` audit events. Browser exposure remains unchanged.
-- [x] Harden unattended workflow resume for operator confirmation by allowing the caller to pin the exact expected runnable task. If the current first runnable task no longer matches the previewed task, `resumeUnattendedWorkflow` fails closed before budget decision logging or starter invocation. This preserves current durable re-evaluation while preventing a confirmation from silently advancing a different node.
-- [x] Add bounded operator workflow-resume preview/confirmation. The 60-second process-local token is single-use and consumed before awaiting, binds the immutable workflow, exact runnable task, current durable task/authority evidence, budget configuration and durable budget decisions, exposes only sanitized counts plus opaque IDs, records durable operator confirmation provenance without persisting the token, and delegates only to pinned `resumeUnattendedWorkflow(expectedTaskId)` plus the independently authority-enforcing starter. Replay, expiry, state/authority drift and starter authority failure fail closed. Browser exposure remains unchanged.
-- [ ] Add the remaining bounded task, review/validation and worker actions with their confirmation, audit, replay, stale-state and authority-drift checks.
+Completed slices:
+- [x] Escalation rejection preview/confirmation with short-lived single-use token, current task/safety snapshot binding and existing durable machine-service audit.
+- [x] Separate opt-in loopback browser surface for escalation rejection with operator token, short-lived browser session, CSRF/origin checks, session-bound preview and explicit confirmation. Passive visualization remains unchanged. See `docs/MILESTONE-10-LOCAL-OPERATOR.md`.
+- [x] Bounded task abort with 60-second single-use confirmation, task/safety fingerprint, replay/expiry/drift checks and delegation to `MachineOrchestratorService.abortTask` / existing `abort_requested` audit.
+- [x] Bounded escalation approval. Approval closes the old immutable task envelope and returns `new_safety_preview_required`; it never enlarges existing authority.
+- [x] Harden `MachineOrchestratorService.rollbackTask` to revalidate current durable task/workspace safety binding before checkpoint acceptance or mutation.
+- [x] Bounded operator rollback tied to exact current task/safety/checkpoint fingerprint and opaque checkpoint ID, delegating only to hardened machine rollback.
+- [x] Pin unattended workflow resume to the exact expected runnable task before budget logging/starter invocation.
+- [x] Bounded workflow-resume confirmation binding immutable workflow, exact runnable task, durable task/authority evidence, budget configuration and budget decisions; durable operator provenance is recorded without persisting the token.
+- [x] Bounded task continuation (`continue_task`) without inventing pause/unpause semantics. The 60-second single-use token binds the exact current task/safety fingerprint and exact normalized instruction; preview exposes only an instruction SHA-256 digest and character count, not instruction plaintext. It delegates only to `MachineOrchestratorService.continueTask`, which independently revalidates current authority and records `resume_queued`. Browser exposure remains unchanged. Evidence: implementation `f10b6063cc6b4eefad434522325a46ee831a88a8`, focused tests `79805167ef36e590b6128e05adc84b937ab82973`, synchronization correction `245c218d3245af5cec164ba0db4a348b40c8e3c5`; CI `#715` / `36303792935` passed typecheck + full suite.
+- [x] Bounded recovery of one interrupted orchestrator-owned scheduled writer. A read-only targeted recovery preview accepts only an opaque task ID, verifies current task/registry/Safety Plan/checkpoint evidence, refuses a live writer lease and fingerprints the exact recovery state. Confirmation is 60-second, single-use and consumed before awaiting; it records durable operator provenance, then delegates only to the targeted reconciler, existing recovery-permit boundary and fenced scheduler. The scheduler/runner still independently revalidate current authority and acquire a fresh fenced lease before replacement ownership or writes. No generic Hub/process/lease/credential control is exposed; browser exposure remains unchanged. Evidence: targeted boundary `7065a6a0125a48121249bb519174e1509092bb3b`, operator wrapper `7bf571f83c517348124af6a241f6c92aca8c575f`, operator tests through `3ca2d4703af662350d62952bb0e1cd9f0afc07ab`, targeted service tests/fixes through `9e491a03db6bc47e634c3b194a7049765aea56f1`; CI `#727` / `36311314469` passed typecheck + full suite.
+- [ ] Review the remaining review/validation and worker-control requirements. Do not expose reviewer output as mutating authority, standalone validation execution, generic process control, raw Hub control, lease manipulation or credential access unless a deliberate trusted service boundary first exists.
 
-**Status: IN PROGRESS — escalation rejection/approval, local browser rejection boundary, bounded task abort, rollback service hardening/operator rollback, workflow candidate pinning and bounded operator workflow resume are complete; remaining actions pending.**
+**Status: IN PROGRESS — escalation decisions, local rejection browser boundary, task abort, rollback, workflow resume, task continuation and targeted scheduled-writer recovery are complete; remaining review/validation/worker-control boundary decisions are pending.**
 
 ---
 
@@ -391,7 +313,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 | 7 | Unattended workflows | Complete |
 | 8 | UI + concurrency safety contracts | Complete |
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
-| 10 | Interactive operator control plane | In progress — escalation decisions, task abort, rollback, bounded workflow resume and local rejection browser boundary |
+| 10 | Interactive operator control plane | In progress — escalation decisions, task abort/continuation, rollback, workflow resume, targeted scheduled-writer recovery and local rejection browser boundary |
 | 11 | Secure remote ChatGPT control | Planned |
 | 12 | Distributed / multi-machine orchestration | Planned |
 | 13 | Safe multi-agent delegation | Planned |
@@ -419,6 +341,7 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 | GPT Supervisor | Complete |
 | Sentinel + unattended DAG/budgets/resume | Complete / cloud tested |
 | Passive operator UI | Complete / cloud tested |
+| Bounded local operator mutations | In progress / cloud tested — M10 |
 | Workspace locks/fencing + scheduler contract | Complete / cloud tested |
 | Owner-targeted delegation no-bypass invariant | Complete / cloud tested |
 | Lease-aware owner write boundary | Complete / cloud tested — M9A |
@@ -451,26 +374,26 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 14. Current unattended accounting fails closed when historical usage cannot be reconstructed.
 15. Locks/scheduler are single-gateway primitives until Milestone 12.
 16. Lease possession alone never authorizes writes; current durable authority + current fenced lease are both required immediately before a coordinated write.
-17. M9A–9C are cloud/fake-runtime safety and lifecycle proofs; they do **not** constitute the disposable physical live-runtime proof required by M9D.
-18. Shared live concurrent machine-runtime writes remain disabled after the isolated M9D proof pending separate authorization/review of shared-runtime use.
-19. Native Cline teams/subagents require Milestone 13 and cannot be enabled by configuration alone.
-20. Push, merge, deploy, destructive Git, secret access, external-network mutation and system changes remain separately gated.
-21. Any proof that mutates/restarts shared local Hub/Cline/VS Code runtime requires explicit user authorization immediately before that proof.
-22. Rollback is a high-impact workspace mutation. Machine-service authority revalidation and bounded operator confirmation are now implemented; browser exposure remains separate and must not bypass the same service boundary.
-23. Workflow resume now has bounded operator preview/confirmation and exact candidate pinning. Workflow confirmation still does not grant authority: the current workflow/task/budget snapshot must match and the injected starter independently enforces current task/registry/Safety Plan authority. Browser exposure remains separate.
-24. Reviewer output remains advisory and current validation execution is coupled to task execution; neither should be exposed as a mutating operator action until a deliberate trusted service boundary exists.
+17. Shared live concurrent machine-runtime writes remain disabled after the isolated M9D proof pending separate authorization/review of shared-runtime use.
+18. Native Cline teams/subagents require Milestone 13 and cannot be enabled by configuration alone.
+19. Push, merge, deploy, destructive Git, secret access, external-network mutation and system changes remain separately gated.
+20. Any proof that mutates/restarts shared local Hub/Cline/VS Code runtime requires explicit user authorization immediately before that proof.
+21. Rollback is a high-impact workspace mutation; current machine-service authority revalidation and bounded operator confirmation are mandatory. Browser exposure remains separate.
+22. Workflow resume confirmation never grants authority: current workflow/task/budget state must match and the injected starter independently enforces task/registry/Safety Plan authority.
+23. Task continuation does not create pause/resume state semantics and cannot enlarge the approved task envelope. The continuation instruction is bound to confirmation, while the machine service and safe executors remain authoritative.
+24. Targeted scheduled-writer recovery is limited to one interrupted orchestrator-owned task with current checkpoint/authority evidence and no live writer. Operator confirmation does not grant a lease or owner identity; the recovery permit, scheduler and lease-aware runner remain authoritative.
+25. Reviewer output remains advisory and current validation execution is coupled to task execution; neither should be exposed as a mutating operator action until a deliberate trusted service boundary exists.
+26. Generic Hub/process/lease/credential controls remain intentionally absent from the operator plane.
 
 ---
 
 # Immediate Work Queue
 
 1. **COMPLETE — Milestones 1–8.**
-2. **COMPLETE — Milestone 9 Slice 9A.** Lease-aware owner-targeted write boundary; CI `#596` / `36119645637`.
-3. **COMPLETE — Milestone 9 Slice 9B.** Scheduler/runtime integration; stable branch-head CI `#614` / `36122721492`.
-4. **COMPLETE — Milestone 9 Slice 9C.** Lease loss, worker crash, owner loss and gateway restart/stale-writer behavior; CI `#620`, `#622`, `#628`, `#630`.
-5. **COMPLETE — Milestone 9 Slice 9D.** Three isolated disposable physical commands passed with exit 0; branch-head CI `#668` / `36226493586` succeeded.
-6. **NEXT — Milestone 10 Interactive Operator Control Plane.** Inspect the remaining worker and trusted task-service boundaries and choose the smallest already-authority-enforcing action for the next bounded operator slice. Keep reviewer output advisory and do not add standalone validation execution until a deliberate trusted service boundary exists. Keep browser expansion and shared-runtime changes separate.
-7. **STILL GATED — native teams/subagents, distributed scheduling, broader UI write actions, push/merge/deploy/destructive Git, secrets, external-network mutation or system changes** until their milestone/policy gate is satisfied.
+2. **COMPLETE — Milestone 9.** M9A–M9D closed; isolated physical proof and CI `#668` passed. Shared live-runtime concurrency remains separately gated.
+3. **IN PROGRESS — Milestone 10.** Escalation decisions, abort, rollback, workflow resume, task continuation and one-task scheduled-writer recovery have bounded confirmation/audit/stale-authority controls.
+4. **NEXT — Milestone 10.** Inspect the remaining Reviewer/validation and worker-facing service boundaries. Choose another operator action only if a narrow trusted service already owns authority revalidation. Do not manufacture standalone validation, reviewer mutation, generic process control, raw Hub control or lease-management authority just to satisfy the UI milestone.
+5. **STILL GATED — browser expansion beyond the reviewed local rejection surface, shared-runtime changes, native teams/subagents, distributed scheduling, push/merge/deploy/destructive Git, secrets, external-network mutation or system changes** until their milestone/policy gate is satisfied.
 
 ---
 
@@ -478,28 +401,16 @@ Production acceptance requires all prior milestone safety, concurrency, remote-c
 
 - 2026-09-25: Milestone 7 complete through CI `#518` / `36105316586`.
 - 2026-09-25: Milestone 8 complete through CI `#588` / `36114475941`.
-- 2026-09-25: roadmap extended through Milestone 18 in `228acad723add7cd4f6b81897700a2391625ab21`.
-- 2026-09-25: Milestone 9A complete; adapter `9af0e30dfa740e4b36b959257dc0b9352658623a`, tests `6937640e02a6c75bab8c6a9e2bb8ec5ca173e2da`, CI `#596` / `36119645637`.
-- 2026-09-25: Milestone 9B complete; real scheduler/Hub integration cloud proof through stable branch-head CI `#614` / `36122721492`.
-- 2026-09-25: Milestone 9C complete; mid-flight lease-loss fail-safe CI `#620`, worker-crash/stale-executor CI `#622`, explicit fenced restart recovery CI `#628`, active Hub owner-loss/handoff recovery CI `#630`.
-- 2026-09-25: Milestone 9D harness review added a bounded overlap barrier and an isolated scheduled gateway restart proof command. Local Node test runner: 262 passed; typecheck passed. No new physical proof has run. Next: run the three gated proofs on a suitable local provider and review their evidence before changing any 9D acceptance checkbox.
-- 2026-09-26: Windows test feedback identified fixture-only failures: directory symlink permissions and Git `core.autocrlf` inheritance. Use junctions in the two directory-link tests and force LF in the two temporary Git repository fixtures. Local typecheck and 262 tests pass; Windows rerun and physical proofs remain pending. The proof guide now configures the user's `llama.cpp` OpenAI-compatible endpoint explicitly.
-- 2026-09-26: Three disposable live proofs on the Windows PC exited 0 using the local `llama.cpp` model; cross-workspace overlap, same-workspace denial, stale-write fencing, fault isolation, validation, checkpoint recovery and rollback were observed. Code HEAD `3fd26d6`; CI `#666` failed one test that raced workspace idle. A test-only idle wait passes local typecheck and 268 tests; green follow-up CI remains pending.
-- 2026-09-26: Milestone 9D closed: test idle wait and physical evidence on `14e9991bd4312e51cbb02beb5403326d9d3fe522`; branch-head CI `#668` / `36226493586` passed. Shared runtime concurrency remains disabled pending separate authorization/review.
-- 2026-09-26: Milestone 10 first slice: a short-lived, single-use escalation rejection preview/confirmation calls the existing machine service; stale/replayed decisions and competing approval/rejection fail closed, with the service's durable decision audit. Branch-head CI `#672` passed. The passive visualization remains unchanged.
-- 2026-09-26: Milestone 10 local browser slice verified in CI `#674` / `36228538110`: the separate opt-in loopback rejection page keeps operator authentication/session/CSRF/origin/confirmation checks separate from passive visualization.
-- 2026-09-26: Milestone 10 bounded task-abort slice completed through `e896672c54b110eeea6d047e32f24296131098a1`; short-lived single-use confirmation, task/safety fingerprinting, replay/expiry/drift tests and existing `abort_requested` audit path. CI `#680` / `36230631345` passed typecheck + full suite. Browser surface unchanged.
-- 2026-09-26: Milestone 10 bounded escalation-approval slice completed through `6564a345ea029987d777235df8617a4bd2e2f333`; confirmation reuses the existing machine decision service, closes the old envelope and requires a fresh Safety Preview. CI `#684` / `36231157774` passed typecheck + full suite. Rollback was inspected but deliberately not exposed because its machine service still needs current durable binding revalidation immediately before mutation.
-- 2026-09-26: Milestone 10 rollback authority hardening completed: `rollbackTask` now calls the same current durable binding assertion used by other write-capable machine actions before accepting checkpoint authority. Service commit `30df21f3c1e3c1b99ff8552db399644157719196`; focused drift tests `b4961ee57eb2395e450e6fb5620c08993193617d`; CI `#690` / `36232014065` passed typecheck + full suite. Profile/task binding drift produces no rollback audit event and no workspace restoration.
-- 2026-09-26: Milestone 10 bounded operator rollback completed through `4cac23037bc8be0717c444d515508e42f9cd613c`; exact checkpoint-bound 60-second confirmation, replay/expiry/stale-state checks and delegation to hardened machine rollback were added. CI `#695` / `36245398436` passed typecheck + full suite. Browser surface unchanged.
-- 2026-09-26: Milestone 10 workflow prerequisite hardening completed through `6290ae30531083efcfe94721a6b6205b82aa84ec`; `resumeUnattendedWorkflow` can pin `expectedTaskId`, rejects candidate drift before budget audit/starter invocation, and still re-evaluates current durable workflow/task/budget state. CI `#701` / `36246377601` passed typecheck + full suite.
-- 2026-09-26: Milestone 10 bounded operator workflow resume completed through `02fbe40a2e4fc26910772eecb26c8b03db54e3c9`; sanitized preview, exact candidate/current-state fingerprinting, 60-second single-use confirmation, durable operator provenance, replay/expiry/drift checks and starter authority-failure proof were added. CI `#707` / `36248365798` passed typecheck + full suite. Browser surface unchanged.
+- 2026-09-26: Milestone 9D closed on `14e9991bd4312e51cbb02beb5403326d9d3fe522`; branch-head CI `#668` / `36226493586` passed after isolated Windows physical proofs. Shared runtime concurrency remains disabled pending separate authorization/review.
+- 2026-09-26: Milestone 10 escalation rejection/browser, abort, escalation approval, rollback authority/operator rollback, workflow candidate pinning and bounded workflow resume were completed through CI `#707` / `36248365798` and related earlier green runs.
+- 2026-09-27: Milestone 10 bounded task continuation completed through `245c218d3245af5cec164ba0db4a348b40c8e3c5`. The confirmation binds the exact continuation instruction and task authority while delegating only to the existing machine continuation path. CI `#715` / `36303792935` passed typecheck + full suite. Browser surface unchanged.
+- 2026-09-27: Milestone 10 targeted scheduled-writer recovery completed through `9e491a03db6bc47e634c3b194a7049765aea56f1`. Read-only target preview, exact recovery fingerprint, live-lease refusal, short-lived single-use confirmation, durable operator provenance, downstream recovery-permit/fenced-scheduler delegation and stale-state/authority tests were added. CI `#727` / `36311314469` passed typecheck + full suite. No shared local runtime or browser surface was changed.
 
 ---
 
 # Current Next Step
 
-**Milestone 10 — Interactive Operator Control Plane.** Inspect the remaining worker and trusted task-service boundaries and select the smallest already-authority-enforcing action for the next bounded operator slice. Keep reviewer output advisory and do not add standalone validation execution until a deliberate trusted service boundary exists. Preserve short-lived single-use confirmation, durable audit and stale-authority checks for mutating actions. Do not add pause/resume task-state semantics until a deliberate durable state/service contract exists. Keep browser expansion separate. Keep shared live runtime concurrency disabled and obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
+**Milestone 10 — Interactive Operator Control Plane.** Inspect the remaining Reviewer/validation and worker-facing trusted service boundaries. Add another operator action only where an existing narrow service independently revalidates current durable authority; otherwise document the boundary as intentionally unavailable rather than adding generic machine/process power. Keep Reviewer output advisory. Do not add standalone validation execution until a deliberate trusted service boundary exists. Do not add pause/unpause task-state semantics without a deliberate durable state/service contract. Keep browser expansion separate. Keep shared live runtime concurrency disabled and obtain explicit user authorization immediately before any proposed proof that mutates/restarts shared local Cline/Hub/VS Code runtime.
 
 ---
 
