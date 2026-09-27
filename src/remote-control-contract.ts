@@ -89,7 +89,15 @@ function unique<T extends string>(values: T[]): T[] {
   return [...new Set(values)];
 }
 
-function validateRegistration(registration: RemoteControlRegistrationV1): RemoteControlRegistrationV1 {
+/**
+ * Validates and normalizes one machine-local remote registration against the
+ * current Milestone 10 operator capability manifest. This function does not
+ * create a session or grant authority; it is the shared admission boundary used
+ * by the local registration store and the later session-issuance path.
+ */
+export function normalizeRemoteControlRegistration(
+  registration: RemoteControlRegistrationV1,
+): RemoteControlRegistrationV1 {
   if (registration.schemaVersion !== 1) {
     throw new RemoteControlContractError("Unsupported remote registration schema", "registration_invalid");
   }
@@ -99,22 +107,35 @@ function validateRegistration(registration: RemoteControlRegistrationV1): Remote
   if (!Number.isSafeInteger(registration.revision) || registration.revision < 1) {
     throw new RemoteControlContractError("registration revision must be a positive integer", "registration_invalid");
   }
-  requireIso(registration.createdAt, "createdAt", "registration_invalid");
-  if (registration.revokedAt) requireIso(registration.revokedAt, "revokedAt", "registration_invalid");
+  const createdAt = requireIso(registration.createdAt, "createdAt", "registration_invalid");
+  const revokedAt = registration.revokedAt
+    ? requireIso(registration.revokedAt, "revokedAt", "registration_invalid")
+    : undefined;
 
   const manifest = getOperatorCapabilityManifest();
-  const mutations = new Set(manifest.mutationActions.map((item) => item.action));
-  const reads = new Set(manifest.readOnlyCapabilities);
+  const mutationOrder = manifest.mutationActions.map((item) => item.action);
+  const readOrder = [...manifest.readOnlyCapabilities];
+  const mutations = new Set(mutationOrder);
+  const reads = new Set(readOrder);
   if (registration.allowedMutationActions.some((item) => !mutations.has(item))) {
     throw new RemoteControlContractError("registration contains unsupported mutation capability", "registration_invalid");
   }
   if (registration.allowedReadOnlyCapabilities.some((item) => !reads.has(item))) {
     throw new RemoteControlContractError("registration contains unsupported read-only capability", "registration_invalid");
   }
+
+  const requestedMutations = new Set(unique(registration.allowedMutationActions));
+  const requestedReads = new Set(unique(registration.allowedReadOnlyCapabilities));
   return {
-    ...registration,
-    allowedMutationActions: unique(registration.allowedMutationActions),
-    allowedReadOnlyCapabilities: unique(registration.allowedReadOnlyCapabilities),
+    schemaVersion: 1,
+    registrationId: registration.registrationId,
+    machineId: registration.machineId,
+    remotePrincipalId: registration.remotePrincipalId,
+    revision: registration.revision,
+    createdAt,
+    ...(revokedAt ? { revokedAt } : {}),
+    allowedMutationActions: mutationOrder.filter((item) => requestedMutations.has(item)),
+    allowedReadOnlyCapabilities: readOrder.filter((item) => requestedReads.has(item)),
   };
 }
 
@@ -123,7 +144,7 @@ export function createRemoteControlSessionClaims(
   request: RemoteControlSessionRequestV1,
   options: { now?: Date; idFactory?: () => string } = {},
 ): RemoteControlSessionClaimsV1 {
-  const registration = validateRegistration(registrationInput);
+  const registration = normalizeRemoteControlRegistration(registrationInput);
   if (registration.revokedAt) {
     throw new RemoteControlContractError("remote registration is revoked", "registration_revoked");
   }
@@ -187,7 +208,7 @@ export function assertRemoteControlSessionCurrent(
     throw new RemoteControlContractError("Unsupported remote session schema", "session_invalid");
   }
   requireUuid(claims.sessionId, "sessionId", "session_invalid");
-  const registration = validateRegistration(registrationInput);
+  const registration = normalizeRemoteControlRegistration(registrationInput);
   if (registration.revokedAt) {
     throw new RemoteControlContractError("remote registration is revoked", "registration_revoked");
   }
