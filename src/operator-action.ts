@@ -3,10 +3,11 @@ import type { MachineOrchestratorService, PublicTaskView } from "./machine-orche
 
 const TOKEN_LIFETIME_MS = 60_000;
 const MAX_PENDING = 64;
+const MAX_CONTINUATION_INSTRUCTION_CHARS = 20_000;
 const OPERATOR_ABORT_REASON = "Task aborted by local operator";
 
 type OperatorService = Pick<MachineOrchestratorService, "getTask" | "rejectEscalation"> &
-  Partial<Pick<MachineOrchestratorService, "abortTask" | "approveEscalation" | "rollbackTask">>;
+  Partial<Pick<MachineOrchestratorService, "abortTask" | "approveEscalation" | "rollbackTask" | "continueTask">>;
 
 export class OperatorActionError extends Error {
   constructor(message: string, readonly code: "invalid_action" | "stale_action" | "expired_action" | "capacity_exceeded") {
@@ -54,6 +55,17 @@ export interface TaskRollbackPreview {
   confirmationToken: string;
 }
 
+export interface TaskContinuationPreview {
+  action: "continue_task";
+  taskId: string;
+  workspaceId: string;
+  instructionDigest: string;
+  instructionChars: number;
+  confirmationText: string;
+  expiresAt: string;
+  confirmationToken: string;
+}
+
 interface PendingActionBase {
   taskId: string;
   fingerprint: string;
@@ -74,7 +86,13 @@ interface PendingRollback extends PendingActionBase {
   checkpointId: string;
 }
 
-type PendingAction = PendingEscalationDecision | PendingAbort | PendingRollback;
+interface PendingContinuation extends PendingActionBase {
+  action: "continue_task";
+  instruction: string;
+  instructionDigest: string;
+}
+
+type PendingAction = PendingEscalationDecision | PendingAbort | PendingRollback | PendingContinuation;
 
 function pendingFingerprint(task: PublicTaskView): string {
   return JSON.stringify({
@@ -107,6 +125,29 @@ function isTerminal(task: PublicTaskView): boolean {
 
 function isRollbackEligible(task: PublicTaskView): boolean {
   return ["completed", "validation_failed", "failed", "aborted"].includes(task.status);
+}
+
+function isContinuationEligible(task: PublicTaskView): boolean {
+  return ["completed", "validation_failed", "failed", "aborted"].includes(task.status)
+    && !task.pendingEscalation;
+}
+
+function normalizeContinuationInstruction(value: string): string {
+  const instruction = value.trim();
+  if (!instruction || instruction.includes("\0")) {
+    throw new OperatorActionError("Continuation instruction is empty or invalid", "invalid_action");
+  }
+  if (instruction.length > MAX_CONTINUATION_INSTRUCTION_CHARS) {
+    throw new OperatorActionError(
+      `Continuation instruction exceeds ${MAX_CONTINUATION_INSTRUCTION_CHARS} characters`,
+      "invalid_action",
+    );
+  }
+  return instruction;
+}
+
+function instructionDigest(instruction: string): string {
+  return crypto.createHash("sha256").update(instruction, "utf8").digest("hex");
 }
 
 /** Local, process-bound confirmation for bounded service-backed operator actions. */
@@ -346,5 +387,71 @@ export class OperatorActionService {
       throw new OperatorActionError("Task rollback is unavailable on this operator surface", "invalid_action");
     }
     return await this.service.rollbackTask(entry.taskId, entry.checkpointId);
+  }
+
+  async previewTaskContinuation(taskId: string, instruction: string): Promise<TaskContinuationPreview> {
+    if (!this.service.continueTask) {
+      throw new OperatorActionError("Task continuation is unavailable on this operator surface", "invalid_action");
+    }
+    const normalizedInstruction = normalizeContinuationInstruction(instruction);
+    const task = await this.service.getTask(taskId);
+    if (!isContinuationEligible(task)) {
+      throw new OperatorActionError(`Task status ${task.status} is not eligible for continuation`, "invalid_action");
+    }
+    const now = this.now();
+    this.preparePending(now);
+    const expiresAtMs = now + TOKEN_LIFETIME_MS;
+    const confirmationToken = crypto.randomBytes(32).toString("hex");
+    const digest = instructionDigest(normalizedInstruction);
+    this.pending.set(confirmationToken, {
+      action: "continue_task",
+      taskId: task.taskId,
+      instruction: normalizedInstruction,
+      instructionDigest: digest,
+      fingerprint: pendingFingerprint(task),
+      expiresAtMs,
+    });
+    return {
+      action: "continue_task",
+      taskId: task.taskId,
+      workspaceId: task.workspaceId,
+      instructionDigest: digest,
+      instructionChars: normalizedInstruction.length,
+      confirmationText: "Continue this task only inside its existing approved safety envelope using the previewed instruction",
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      confirmationToken,
+    };
+  }
+
+  async continueTask(input: {
+    taskId: string;
+    instructionDigest: string;
+    confirmationToken: string;
+    confirmed: true;
+  }): Promise<PublicTaskView> {
+    if (input.confirmed !== true) {
+      throw new OperatorActionError("Explicit operator confirmation is required", "invalid_action");
+    }
+    const entry = this.pending.get(input.confirmationToken);
+    if (
+      !entry ||
+      entry.action !== "continue_task" ||
+      entry.taskId !== input.taskId ||
+      entry.instructionDigest !== input.instructionDigest
+    ) {
+      throw new OperatorActionError("Operator confirmation is invalid or already used", "invalid_action");
+    }
+    this.pending.delete(input.confirmationToken);
+    if (this.now() >= entry.expiresAtMs) {
+      throw new OperatorActionError("Operator confirmation expired", "expired_action");
+    }
+    const current = await this.service.getTask(entry.taskId);
+    if (pendingFingerprint(current) !== entry.fingerprint) {
+      throw new OperatorActionError("Task or safety authority changed after preview", "stale_action");
+    }
+    if (!this.service.continueTask) {
+      throw new OperatorActionError("Task continuation is unavailable on this operator surface", "invalid_action");
+    }
+    return await this.service.continueTask(entry.taskId, entry.instruction);
   }
 }
