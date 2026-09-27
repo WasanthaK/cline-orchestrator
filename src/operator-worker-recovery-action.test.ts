@@ -38,18 +38,16 @@ function result(): ScheduledHubTargetRecoveryResultV1 {
       schemaVersion: 1,
       plan: {
         schemaVersion: 1,
-        generatedAt: "2026-09-27T00:00:00.000Z",
-        maxActiveWriters: 1,
-        maxStartsPerPass: 1,
-        maxActiveWritersPerWorkspace: 1,
         activeWriterCount: 0,
-        availableGlobalSlots: 1,
+        admittedCount: 1,
         decisions: [
           {
+            schemaVersion: 1,
             workspaceId: WORKSPACE_ID,
             taskId: TASK_ID,
             allowed: true,
             reason: "admitted",
+            authority: "coordination_only",
           },
         ],
         authority: "coordination_only",
