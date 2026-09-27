@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -57,6 +57,8 @@ function workspace(root: string): RegisteredWorkspace {
     displayName: "Recovery workspace",
     canonicalRoot: root,
     revision: 1,
+    createdAt: "2026-09-27T00:00:00.000Z",
+    updatedAt: "2026-09-27T00:00:00.000Z",
     safetyProfile: {
       profileId: PROFILE_ID,
       revision: 1,
