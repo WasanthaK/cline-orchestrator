@@ -267,6 +267,7 @@ test("gateway escalation approval records the decision but requires a new Safety
       });
       const queued = await service.startTask(preview.planToken);
       await waitForStatus(service, queued.taskId, "completed");
+      await waitForWorkspaceIdle(service, workspace.workspaceId);
 
       const store = new TaskStore(dir);
       const task = await store.load(queued.taskId);
