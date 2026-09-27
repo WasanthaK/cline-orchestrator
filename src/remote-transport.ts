@@ -74,6 +74,7 @@ export class RemoteTransportError extends Error {
       | "route_not_found"
       | "method_not_allowed"
       | "content_type_required"
+      | "host_not_allowed"
       | "origin_not_allowed",
     readonly statusCode: number,
   ) {
@@ -123,6 +124,22 @@ function requestId(req: IncomingMessage): string {
     );
   }
   return value;
+}
+
+function validateHost(req: IncomingMessage): void {
+  const host = req.headers.host;
+  if (typeof host !== "string" || !host.trim()) {
+    throw new RemoteTransportError("Host header is required", "host_not_allowed", 403);
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(`http://${host}`);
+  } catch {
+    throw new RemoteTransportError("Host header is malformed", "host_not_allowed", 403);
+  }
+  if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
+    throw new RemoteTransportError("Host header must identify loopback", "host_not_allowed", 403);
+  }
 }
 
 function validateOrigin(req: IncomingMessage): void {
@@ -248,8 +265,9 @@ export function createLoopbackRemoteTransportServer(
 
   return http.createServer(async (req, res) => {
     try {
+      validateHost(req);
       validateOrigin(req);
-      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+      const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
       if (!url.pathname.startsWith(`${prefix}/`)) {
         throw new RemoteTransportError("Remote route was not found", "route_not_found", 404);
       }
