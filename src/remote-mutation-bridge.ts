@@ -12,6 +12,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const MAX_PROPOSALS = 256;
 const MAX_PAYLOAD_CHARS = 24_000;
 const MAX_BRIDGE_PERMITS = 64;
+const MAX_ACTION_BINDING_CHARS = 4_000;
 
 export type RemoteMutationProposalStatus =
   | "pending"
@@ -152,6 +153,13 @@ function payloadEvidence(payload: unknown): { canonical: string; digest: string;
   };
 }
 
+function actionBindingEvidence(value: string): string {
+  if (typeof value !== "string" || !value || value.includes("\0") || value.length > MAX_ACTION_BINDING_CHARS) {
+    throw new RemoteMutationBridgeError("trusted action binding is invalid", "proposal_stale");
+  }
+  return crypto.createHash("sha256").update(value, "utf8").digest("hex");
+}
+
 function cloneProposal(value: RemoteMutationProposalV1): RemoteMutationProposalV1 {
   return structuredClone(value);
 }
@@ -170,6 +178,9 @@ function validateProposal(value: RemoteMutationProposalV1): RemoteMutationPropos
   }
   if (!/^[a-f0-9]{64}$/.test(value.payloadDigest) || !Number.isSafeInteger(value.payloadChars) || value.payloadChars < 0) {
     throw new RemoteMutationBridgeError("proposal payload evidence is invalid", "store_corrupt");
+  }
+  if (value.actionBinding !== undefined && !/^[a-f0-9]{64}$/.test(value.actionBinding)) {
+    throw new RemoteMutationBridgeError("proposal action binding evidence is invalid", "store_corrupt");
   }
   const allowedStatus: RemoteMutationProposalStatus[] = ["pending", "approved", "rejected", "executed", "execution_failed"];
   if (!allowedStatus.includes(value.status) || !Number.isFinite(Date.parse(value.createdAt))) {
@@ -383,7 +394,7 @@ export class RemoteMutationApprovalBridge {
     const approved = await this.proposals.transition(proposalId, expectedRevision, "pending", {
       status: "approved",
       approvedAt: now.toISOString(),
-      actionBinding: prepared.actionBinding,
+      actionBinding: actionBindingEvidence(prepared.actionBinding),
     });
     this.permits.set(bridgePermit, {
       proposalId,
@@ -419,21 +430,24 @@ export class RemoteMutationApprovalBridge {
     }
     // Burn the human-approved permit before the first awaited mutation execution.
     this.permits.delete(input.bridgePermit);
-    const now = this.now();
-    if (now.getTime() >= permit.expiresAtMs) throw new RemoteMutationBridgeError("bridge permit expired", "permit_expired");
-    if (proposal.status !== "approved"
-      || authorized.registrationId !== permit.registrationId
-      || authorized.sessionId !== permit.sessionId
-      || authorized.remotePrincipalId !== permit.remotePrincipalId
-      || authorized.registrationRevision !== permit.registrationRevision) {
-      throw new RemoteMutationBridgeError("approved proposal no longer matches current remote session", "proposal_stale");
-    }
-    const evidence = payloadEvidence(input.payload);
-    if (evidence.digest !== permit.payloadDigest || evidence.digest !== proposal.payloadDigest) {
-      throw new RemoteMutationBridgeError("mutation payload does not match approved proposal", "proposal_stale");
-    }
 
     try {
+      const now = this.now();
+      if (now.getTime() >= permit.expiresAtMs) {
+        throw new RemoteMutationBridgeError("bridge permit expired", "permit_expired");
+      }
+      if (proposal.status !== "approved"
+        || authorized.registrationId !== permit.registrationId
+        || authorized.sessionId !== permit.sessionId
+        || authorized.remotePrincipalId !== permit.remotePrincipalId
+        || authorized.registrationRevision !== permit.registrationRevision) {
+        throw new RemoteMutationBridgeError("approved proposal no longer matches current remote session", "proposal_stale");
+      }
+      const evidence = payloadEvidence(input.payload);
+      if (evidence.digest !== permit.payloadDigest || evidence.digest !== proposal.payloadDigest) {
+        throw new RemoteMutationBridgeError("mutation payload does not match approved proposal", "proposal_stale");
+      }
+
       const result = await permit.execute();
       const executed = await this.proposals.transition(proposal.proposalId, proposal.revision, "approved", {
         status: "executed",
@@ -442,11 +456,14 @@ export class RemoteMutationApprovalBridge {
       this.material.delete(proposal.proposalId);
       return { schemaVersion: 1, proposal: executed, result };
     } catch (error) {
-      await this.proposals.transition(proposal.proposalId, proposal.revision, "approved", {
-        status: "execution_failed",
-        executionFailedAt: this.now().toISOString(),
-      });
-      this.material.delete(proposal.proposalId);
+      try {
+        await this.proposals.transition(proposal.proposalId, proposal.revision, "approved", {
+          status: "execution_failed",
+          executionFailedAt: this.now().toISOString(),
+        });
+      } finally {
+        this.material.delete(proposal.proposalId);
+      }
       throw error;
     }
   }
