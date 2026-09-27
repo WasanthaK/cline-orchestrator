@@ -15,7 +15,14 @@ import { RemoteRegistrationStore } from "./remote-registration-store.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export const REMOTE_SESSION_SECURITY_LIMITS = Object.freeze({
+interface RemoteSessionSecurityLimits {
+  maxActiveSessions: number;
+  maxReplayEntries: number;
+  sessionRequestsPerMinute: number;
+  registrationRequestsPerMinute: number;
+}
+
+export const REMOTE_SESSION_SECURITY_LIMITS: Readonly<RemoteSessionSecurityLimits> = Object.freeze({
   maxActiveSessions: 64,
   maxReplayEntries: 4096,
   sessionRequestsPerMinute: 60,
@@ -62,12 +69,7 @@ export interface RemoteSessionGatewayOptions {
   now?: () => Date;
   idFactory?: () => string;
   tokenFactory?: () => string;
-  limits?: Partial<{
-    maxActiveSessions: number;
-    maxReplayEntries: number;
-    sessionRequestsPerMinute: number;
-    registrationRequestsPerMinute: number;
-  }>;
+  limits?: Partial<RemoteSessionSecurityLimits>;
 }
 
 export class RemoteSessionGatewayError extends Error {
@@ -148,8 +150,6 @@ class RemoteRateLimiter {
       map.set(key, next);
     };
 
-    // Registration-wide admission happens first so multiple sessions cannot bypass
-    // the aggregate local registration limit.
     consumeWindow(this.registrationWindows, registrationId, this.registrationLimit);
     try {
       consumeWindow(this.sessionWindows, sessionId, this.sessionLimit);
@@ -211,7 +211,7 @@ export class RemoteSessionGateway {
   private readonly replay: RemoteReplayGuard;
   private readonly rate: RemoteRateLimiter;
   private readonly audit: RemoteSessionAuditStore;
-  private readonly limits: typeof REMOTE_SESSION_SECURITY_LIMITS;
+  private readonly limits: RemoteSessionSecurityLimits;
 
   constructor(
     private readonly registrations: RemoteRegistrationStore,
@@ -245,16 +245,44 @@ export class RemoteSessionGateway {
     return now;
   }
 
+  private pruneExpiredSessions(nowMs: number): void {
+    for (const [digest, claims] of this.sessions) {
+      if (Date.parse(claims.expiresAt) <= nowMs) this.sessions.delete(digest);
+    }
+  }
+
+  private async auditDenied(
+    claims: RemoteControlSessionClaimsV1,
+    requestId: string,
+    access: RemoteSessionAccessV1,
+    reasonCode: string,
+  ): Promise<void> {
+    await this.audit.append({
+      kind: "request_denied",
+      registrationId: claims.registrationId,
+      sessionId: claims.sessionId,
+      remotePrincipalId: claims.remotePrincipalId,
+      registrationRevision: claims.registrationRevision,
+      requestId,
+      accessKind: access.kind,
+      capability: accessName(access),
+      outcome: "denied",
+      reasonCode,
+    });
+  }
+
   async issue(
     registrationId: string,
     request: RemoteControlSessionRequestV1,
   ): Promise<RemoteSessionIssueResultV1> {
+    const now = this.now();
+    this.pruneExpiredSessions(now.getTime());
     if (this.sessions.size >= this.limits.maxActiveSessions) {
       throw new RemoteSessionGatewayError("remote active session capacity exceeded", "capacity_exceeded");
     }
     const registration = await this.registrations.getRegistration(registrationId);
     const claims = createRemoteControlSessionClaims(registration, request, {
-      now: this.now(),
+      now,
       idFactory: this.options.idFactory,
     });
     const token = (this.options.tokenFactory ?? (() => `rct_${crypto.randomBytes(32).toString("base64url")}`))();
@@ -312,46 +340,44 @@ export class RemoteSessionGateway {
       throw new RemoteSessionGatewayError("remote session was not found", "session_not_found");
     }
 
-    const registration = await this.registrations.getRegistration(claims.registrationId);
     const now = this.now();
-    assertRemoteControlSessionCurrent(claims, registration, now);
+    try {
+      const registration = await this.registrations.getRegistration(claims.registrationId);
+      assertRemoteControlSessionCurrent(claims, registration, now);
+    } catch (error) {
+      await this.auditDenied(
+        claims,
+        requestId,
+        access,
+        typeof (error as { code?: unknown })?.code === "string"
+          ? String((error as { code: string }).code)
+          : "session_not_current",
+      );
+      throw error;
+    }
+
+    // Every authenticated request ID is single-use, even when its requested
+    // capability is denied. This prevents one request ID from being replayed with
+    // a different operation after an initial denial.
+    try {
+      this.replay.consume(claims.sessionId, requestId, claims.expiresAt, now.getTime());
+      this.rate.consume(claims.registrationId, claims.sessionId, now.getTime());
+    } catch (error) {
+      await this.auditDenied(
+        claims,
+        requestId,
+        access,
+        error instanceof RemoteSessionGatewayError ? error.code : "request_denied",
+      );
+      throw error;
+    }
 
     const allowed = access.kind === "read"
       ? claims.readOnlyCapabilities.includes(access.capability)
       : claims.mutationActions.includes(access.action);
     if (!allowed) {
-      await this.audit.append({
-        kind: "request_denied",
-        registrationId: claims.registrationId,
-        sessionId: claims.sessionId,
-        remotePrincipalId: claims.remotePrincipalId,
-        registrationRevision: claims.registrationRevision,
-        requestId,
-        accessKind: access.kind,
-        capability: accessName(access),
-        outcome: "denied",
-        reasonCode: "capability_not_allowed",
-      });
+      await this.auditDenied(claims, requestId, access, "capability_not_allowed");
       throw new RemoteSessionGatewayError("remote session does not contain requested capability", "capability_not_allowed");
-    }
-
-    try {
-      this.replay.consume(claims.sessionId, requestId, claims.expiresAt, now.getTime());
-      this.rate.consume(claims.registrationId, claims.sessionId, now.getTime());
-    } catch (error) {
-      await this.audit.append({
-        kind: "request_denied",
-        registrationId: claims.registrationId,
-        sessionId: claims.sessionId,
-        remotePrincipalId: claims.remotePrincipalId,
-        registrationRevision: claims.registrationRevision,
-        requestId,
-        accessKind: access.kind,
-        capability: accessName(access),
-        outcome: "denied",
-        reasonCode: error instanceof RemoteSessionGatewayError ? error.code : "request_denied",
-      });
-      throw error;
     }
 
     await this.audit.append({
