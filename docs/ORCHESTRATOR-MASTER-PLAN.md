@@ -36,7 +36,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 8 | UI + concurrency safety contracts | Complete |
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
-| 11 | Secure remote ChatGPT control | In progress — Slices 11A–11B complete; no remote listener |
+| 11 | Secure remote ChatGPT control | In progress — Slices 11A–11C complete; no external listener |
 | 12 | Distributed / multi-machine orchestration | Planned |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
@@ -125,7 +125,25 @@ Implemented/proven:
 
 Evidence: shared registration normalization boundary `3a8ccc933f72f3587c179f6b86cebc10de0a21b8`; store `992498981f0226e9e5b43d1f652dd866a64073e3`; focused tests `32691d4f567b08cb6fe05aed5f79006288632be1`; CI `#749` / `36322675458` passed typecheck + full suite.
 
-**Status: IN PROGRESS — Slices 11A–11B complete; remote authentication/session issuance and network transport remain disabled.**
+## Slice 11C — Local session issuance + replay/rate/audit primitives — COMPLETE
+
+Implemented/proven:
+
+- session issuance loads the current durable registration and projects only its admitted capabilities;
+- bearer tokens are cryptographically random opaque values held only in process memory and are never written to the registration or audit stores;
+- session claims remain bounded by the 11A TTL and zero-authority transport semantics;
+- every authorization reloads the current registration and fails closed on expiry, revision change, capability reduction or revocation;
+- authenticated request IDs are single-use for the session and remain consumed even when the requested capability is denied;
+- bounded replay cache expires entries with the session;
+- per-session and aggregate per-registration request rate limits are enforced before transport authorization;
+- local session revocation removes bearer authority immediately;
+- expired in-memory sessions are pruned before active-session capacity admission;
+- durable JSONL audit records only sanitized IDs, capability names, outcomes and reason codes; no bearer token, credential, workspace path, Safety Plan or command/output is persisted;
+- a mutation capability authorizes only transport reachability to the existing M10 preview/confirmation boundary; this layer cannot execute a mutation or provide human confirmation.
+
+Evidence: local security primitives `ba6f6cb0d472fc59bef70665d53403b9732d1e83`; tests `826d642785b5e4f835b2a423377e3c765ca68fa7`; type/security correction `d7de15868cbe384d43a9c28a1014e6a8f382080b`; CI `#757` / `36323073039` passed typecheck + full suite.
+
+**Status: IN PROGRESS — Slices 11A–11C complete; external transport remains disabled.**
 
 ---
 
@@ -145,8 +163,9 @@ Evidence: shared registration normalization boundary `3a8ccc933f72f3587c179f6b86
 | Isolated physical concurrent-runtime proof | Complete — M9D |
 | Remote threat/session authority contract | Complete — M11A |
 | Remote registration store | Complete — M11B |
-| Remote authentication/session issuance | Disabled — M11C next |
-| Remote listener | Disabled |
+| Remote session/replay/rate/audit primitives | Complete — M11C |
+| Remote transport adapter | Disabled — M11D next |
+| External listener/relay/tunnel exposure | Disabled |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
 | Distributed scheduler | Disabled — M12 |
@@ -164,7 +183,7 @@ Evidence: shared registration normalization boundary `3a8ccc933f72f3587c179f6b86
 6. Push, merge, deploy, destructive Git, secret access, external-network mutation and system changes remain separately gated.
 7. Remote authentication is transport identity only; it cannot become human approval, Safety Plan approval, task authority, credential authority or release authority.
 8. Local revocation, registration revision and capability reduction must win over stale remote state.
-9. No remote listener may be implemented until replay protection, rate limiting and durable sanitized audit are reviewed and tested.
+9. External remote exposure must not occur until the transport adapter is constrained to the 11C authorization boundary and its routes are proven not to bypass M10/Safety Preview authority.
 
 ---
 
@@ -173,9 +192,10 @@ Evidence: shared registration normalization boundary `3a8ccc933f72f3587c179f6b86
 1. **COMPLETE — Milestones 1–10.**
 2. **COMPLETE — Milestone 11 Slice 11A.** Threat model + remote-session authority contract; CI `#741` / `36313678449`.
 3. **COMPLETE — Milestone 11 Slice 11B.** Machine-local registration store + stale-session invalidation; CI `#749` / `36322675458`.
-4. **NEXT — Milestone 11 Slice 11C: local session issuance + replay/rate/audit primitives.** Build a local-only session issuer that loads the current durable registration, creates short-lived claims, and records sanitized provenance. Add replay protection and per-registration/session rate limiting as trusted primitives before any remote listener exists. No external bind/relay/tunnel and no credential/token persistence.
-5. **STILL GATED — any external listener/relay/tunnel exposure** until 11C primitives are complete, reviewed and tested.
-6. **STILL GATED — shared-runtime changes, native teams/subagents, distributed scheduling, release actions, secrets and external-network mutation** until their later milestone gates.
+4. **COMPLETE — Milestone 11 Slice 11C.** Local session issuance, replay protection, rate limiting, local revocation and durable sanitized audit; CI `#757` / `36323073039`.
+5. **NEXT — Milestone 11 Slice 11D: loopback remote transport adapter.** Build a separately opt-in loopback-only HTTP/MCP-facing adapter that requires 11C bearer authorization + single-use request ID on every request and exposes only explicitly mapped sanitized read operations and M10/Safety Preview-backed mutation workflows. It must not expose registration mutation, session issuance, raw machine paths, Hub/process/lease/credentials, or direct mutation execution. Test only on ephemeral loopback in CI; do not create a public bind, relay or tunnel.
+6. **STILL GATED — any external listener/relay/tunnel exposure and physical remote proof** until 11D is complete and reviewed, and explicit user authorization is obtained immediately before external-network mutation/proof.
+7. **STILL GATED — shared-runtime changes, native teams/subagents, distributed scheduling, release actions, secrets and external-network mutation** until their later milestone gates.
 
 ---
 
@@ -186,9 +206,10 @@ Evidence: shared registration normalization boundary `3a8ccc933f72f3587c179f6b86
 - 2026-09-27: M10 capability boundary manifest `45b1fd891b555c8759f78c75bf795fe07d9fa7a0` + tests `2a731781316de4a4db5681f07188c024c50be3a1`; CI `#733`; M10 closed.
 - 2026-09-27: M11A remote authority contract `4f1bf14d685512945aebfe995d6d4f12466532ab`, tests `4f14c8e656ce376c07ce4a2724809a5f39eba4e0`, threat model `10e34cb064f9f50712f4673e7476170464589ad5`; CI `#741`; no listener/runtime change.
 - 2026-09-27: M11B registration normalization/store/tests through `32691d4f567b08cb6fe05aed5f79006288632be1`; CI `#749`; no listener/runtime change.
+- 2026-09-27: M11C session/replay/rate/audit primitives through `d7de15868cbe384d43a9c28a1014e6a8f382080b`; CI `#757`; no external listener/runtime change.
 
 ---
 
 # Current next step
 
-**Milestone 11 — Slice 11C: local session issuance + replay/rate/audit primitives.** Implement only local trusted primitives first. Keep external network transport disabled until these controls are proven.
+**Milestone 11 — Slice 11D: loopback remote transport adapter.** Wire only the already-proven 11C transport authorization boundary to sanitized reads and existing M10/Safety Preview workflows. Keep session issuance and registration management local-only. Do not expose any public listener/relay/tunnel in this slice.
