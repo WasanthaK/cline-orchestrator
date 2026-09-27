@@ -36,7 +36,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 8 | UI + concurrency safety contracts | Complete |
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
-| 11 | Secure remote ChatGPT control | In progress — Slices 11A–11C complete; no external listener |
+| 11 | Secure remote ChatGPT control | In progress — Slices 11A–11D complete; no external listener |
 | 12 | Distributed / multi-machine orchestration | Planned |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
@@ -45,42 +45,15 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
 
-## Key completed evidence
-
-- M2 closure `56cecab14bf5719601d6801b5635a5b2ef2d0336`; CI `#174`.
-- M3 through `7fa6abebbc00b801349d321a98efd626795e2d1f`; CI `#194`.
-- M4 closure `8cdb3b9da1b0de97d5d654636fab12992f4176e8`; CI `#260`.
-- M5 registry/policy/Hub/MCP/restart through CI `#438`; Hub generation remains pinned to reviewed Core/SDK `0.0.83`.
-- M6 Supervisor through CI `#462`.
-- M7 Sentinel/DAG/budgets/report/restart through CI `#518`.
-- M8 dashboard/handoff/locks/concurrency/visualization/no-bypass through CI `#588`.
-- M9A lease-aware writer boundary CI `#596`; M9B scheduler/Hub CI `#614`; M9C failure/restart safety CI `#620/#622/#628/#630`; M9D isolated Windows physical proof closure `14e9991bd4312e51cbb02beb5403326d9d3fe522`, CI `#668`.
-
 ---
 
 # Milestone 10 — Interactive Operator Control Plane — COMPLETE
 
-Supported bounded mutations are exactly:
+Supported bounded mutations are exactly `reject_escalation`, `approve_escalation`, `abort_task`, `rollback_task`, `continue_task`, `resume_workflow`, and `recover_scheduled_writer`. Each uses short-lived single-use confirmation and delegates to an independently authority-enforcing trusted service.
 
-- `reject_escalation`
-- `approve_escalation`
-- `abort_task`
-- `rollback_task`
-- `continue_task`
-- `resume_workflow`
-- `recover_scheduled_writer`
+Reviewer completion/repair execution, standalone validation execution, generic process/Hub/lease/credential/shared-runtime control, pause-state mutation and release authority remain intentionally unavailable.
 
-All supported mutations use short-lived single-use confirmation and delegate to independently authority-enforcing trusted services. Only escalation rejection currently has reviewed local loopback browser exposure.
-
-Intentionally unavailable operator powers are part of the acceptance boundary, not unfinished work:
-
-- Reviewer completion authority and Reviewer repair execution remain advisory only.
-- Standalone validation execution remains unavailable because raw validation executes trusted configured commands and no independent operator-safe authority service exists.
-- Generic process control, raw Hub control, lease management, credential access and shared-runtime control remain prohibited.
-- Pause-state mutation remains unavailable until a deliberate durable state/service contract exists.
-- Release authority remains Milestone 15.
-
-Evidence: task continuation through `245c218d3245af5cec164ba0db4a348b40c8e3c5`, CI `#715`; targeted scheduled-writer recovery through `9e491a03db6bc47e634c3b194a7049765aea56f1`, CI `#727`; capability manifest `45b1fd891b555c8759f78c75bf795fe07d9fa7a0`, tests `2a731781316de4a4db5681f07188c024c50be3a1`, CI `#733` / `36313371285`.
+Evidence: continuation CI `#715`; targeted writer recovery CI `#727`; capability manifest `45b1fd891b555c8759f78c75bf795fe07d9fa7a0`, tests `2a731781316de4a4db5681f07188c024c50be3a1`, CI `#733` / `36313371285`.
 
 ---
 
@@ -90,60 +63,52 @@ Planned: explicit machine-local registration; authenticated/revocable short-live
 
 ## Slice 11A — Threat model + remote-session authority contract — COMPLETE
 
-Implemented/proven:
+- Threat actors/assets/trust boundaries/non-goals documented in `docs/MILESTONE-11-REMOTE-THREAT-MODEL.md`.
+- Remote session capability projection is limited to a locally registered M10 subset.
+- Session TTL is 30 seconds–15 minutes; expiry/revocation/revision drift/capability reduction fail closed.
+- Transport grants only `authenticated_session_only`; it grants no human confirmation, Safety Plan, credential or release authority.
+- Current production listeners remain loopback-only.
 
-- remote threat actors, protected assets, trust boundaries, data minimization and non-goals documented in `docs/MILESTONE-11-REMOTE-THREAT-MODEL.md`;
-- no remote listener was opened;
-- local registration/session contract uses opaque registration/machine/principal/session IDs;
-- remote session capability projection is limited to the locally registered subset of the M10 capability manifest;
-- session TTL is bounded to 30 seconds–15 minutes;
-- expiry fails closed;
-- registration revocation fails closed;
-- local registration revision change invalidates existing sessions;
-- capability reduction invalidates stale sessions;
-- remote transport claims explicitly grant only `authenticated_session_only` and grant no human-confirmation, Safety Plan, credential or release authority;
-- replay protection, rate limiting and durable sanitized audit are mandatory prerequisites for any future remote listener;
-- current MCP and operator listeners remain loopback-only.
-
-Evidence: contract `4f1bf14d685512945aebfe995d6d4f12466532ab`; tests `4f14c8e656ce376c07ce4a2724809a5f39eba4e0`; threat model `10e34cb064f9f50712f4673e7476170464589ad5`; CI `#741` / `36313678449` passed typecheck + full suite.
+Evidence: contract `4f1bf14d685512945aebfe995d6d4f12466532ab`; tests `4f14c8e656ce376c07ce4a2724809a5f39eba4e0`; threat model `10e34cb064f9f50712f4673e7476170464589ad5`; CI `#741` / `36313678449`.
 
 ## Slice 11B — Machine-local remote registration store — COMPLETE
 
-Implemented/proven:
+- Durable local create/list/get/update/revoke with opaque IDs.
+- Strict current-M10 capability admission and deterministic projection.
+- Monotonic revisions; exact `expectedRevision`; concurrent same-revision writes are single-winner.
+- Revocation terminal; corrupt/duplicate state fails closed.
+- Atomic temp-file + rename snapshot with restrictive permissions.
+- Public view excludes tokens, credentials, workspace paths and Safety Plans.
+- Revision/revocation/capability changes invalidate prior session claims.
 
-- durable machine-local registration create/list/get/update/revoke;
-- opaque registration/machine/principal IDs only;
-- strict admission through the current M10 operator capability manifest;
-- normalized deterministic capability projection;
-- revision starts at 1 and increments monotonically for every update/revocation;
-- updates/revocation require exact `expectedRevision` and concurrent same-revision mutations are single-winner;
-- revoked registration is terminal;
-- atomic snapshot replacement via temporary file + rename with restrictive file mode;
-- corrupt or duplicate durable state fails closed;
-- sanitized public views expose only registration metadata/capability names and no token, credential, workspace path or Safety Plan material;
-- persisted registration can be fed to the 11A session-current assertion, so capability reduction/revision change/revocation invalidate stale session claims.
-
-Evidence: shared registration normalization boundary `3a8ccc933f72f3587c179f6b86cebc10de0a21b8`; store `992498981f0226e9e5b43d1f652dd866a64073e3`; focused tests `32691d4f567b08cb6fe05aed5f79006288632be1`; CI `#749` / `36322675458` passed typecheck + full suite.
+Evidence: normalization `3a8ccc933f72f3587c179f6b86cebc10de0a21b8`; store `992498981f0226e9e5b43d1f652dd866a64073e3`; tests `32691d4f567b08cb6fe05aed5f79006288632be1`; CI `#749` / `36322675458`.
 
 ## Slice 11C — Local session issuance + replay/rate/audit primitives — COMPLETE
 
-Implemented/proven:
+- Short-lived random bearer tokens are process-memory only and never persisted.
+- Every request revalidates current registration before authorization.
+- Single-use request IDs, bounded replay cache, per-session and aggregate registration rate limits.
+- Local session revocation and expired-session pruning.
+- Durable sanitized audit contains only opaque IDs, capability name, outcome/reason; no bearer/credential/path/Safety Plan/command output.
+- Mutation capability means transport reachability only; it never executes a mutation or supplies human confirmation.
 
-- session issuance loads the current durable registration and projects only its admitted capabilities;
-- bearer tokens are cryptographically random opaque values held only in process memory and are never written to the registration or audit stores;
-- session claims remain bounded by the 11A TTL and zero-authority transport semantics;
-- every authorization reloads the current registration and fails closed on expiry, revision change, capability reduction or revocation;
-- authenticated request IDs are single-use for the session and remain consumed even when the requested capability is denied;
-- bounded replay cache expires entries with the session;
-- per-session and aggregate per-registration request rate limits are enforced before transport authorization;
-- local session revocation removes bearer authority immediately;
-- expired in-memory sessions are pruned before active-session capacity admission;
-- durable JSONL audit records only sanitized IDs, capability names, outcomes and reason codes; no bearer token, credential, workspace path, Safety Plan or command/output is persisted;
-- a mutation capability authorizes only transport reachability to the existing M10 preview/confirmation boundary; this layer cannot execute a mutation or provide human confirmation.
+Evidence: primitives `ba6f6cb0d472fc59bef70665d53403b9732d1e83`; tests `826d642785b5e4f835b2a423377e3c765ca68fa7`; hardening `d7de15868cbe384d43a9c28a1014e6a8f382080b`; CI `#757` / `36323073039`.
 
-Evidence: local security primitives `ba6f6cb0d472fc59bef70665d53403b9732d1e83`; tests `826d642785b5e4f835b2a423377e3c765ca68fa7`; type/security correction `d7de15868cbe384d43a9c28a1014e6a8f382080b`; CI `#757` / `36323073039` passed typecheck + full suite.
+## Slice 11D — Loopback authenticated read transport — COMPLETE
 
-**Status: IN PROGRESS — Slices 11A–11C complete; external transport remains disabled.**
+- Separate opt-in adapter; not wired into the production entrypoint.
+- Bind restricted to `127.0.0.1`, `localhost`, or `::1` and tested only on ephemeral loopback.
+- Every route requires 11C bearer auth plus single-use request UUID and therefore inherits registration-current, replay, rate-limit and audit checks.
+- Request body bounded to 64 KiB, POST + JSON only, `Cache-Control: no-store`, `nosniff`.
+- Browser Origin, when present, must be loopback; Host must also identify loopback, preventing DNS-rebinding-style requests.
+- Exactly four remote read capabilities are mapped: passive visualization, bounded task validation status, supervisor decision summary and active writer status.
+- Task-validation view strips goal, Safety Plan/scope, checkpoint, error/stdout/stderr and diff-summary/path contents.
+- No registration/session-issuance, mutation/confirmation, shell/filesystem, Hub/process/lease or credential routes exist.
+- Remote mutations were deliberately not exposed because an authenticated M11 session has `humanConfirmationAuthority: none`; bearer possession cannot be converted into M10 confirmation authority.
+
+Evidence: adapter `277e6f3aeff7cde3b884e572a8b05eb2ab3dc3b2`; route/minimization tests `b029991ca0c2e8db2680c1b9d60a3cc039d1e6bf`; Host hardening `f47ddfba89ac6bd06daea4433b220de202a210d6`; rebinding test `9f8c6dc5933f30895b03c0b5177b3628106d7397`; branch-head CI `#767` / `36323681568` passed typecheck + full suite.
+
+**Status: IN PROGRESS — Slices 11A–11D complete; external exposure and remote mutation remain disabled.**
 
 ---
 
@@ -158,13 +123,12 @@ Evidence: local security primitives `ba6f6cb0d472fc59bef70665d53403b9732d1e83`; 
 | GPT Supervisor | Complete |
 | Sentinel + unattended workflows | Complete |
 | Bounded local operator mutations | Complete — M10 |
-| Operator capability manifest | Complete — M10 |
 | Lease-aware parallel writer safety | Complete — M9 |
-| Isolated physical concurrent-runtime proof | Complete — M9D |
 | Remote threat/session authority contract | Complete — M11A |
 | Remote registration store | Complete — M11B |
 | Remote session/replay/rate/audit primitives | Complete — M11C |
-| Remote transport adapter | Disabled — M11D next |
+| Authenticated loopback remote reads | Complete — M11D / not production-wired |
+| Remote mutation approval bridge | Not implemented — M11E next |
 | External listener/relay/tunnel exposure | Disabled |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
@@ -183,33 +147,34 @@ Evidence: local security primitives `ba6f6cb0d472fc59bef70665d53403b9732d1e83`; 
 6. Push, merge, deploy, destructive Git, secret access, external-network mutation and system changes remain separately gated.
 7. Remote authentication is transport identity only; it cannot become human approval, Safety Plan approval, task authority, credential authority or release authority.
 8. Local revocation, registration revision and capability reduction must win over stale remote state.
-9. External remote exposure must not occur until the transport adapter is constrained to the 11C authorization boundary and its routes are proven not to bypass M10/Safety Preview authority.
+9. No remote mutation endpoint may use M11 bearer possession as a substitute for the M10 explicit confirmation boundary.
+10. External exposure/physical remote proof remains gated and requires explicit user authorization immediately before external-network mutation/proof.
 
 ---
 
 # Immediate work queue
 
 1. **COMPLETE — Milestones 1–10.**
-2. **COMPLETE — Milestone 11 Slice 11A.** Threat model + remote-session authority contract; CI `#741` / `36313678449`.
-3. **COMPLETE — Milestone 11 Slice 11B.** Machine-local registration store + stale-session invalidation; CI `#749` / `36322675458`.
-4. **COMPLETE — Milestone 11 Slice 11C.** Local session issuance, replay protection, rate limiting, local revocation and durable sanitized audit; CI `#757` / `36323073039`.
-5. **NEXT — Milestone 11 Slice 11D: loopback remote transport adapter.** Build a separately opt-in loopback-only HTTP/MCP-facing adapter that requires 11C bearer authorization + single-use request ID on every request and exposes only explicitly mapped sanitized read operations and M10/Safety Preview-backed mutation workflows. It must not expose registration mutation, session issuance, raw machine paths, Hub/process/lease/credentials, or direct mutation execution. Test only on ephemeral loopback in CI; do not create a public bind, relay or tunnel.
-6. **STILL GATED — any external listener/relay/tunnel exposure and physical remote proof** until 11D is complete and reviewed, and explicit user authorization is obtained immediately before external-network mutation/proof.
-7. **STILL GATED — shared-runtime changes, native teams/subagents, distributed scheduling, release actions, secrets and external-network mutation** until their later milestone gates.
+2. **COMPLETE — M11A:** threat/session authority contract; CI `#741`.
+3. **COMPLETE — M11B:** local registration store; CI `#749`.
+4. **COMPLETE — M11C:** local session/replay/rate/audit primitives; CI `#757`.
+5. **COMPLETE — M11D:** authenticated loopback read transport + Host/Origin/replay/rate guards; CI `#767`.
+6. **NEXT — Milestone 11 Slice 11E: remote mutation approval bridge contract.** Design a durable request/approval boundary where remote sessions may propose a specific M10 mutation but cannot approve it. Human approval must be a distinct locally trusted action bound to exact registration/session/request/action/task/current-authority evidence. Only after approval may a one-shot execution permit delegate to the existing M10/trusted service boundary. Do not expose M10 confirmation tokens to remote clients and do not let bearer auth create approval authority.
+7. **STILL GATED — any external listener/relay/tunnel exposure and physical remote proof** until the mutation/approval semantics and final remote surface are complete/reviewed, with explicit user authorization immediately before external-network mutation/proof.
+8. **STILL GATED — shared-runtime changes, native teams/subagents, distributed scheduling, release actions, secrets and external-network mutation** until later milestone gates.
 
 ---
 
 # Recent progress
 
-- 2026-09-27: M10 task continuation completed through `245c218d3245af5cec164ba0db4a348b40c8e3c5`; CI `#715`.
-- 2026-09-27: M10 targeted scheduled-writer recovery completed through `9e491a03db6bc47e634c3b194a7049765aea56f1`; CI `#727`.
-- 2026-09-27: M10 capability boundary manifest `45b1fd891b555c8759f78c75bf795fe07d9fa7a0` + tests `2a731781316de4a4db5681f07188c024c50be3a1`; CI `#733`; M10 closed.
-- 2026-09-27: M11A remote authority contract `4f1bf14d685512945aebfe995d6d4f12466532ab`, tests `4f14c8e656ce376c07ce4a2724809a5f39eba4e0`, threat model `10e34cb064f9f50712f4673e7476170464589ad5`; CI `#741`; no listener/runtime change.
-- 2026-09-27: M11B registration normalization/store/tests through `32691d4f567b08cb6fe05aed5f79006288632be1`; CI `#749`; no listener/runtime change.
-- 2026-09-27: M11C session/replay/rate/audit primitives through `d7de15868cbe384d43a9c28a1014e6a8f382080b`; CI `#757`; no external listener/runtime change.
+- 2026-09-27: M10 capability boundary CI `#733`; M10 closed.
+- 2026-09-27: M11A contract/threat model CI `#741`.
+- 2026-09-27: M11B registration store CI `#749`.
+- 2026-09-27: M11C session/replay/rate/audit CI `#757`.
+- 2026-09-27: M11D loopback read transport through `9f8c6dc5933f30895b03c0b5177b3628106d7397`; CI `#767`; no production/external listener change.
 
 ---
 
 # Current next step
 
-**Milestone 11 — Slice 11D: loopback remote transport adapter.** Wire only the already-proven 11C transport authorization boundary to sanitized reads and existing M10/Safety Preview workflows. Keep session issuance and registration management local-only. Do not expose any public listener/relay/tunnel in this slice.
+**Milestone 11 — Slice 11E: remote mutation approval bridge contract.** Remote sessions may request/propose, but human approval must remain a separate trusted local authority. Build the durable binding and one-shot permit before considering any mutation route or external exposure.
