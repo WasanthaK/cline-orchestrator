@@ -9,6 +9,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const MAX_REMOTE_SESSION_TTL_MS = 15 * 60 * 1000;
 const MIN_REMOTE_SESSION_TTL_MS = 30 * 1000;
 
+export type RemoteControlPlaneCapabilityV1 = "propose_new_task";
+
+const REMOTE_CONTROL_CAPABILITIES = [
+  "propose_new_task",
+] as const satisfies readonly RemoteControlPlaneCapabilityV1[];
+
 export const REMOTE_CONTROL_CONTRACT = Object.freeze({
   schemaVersion: 1 as const,
   maxSessionTtlMs: MAX_REMOTE_SESSION_TTL_MS,
@@ -31,6 +37,8 @@ export interface RemoteControlRegistrationV1 {
   revokedAt?: string;
   allowedMutationActions: OperatorMutationActionV1[];
   allowedReadOnlyCapabilities: OperatorReadOnlyCapabilityV1[];
+  /** Milestone 11-only proposal capabilities. Omitted legacy state normalizes to none. */
+  allowedControlCapabilities?: RemoteControlPlaneCapabilityV1[];
 }
 
 export interface RemoteControlSessionClaimsV1 {
@@ -45,6 +53,7 @@ export interface RemoteControlSessionClaimsV1 {
   expiresAt: string;
   mutationActions: OperatorMutationActionV1[];
   readOnlyCapabilities: OperatorReadOnlyCapabilityV1[];
+  controlCapabilities: RemoteControlPlaneCapabilityV1[];
   transportAuthority: "authenticated_session_only";
   humanConfirmationAuthority: "none";
   safetyPlanAuthority: "none";
@@ -55,6 +64,8 @@ export interface RemoteControlSessionClaimsV1 {
 export interface RemoteControlSessionRequestV1 {
   mutationActions: OperatorMutationActionV1[];
   readOnlyCapabilities: OperatorReadOnlyCapabilityV1[];
+  /** Must be explicitly requested and locally registered; defaults to none. */
+  controlCapabilities?: RemoteControlPlaneCapabilityV1[];
   ttlMs: number;
 }
 
@@ -91,9 +102,10 @@ function unique<T extends string>(values: T[]): T[] {
 
 /**
  * Validates and normalizes one machine-local remote registration against the
- * current Milestone 10 operator capability manifest. This function does not
+ * current Milestone 10 operator capability manifest plus the small explicit set
+ * of Milestone 11-only remote proposal capabilities. This function does not
  * create a session or grant authority; it is the shared admission boundary used
- * by the local registration store and the later session-issuance path.
+ * by the local registration store and session-issuance path.
  */
 export function normalizeRemoteControlRegistration(
   registration: RemoteControlRegistrationV1,
@@ -115,17 +127,24 @@ export function normalizeRemoteControlRegistration(
   const manifest = getOperatorCapabilityManifest();
   const mutationOrder = manifest.mutationActions.map((item) => item.action);
   const readOrder = [...manifest.readOnlyCapabilities];
+  const controlOrder = [...REMOTE_CONTROL_CAPABILITIES];
   const mutations = new Set(mutationOrder);
   const reads = new Set(readOrder);
+  const controls = new Set<RemoteControlPlaneCapabilityV1>(controlOrder);
+  const registrationControls = registration.allowedControlCapabilities ?? [];
   if (registration.allowedMutationActions.some((item) => !mutations.has(item))) {
     throw new RemoteControlContractError("registration contains unsupported mutation capability", "registration_invalid");
   }
   if (registration.allowedReadOnlyCapabilities.some((item) => !reads.has(item))) {
     throw new RemoteControlContractError("registration contains unsupported read-only capability", "registration_invalid");
   }
+  if (registrationControls.some((item) => !controls.has(item))) {
+    throw new RemoteControlContractError("registration contains unsupported remote control capability", "registration_invalid");
+  }
 
   const requestedMutations = new Set(unique(registration.allowedMutationActions));
   const requestedReads = new Set(unique(registration.allowedReadOnlyCapabilities));
+  const requestedControls = new Set(unique(registrationControls));
   return {
     schemaVersion: 1,
     registrationId: registration.registrationId,
@@ -136,6 +155,7 @@ export function normalizeRemoteControlRegistration(
     ...(revokedAt ? { revokedAt } : {}),
     allowedMutationActions: mutationOrder.filter((item) => requestedMutations.has(item)),
     allowedReadOnlyCapabilities: readOrder.filter((item) => requestedReads.has(item)),
+    allowedControlCapabilities: controlOrder.filter((item) => requestedControls.has(item)),
   };
 }
 
@@ -159,10 +179,13 @@ export function createRemoteControlSessionClaims(
 
   const requestedMutations = unique(request.mutationActions);
   const requestedReads = unique(request.readOnlyCapabilities);
+  const requestedControls = unique(request.controlCapabilities ?? []);
   const allowedMutations = new Set(registration.allowedMutationActions);
   const allowedReads = new Set(registration.allowedReadOnlyCapabilities);
+  const allowedControls = new Set(registration.allowedControlCapabilities ?? []);
   if (requestedMutations.some((item) => !allowedMutations.has(item))
-    || requestedReads.some((item) => !allowedReads.has(item))) {
+    || requestedReads.some((item) => !allowedReads.has(item))
+    || requestedControls.some((item) => !allowedControls.has(item))) {
     throw new RemoteControlContractError(
       "remote session requested capability outside the local registration",
       "capability_not_allowed",
@@ -191,6 +214,7 @@ export function createRemoteControlSessionClaims(
     expiresAt: new Date(now.getTime() + request.ttlMs).toISOString(),
     mutationActions: requestedMutations,
     readOnlyCapabilities: requestedReads,
+    controlCapabilities: requestedControls,
     transportAuthority: "authenticated_session_only",
     humanConfirmationAuthority: "none",
     safetyPlanAuthority: "none",
@@ -232,8 +256,10 @@ export function assertRemoteControlSessionCurrent(
 
   const allowedMutations = new Set(registration.allowedMutationActions);
   const allowedReads = new Set(registration.allowedReadOnlyCapabilities);
+  const allowedControls = new Set(registration.allowedControlCapabilities ?? []);
   if (claims.mutationActions.some((item) => !allowedMutations.has(item))
-    || claims.readOnlyCapabilities.some((item) => !allowedReads.has(item))) {
+    || claims.readOnlyCapabilities.some((item) => !allowedReads.has(item))
+    || claims.controlCapabilities.some((item) => !allowedControls.has(item))) {
     throw new RemoteControlContractError(
       "remote session capability projection is stale",
       "session_stale",
