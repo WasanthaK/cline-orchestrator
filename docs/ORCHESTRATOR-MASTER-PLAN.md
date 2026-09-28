@@ -40,7 +40,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A complete, CI `#811`; 12B temporarily deferred for core Cline completion/review-loop proof |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A complete, CI `#811`; core CR1–CR3 single-machine completion/review proof complete; 12B next |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -99,9 +99,9 @@ Evidence: recovery layer `34c1599fc10a62af529eb2db4a648fa187c9f5b7`; factory int
 
 ---
 
-# Core workflow proof prerequisite — Cline completion → ChatGPT review loop — IN PROGRESS
+# Core workflow proof prerequisite — Cline completion → supervisor review loop — COMPLETE
 
-User-confirmed product workflow: ChatGPT creates bounded work for Cline; Cline implements and returns its normal completion report; orchestrator captures that report plus independent evidence; ChatGPT reviews/challenges and may issue a correction or direction change; the loop repeats until the goal is achieved or a real human/safety/release decision is required. This proof is intentionally prioritized before deeper M12 distribution because multi-machine execution is not useful until the single-machine supervisory loop is proven against the real Cline client.
+User-confirmed product workflow: ChatGPT creates bounded work for Cline; Cline implements and returns its normal completion report; orchestrator captures that report plus independent evidence; ChatGPT reviews/challenges and may issue a correction or direction change; the loop repeats until the goal is achieved or a real human/safety/release decision is required. CR1–CR3 now prove the single-machine local supervisory loop against the real Cline runtime. The external ChatGPT transport remains a distinct M11 physical-proof boundary and is not implied by CR3.
 
 ## Slice CR1 — Completion review packet + read-only MCP surface — COMPLETE
 
@@ -135,18 +135,23 @@ Implemented `src/supervisor-completion-review.ts` as a trusted coordinator aroun
 
 Evidence: coordinator `8ae0e21b285122e6edcca19240a7177c2604301c`; regression/injection/repair-handoff tests `007c32b8aef6dd19e80549c9bb73314e7dd6054b`; CI `#829` / `36371626059` passed typecheck + full suite.
 
-## Slice CR3 — Real Cline client proof — NEXT / EXPLICIT AUTHORIZATION GATE
+## Slice CR3 — Real Cline client completion/review/correction proof — COMPLETE
 
-Prove one bounded disposable/registered-workspace task against the user's real Cline/Hub/VS Code environment:
+Implemented guarded physical proof `src/live-cr3-completion-review-proof.ts` and npm command `cr3:proof`:
 
-1. start/continue only an orchestrator-owned Cline session;
-2. observe runtime activity and terminal completion;
-3. capture the natural Cline completion report automatically;
-4. construct the completion packet with independent evidence;
-5. feed it to the supervisor and, if needed, issue one bounded correction through the existing task envelope;
-6. stop on goal achieved, safety/human escalation, failure or explicit release boundary.
+- requires explicit disposable-proof opt-in and re-runs the read-only CR3 preflight before execution;
+- creates a disposable Git workspace and a separate isolated non-default loopback Cline Hub; it does not use the default/shared Cline Hub;
+- starts a real orchestrator-owned Cline session and captures its natural completion report automatically;
+- constructs the CR1 completion packet and requires independently passing validation, diff safety, one changed file and a usable checkpoint;
+- feeds the packet through the real CR2 review/admission/journal path;
+- uses a deterministic local proof reviewer to force exactly one bounded in-scope correction, proving the trusted `continueTask` handoff without introducing external model authority;
+- Cline performs the second run in the same immutable approved task/Safety envelope; the second completion packet is captured and reviewed again;
+- requires exactly two completion-review journal entries and one queued repair-handoff record;
+- verifies `.env` and `outside.txt` protected files are unchanged;
+- uses no model shell/network authority, release authority or external-network mutation;
+- records `externalChatGPTTransportProven: false` explicitly, so this proof does not overclaim the separately gated M11 external ChatGPT transport.
 
-This physical runtime proof requires explicit user authorization immediately before mutating/restarting or otherwise interacting with the shared local Cline/Hub/VS Code runtime. It does not authorize merge, deploy, destructive Git or external network mutation.
+Evidence: physical proof implementation `1eddec87a0ac784f4f096149988e856463654a34`; proof-command wiring `83bc209f911616d5b8cda860aae423a40c18f4d7`; CI `#840` / workflow `36407380806` passed typecheck + full suite. On 2026-09-28 the authorized Windows physical proof passed twice. The latest run showed initial Cline completion with `runCount=1`, passing validation/diff safety and one changed file; first supervisor decision `repair` / `repair_queued`; second Cline completion with `runCount=2`, passing validation/diff safety and one changed file; second supervisor decision `pass` / `pass_recorded`; two completion-review records; one queued repair handoff; protected files unchanged; isolated non-default loopback Hub; and no release/external-network authority.
 
 ---
 
@@ -169,7 +174,7 @@ Implemented `src/distributed-control-contract.ts`:
 
 Evidence: contract `d68a665291b974706348d4bb9ed9de50774e2385`; tests `f7fd7d2979f861ff270c072e83ba36047d49f82b`; CI `#811` / `36365596173` passed typecheck + full suite.
 
-## Slice 12B — Durable machine registration + workspace placement store — DEFERRED UNTIL CORE WORKFLOW PROOF
+## Slice 12B — Durable machine registration + workspace placement store — NEXT
 
 Planned bounded scope:
 
@@ -199,11 +204,12 @@ Later M12 slices must separately introduce authenticated machine transport, live
 | Cline hard-context/protocol recovery | Complete — CI `#809` |
 | Cline completion review packet | Complete — CR1 / CI `#822` |
 | Supervisor consumption + bounded correction handoff | Complete — CR2 / CI `#829` |
-| Real Cline client completion/review proof | Next — CR3 / explicit local-runtime authorization gate |
+| Real Cline client completion/review/correction proof | Complete — CR3 / CI `#840` + authorized physical proof |
+| External ChatGPT transport through the remote control plane | Not physically proven — remains M11 external authorization gate |
 | Remote control software boundary | Complete through M11H |
 | External remote listener/relay/tunnel proof | Deferred / disabled / explicit-authorization gate |
 | Distributed identity/placement/assignment contract | Complete — M12A / CI `#811` |
-| Durable distributed registration/placement store | Deferred until CR3 proof, then M12B |
+| Durable distributed registration/placement store | Next — M12B |
 | Distributed network transport | Disabled — later M12 slice |
 | Distributed writer execution | Disabled pending distributed fencing |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
@@ -232,6 +238,7 @@ Later M12 slices must separately introduce authenticated machine transport, live
 16. Cline completion prose is useful reviewer context but is never independent proof; contradictions must resolve in favor of trusted captured evidence or human review.
 17. A supervisor repair instruction may reuse only the existing immutable task authority. Any required scope expansion must stop for a fresh Safety Preview/human decision.
 18. Completion-review journal records are evidence only. They do not grant execution or completion authority, and a failed repair handoff must remain visibly failed rather than being silently retried outside trusted task continuation.
+19. CR3 proves the real local Cline completion/review/correction path with a deterministic local reviewer; it does not prove external ChatGPT transport or grant remote/local release authority.
 
 ---
 
@@ -243,8 +250,8 @@ Later M12 slices must separately introduce authenticated machine transport, live
 4. **COMPLETE — M12A distributed identity/placement/candidate-assignment authority contract.** CI `#811`.
 5. **COMPLETE — CR1 Cline completion review packet + read-only MCP surface.** CI `#822`.
 6. **COMPLETE — CR2 supervisor consumption + bounded correction handoff.** CI `#829`.
-7. **NEXT — CR3 real Cline client completion/review proof.** Obtain explicit local-runtime authorization immediately before the physical interaction.
-8. **RESUME — M12B durable machine registration + workspace placement store** after the core single-machine workflow proof.
+7. **COMPLETE — CR3 real Cline client completion/review/correction proof.** CI `#840` + authorized Windows physical proof; external ChatGPT transport intentionally not claimed.
+8. **NEXT — M12B durable machine registration + workspace placement store.** State/registry only; no distributed network or writer execution.
 9. **DO NOT enable cross-machine writer execution** until an independently reviewed distributed fencing boundary exists in a later M12 slice.
 10. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
@@ -264,9 +271,10 @@ Later M12 slices must separately introduce authenticated machine transport, live
 - 2026-09-28: user clarified the core product workflow as ChatGPT → Cline → completion report/evidence → ChatGPT challenge/correction → repeat; deeper M12 work explicitly deferred until this single-machine loop is proven.
 - 2026-09-28: CR1 completion review packet and `get_task_completion` read-only MCP surface completed; CI `#822` passed typecheck + full suite.
 - 2026-09-28: CR2 completion packet → advisory supervisor review → durable decision/journal → trusted bounded repair handoff completed; prompt-injection and failed-handoff regression coverage passed in CI `#829`.
+- 2026-09-28: CR3 guarded physical proof added and CI `#840` passed. The authorized Windows proof then passed twice against real Cline execution in an isolated disposable workspace/Hub, including automatic completion capture, one bounded supervisor repair handoff, second completion and advisory pass. External ChatGPT transport remains a separate unproven M11 physical boundary.
 
 ---
 
 # Current next step
 
-**CR3 — real Cline client completion/review proof.** Use one bounded disposable/registered-workspace task, orchestrator-owned Cline session, automatic completion capture, CR1 packet, CR2 supervisor review and at most one bounded correction through the existing immutable task/Safety envelope. Obtain explicit user authorization immediately before interacting with the shared local Cline/Hub/VS Code runtime. This proof does not authorize commit, push, PR, merge, deploy, destructive Git or external-network mutation.
+**M12B — durable machine registration + workspace placement store.** Implement only opaque distributed registry/placement state with atomic/restrictive persistence, exact expected-revision mutation, fail-closed validation and explicit create/list/get/update/revoke/disable boundaries. Do not add cross-machine transport, workspace paths, credentials, Safety Plans, command payloads, Hub tokens, distributed writer execution or release authority in this slice.
