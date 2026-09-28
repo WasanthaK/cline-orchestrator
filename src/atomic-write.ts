@@ -8,6 +8,7 @@ export type AtomicWriteOptions = {
   platform?: NodeJS.Platform;
   renameFile?: typeof rename;
   sleep?: (delayMs: number) => Promise<void>;
+  mode?: number;
 };
 
 function defaultSleep(delayMs: number): Promise<void> {
@@ -18,7 +19,9 @@ function defaultSleep(delayMs: number): Promise<void> {
  * Replaces one UTF-8 file through a same-directory temporary file plus rename.
  * On Windows only, transient destination contention gets a bounded retry. The
  * destination is never deleted to force replacement, so failure remains atomic
- * and fail-closed.
+ * and fail-closed. Callers that persist authority-bearing local state may supply
+ * a restrictive creation mode such as 0o600; rename preserves that mode on
+ * platforms that enforce POSIX permissions.
  */
 export async function atomicWriteUtf8(
   targetPath: string,
@@ -31,7 +34,11 @@ export async function atomicWriteUtf8(
   const sleep = options.sleep ?? defaultSleep;
 
   try {
-    await writeFile(tempPath, content, { encoding: "utf8", flag: "wx" });
+    await writeFile(tempPath, content, {
+      encoding: "utf8",
+      flag: "wx",
+      ...(options.mode !== undefined ? { mode: options.mode } : {}),
+    });
     for (let attempt = 0; ; attempt += 1) {
       try {
         await renameFile(tempPath, targetPath);
