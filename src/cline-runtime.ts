@@ -3,6 +3,7 @@ import path from "node:path";
 import { ClineCore } from "@cline/sdk";
 import * as ClineHub from "@cline/core/hub";
 import { ensureClineHubDaemonEntryCompatibility } from "./cline-hub-compat.js";
+import { createRecoveringClineRuntime } from "./cline-runtime-recovery.js";
 
 export type ClineRuntimeMode = "local" | "hub";
 
@@ -60,10 +61,10 @@ export class SdkClineRuntimeFactory implements ClineRuntimeFactory {
 
   async create(request: ClineRuntimeCreateRequest): Promise<ClineRuntime> {
     if (request.mode === "local") {
-      return await this.createCore({
+      return createRecoveringClineRuntime(await this.createCore({
         clientName: "cline-orchestrator",
         backendMode: "local",
-      });
+      }));
     }
 
     // @cline/core 0.0.83 publishes the daemon entry correctly but its bundled
@@ -84,7 +85,7 @@ export class SdkClineRuntimeFactory implements ClineRuntimeFactory {
       throw new Error("Cline Hub resolution did not return an authenticated endpoint.");
     }
 
-    return await this.createCore({
+    return createRecoveringClineRuntime(await this.createCore({
       clientName: "cline-orchestrator",
       backendMode: "hub",
       hub: {
@@ -96,7 +97,7 @@ export class SdkClineRuntimeFactory implements ClineRuntimeFactory {
         workspaceRoot: request.workspaceRoot,
         cwd: request.workspaceRoot,
       },
-    });
+    }));
   }
 }
 
