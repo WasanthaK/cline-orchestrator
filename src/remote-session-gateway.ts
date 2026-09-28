@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   assertRemoteControlSessionCurrent,
   createRemoteControlSessionClaims,
+  type RemoteControlPlaneCapabilityV1,
   type RemoteControlSessionClaimsV1,
   type RemoteControlSessionRequestV1,
 } from "./remote-control-contract.js";
@@ -31,7 +32,8 @@ export const REMOTE_SESSION_SECURITY_LIMITS: Readonly<RemoteSessionSecurityLimit
 
 export type RemoteSessionAccessV1 =
   | { kind: "read"; capability: OperatorReadOnlyCapabilityV1 }
-  | { kind: "mutation"; action: OperatorMutationActionV1 };
+  | { kind: "mutation"; action: OperatorMutationActionV1 }
+  | { kind: "control"; capability: RemoteControlPlaneCapabilityV1 };
 
 export interface RemoteSessionIssueResultV1 {
   schemaVersion: 1;
@@ -100,7 +102,9 @@ function tokenDigest(token: string): string {
 }
 
 function accessName(access: RemoteSessionAccessV1): string {
-  return access.kind === "read" ? access.capability : access.action;
+  if (access.kind === "read") return access.capability;
+  if (access.kind === "mutation") return access.action;
+  return access.capability;
 }
 
 class RemoteReplayGuard {
@@ -203,8 +207,9 @@ export class RemoteSessionAuditStore {
  *
  * Tokens are random opaque bearer values kept only in process memory. Durable
  * state contains sanitized registration/audit evidence only. This service never
- * invokes an operator mutation; a mutation capability merely permits a future
- * transport request to reach the existing M10 preview/confirmation boundary.
+ * grants task or human-confirmation authority. A mutation capability permits only
+ * the existing proposal/confirmation bridge; an M11 control capability can only
+ * reach its purpose-built proposal boundary.
  */
 export class RemoteSessionGateway {
   private readonly sessions = new Map<string, RemoteControlSessionClaimsV1>();
@@ -356,9 +361,6 @@ export class RemoteSessionGateway {
       throw error;
     }
 
-    // Every authenticated request ID is single-use, even when its requested
-    // capability is denied. This prevents one request ID from being replayed with
-    // a different operation after an initial denial.
     try {
       this.replay.consume(claims.sessionId, requestId, claims.expiresAt, now.getTime());
       this.rate.consume(claims.registrationId, claims.sessionId, now.getTime());
@@ -374,7 +376,9 @@ export class RemoteSessionGateway {
 
     const allowed = access.kind === "read"
       ? claims.readOnlyCapabilities.includes(access.capability)
-      : claims.mutationActions.includes(access.action);
+      : access.kind === "mutation"
+        ? claims.mutationActions.includes(access.action)
+        : claims.controlCapabilities.includes(access.capability);
     if (!allowed) {
       await this.auditDenied(claims, requestId, access, "capability_not_allowed");
       throw new RemoteSessionGatewayError("remote session does not contain requested capability", "capability_not_allowed");
