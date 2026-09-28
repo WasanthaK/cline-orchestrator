@@ -15,6 +15,7 @@ const EXPECTED_TOOLS = [
   "continue_task",
   "find_tasks",
   "get_task",
+  "get_task_completion",
   "get_task_diff",
   "get_task_events",
   "get_workspace_status",
@@ -120,6 +121,12 @@ test("MCP tools expose only task-level authority with accurate safety annotation
     assert.equal((byName.get("list_projects") as any)?.annotations?.readOnlyHint, true);
     assert.equal((byName.get("list_incidents") as any)?.annotations?.readOnlyHint, true);
     assert.equal((byName.get("list_incidents") as any)?.annotations?.destructiveHint, false);
+    assert.equal((byName.get("get_task_completion") as any)?.annotations?.readOnlyHint, true);
+    assert.equal((byName.get("get_task_completion") as any)?.annotations?.destructiveHint, false);
+    assert.match(
+      (byName.get("get_task_completion") as any)?.description ?? "",
+      /untrusted worker claims/i,
+    );
     assert.equal((byName.get("preview_task") as any)?.annotations?.readOnlyHint, true);
     assert.equal((byName.get("start_task") as any)?.annotations?.readOnlyHint, false);
     assert.equal((byName.get("rollback_task") as any)?.annotations?.destructiveHint, true);
