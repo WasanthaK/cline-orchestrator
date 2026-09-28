@@ -145,17 +145,14 @@ const request: SafetyPreviewRequest = {
   requestedScope: ["src/example.ts"],
 };
 
-test("new-task authority is a distinct opt-in registration/session capability", async () => {
-  const { root, registrations } = await fixture({ allowNewTask: false });
+test("new-task authority defaults to absent from remote registrations and sessions", async () => {
+  const { root, registrations, sessions, token } = await fixture({ allowNewTask: false });
   try {
     const current = await registrations.getRegistration(IDS.registration);
     assert.deepEqual(current.allowedControlCapabilities, []);
-    assert.throws(
-      () => {
-        // Contract-level proof: an unregistered session cannot request the new capability.
-        // Dynamic import is unnecessary; issue() reaches the same contract boundary.
-      },
-      undefined,
+    await assert.rejects(
+      sessions.authorize(token, IDS.request1, { kind: "control", capability: "propose_new_task" }),
+      (error: unknown) => (error as { code?: string }).code === "capability_not_allowed",
     );
   } finally {
     await rm(root, { recursive: true, force: true });
