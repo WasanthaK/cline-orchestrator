@@ -8,6 +8,7 @@
     "dev": "tsx src/index.ts",
     "mcp": "tsx src/mcp-main.ts",
     "cr3:preflight": "tsx src/cr3-preflight.ts",
+    "cr3:proof": "tsx src/live-cr3-completion-review-proof.ts",
     "proof:owner-loss": "tsx src/live-owner-loss-proof.ts",
     "proof:owner-loss:diagnostic": "tsx src/live-owner-loss-diagnostic.ts",
     "proof:multi-workspace": "tsx src/live-multi-workspace-proof.ts",
