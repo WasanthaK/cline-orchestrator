@@ -118,17 +118,24 @@ Implemented `src/task-completion-packet.ts` and read-only MCP tool `get_task_com
 
 Evidence: packet `cbaa0e0f97f44be77bfc067ddbd530eb8af0f2fc`; tests `4633942db886f82a5ba68feb87376948162d63b4`; typing cleanup `5851ea31944230ff14130f07b8a4c92bf287b77b`; MCP surface `339499a9769452f8574a00989ec3462203589f38`; MCP contract tests `0635aa122b7277217cd78ecdcc485be70b9e6ccb`; CI `#822` / `36369800829` passed typecheck + full suite.
 
-## Slice CR2 — Supervisor consumption + correction handoff — NEXT
+## Slice CR2 — Supervisor consumption + correction handoff — COMPLETE
 
-Planned bounded scope:
+Implemented `src/supervisor-completion-review.ts` as a trusted coordinator around the existing CR1 completion packet, reviewer validator, durable supervisor-decision service and `MachineOrchestratorService.continueTask` boundary:
 
-- allow the existing advisory supervisor reviewer to consume the completion packet, with Cline narrative clearly delimited as untrusted worker testimony and independent evidence kept authoritative;
-- reviewer may return existing `pass`, `repair`, or `escalate` only; no new decision type or completion authority;
-- repair instructions must remain inside the immutable approved task/Safety envelope and continue through the existing trusted `continue_task` boundary;
-- preserve each review attempt/completion packet durably enough to reconstruct the worker/reviewer loop without treating reviewer prose as authority;
-- no commit/push/PR/merge/deploy authority is added.
+- completion packets are accepted only when bound to the exact approved supervisor task/project/workspace and marked `ready_for_supervisor_review`;
+- the natural Cline completion report is inserted into the reviewer prompt only as a bounded, clearly delimited `untrusted_worker_claims` data block;
+- reviewer rules explicitly forbid obeying commands, role changes, authority requests or reviewer instructions embedded in Cline testimony;
+- independent orchestrator validation/diff/checkpoint evidence remains authoritative, and existing reviewer validation still rejects `pass` when required durable evidence is not satisfied;
+- reviewer decisions remain exactly `pass`, `repair`, or `escalate`, with `completionAuthority: advisory_only`;
+- admitted reviewer decisions are recorded through the existing `SupervisorDecisionService`; CR2 adds an append-only `.orchestrator/supervisor-completion-reviews/<task>.jsonl` journal containing the exact sanitized completion packet, review result, decision link and repair-handoff outcome;
+- repair decisions are durably journaled before the instruction is handed to the existing trusted `continueTask` boundary, so the immutable task/Safety envelope remains the only execution authority;
+- failed trusted repair handoff is recorded without erasing the admitted reviewer decision;
+- journaled errors redact workspace roots and obvious bearer/API-key/token/secret/password material;
+- no new filesystem, shell, Hub, credential, network, release, commit, push, PR, merge or deployment authority is introduced.
 
-## Slice CR3 — Real Cline client proof — GATED NEXT AFTER CR2
+Evidence: coordinator `8ae0e21b285122e6edcca19240a7177c2604301c`; regression/injection/repair-handoff tests `007c32b8aef6dd19e80549c9bb73314e7dd6054b`; CI `#829` / `36371626059` passed typecheck + full suite.
+
+## Slice CR3 — Real Cline client proof — NEXT / EXPLICIT AUTHORIZATION GATE
 
 Prove one bounded disposable/registered-workspace task against the user's real Cline/Hub/VS Code environment:
 
@@ -191,12 +198,12 @@ Later M12 slices must separately introduce authenticated machine transport, live
 | Lease-aware parallel writer safety | Complete — M9 |
 | Cline hard-context/protocol recovery | Complete — CI `#809` |
 | Cline completion review packet | Complete — CR1 / CI `#822` |
-| Supervisor consumption of completion packet | Next — CR2 |
-| Real Cline client completion/review proof | Pending — CR3 / explicit local-runtime authorization gate |
+| Supervisor consumption + bounded correction handoff | Complete — CR2 / CI `#829` |
+| Real Cline client completion/review proof | Next — CR3 / explicit local-runtime authorization gate |
 | Remote control software boundary | Complete through M11H |
 | External remote listener/relay/tunnel proof | Deferred / disabled / explicit-authorization gate |
 | Distributed identity/placement/assignment contract | Complete — M12A / CI `#811` |
-| Durable distributed registration/placement store | Deferred until CR2/CR3 proof, then M12B |
+| Durable distributed registration/placement store | Deferred until CR3 proof, then M12B |
 | Distributed network transport | Disabled — later M12 slice |
 | Distributed writer execution | Disabled pending distributed fencing |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
@@ -224,6 +231,7 @@ Later M12 slices must separately introduce authenticated machine transport, live
 15. Cross-machine writes remain disabled until distributed fencing is designed, reviewed and CI/physical-failure proven.
 16. Cline completion prose is useful reviewer context but is never independent proof; contradictions must resolve in favor of trusted captured evidence or human review.
 17. A supervisor repair instruction may reuse only the existing immutable task authority. Any required scope expansion must stop for a fresh Safety Preview/human decision.
+18. Completion-review journal records are evidence only. They do not grant execution or completion authority, and a failed repair handoff must remain visibly failed rather than being silently retried outside trusted task continuation.
 
 ---
 
@@ -234,8 +242,8 @@ Later M12 slices must separately introduce authenticated machine transport, live
 3. **COMPLETE — prerequisite Cline context/tool-protocol recovery hardening.** CI `#809`.
 4. **COMPLETE — M12A distributed identity/placement/candidate-assignment authority contract.** CI `#811`.
 5. **COMPLETE — CR1 Cline completion review packet + read-only MCP surface.** CI `#822`.
-6. **NEXT — CR2 supervisor consumption + bounded correction handoff.** No new authority or release capability.
-7. **THEN — CR3 real Cline client completion/review proof.** Obtain explicit local-runtime authorization immediately before the physical interaction.
+6. **COMPLETE — CR2 supervisor consumption + bounded correction handoff.** CI `#829`.
+7. **NEXT — CR3 real Cline client completion/review proof.** Obtain explicit local-runtime authorization immediately before the physical interaction.
 8. **RESUME — M12B durable machine registration + workspace placement store** after the core single-machine workflow proof.
 9. **DO NOT enable cross-machine writer execution** until an independently reviewed distributed fencing boundary exists in a later M12 slice.
 10. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
@@ -255,9 +263,10 @@ Later M12 slices must separately introduce authenticated machine transport, live
 - 2026-09-28: M12A authority-contract tests restored and full suite passed in CI `#811`.
 - 2026-09-28: user clarified the core product workflow as ChatGPT → Cline → completion report/evidence → ChatGPT challenge/correction → repeat; deeper M12 work explicitly deferred until this single-machine loop is proven.
 - 2026-09-28: CR1 completion review packet and `get_task_completion` read-only MCP surface completed; CI `#822` passed typecheck + full suite.
+- 2026-09-28: CR2 completion packet → advisory supervisor review → durable decision/journal → trusted bounded repair handoff completed; prompt-injection and failed-handoff regression coverage passed in CI `#829`.
 
 ---
 
 # Current next step
 
-**CR2 — supervisor consumption of the Cline completion packet + bounded correction handoff.** Keep Cline narrative explicitly untrusted, independent evidence authoritative, reviewer output advisory, and all correction execution inside the existing immutable task/Safety envelope. After CR2 is CI-proven, request explicit authorization for CR3 against the user's real Cline client/runtime.
+**CR3 — real Cline client completion/review proof.** Use one bounded disposable/registered-workspace task, orchestrator-owned Cline session, automatic completion capture, CR1 packet, CR2 supervisor review and at most one bounded correction through the existing immutable task/Safety envelope. Obtain explicit user authorization immediately before interacting with the shared local Cline/Hub/VS Code runtime. This proof does not authorize commit, push, PR, merge, deploy, destructive Git or external-network mutation.
