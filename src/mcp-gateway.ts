@@ -15,6 +15,7 @@ import {
   MachineOrchestratorService,
 } from "./machine-orchestrator.js";
 import { listRegisteredWorkspaceIncidents } from "./sentinel-query.js";
+import { getTaskCompletionPacket } from "./task-completion-packet.js";
 import type { TaskStatus } from "./types.js";
 
 const TOOL_RESULT_MAX_CHARS = 120_000;
@@ -266,6 +267,17 @@ export function createMachineMcpServer(
       annotations: readAnnotations,
     },
     async ({ task_id }) => guardedTool(() => service.getTask(task_id)),
+  );
+
+  server.registerTool(
+    "get_task_completion",
+    {
+      title: "Get Cline completion review packet",
+      description: "Return a bounded, redacted Cline completion report explicitly labeled as untrusted worker claims together with independent orchestrator validation, diff-safety, Git snapshot, checkpoint and recovery evidence. This read-only surface exposes no raw workspace root, Hub/session ID or credential.",
+      inputSchema: z.object({ task_id: z.string().uuid() }),
+      annotations: readAnnotations,
+    },
+    async ({ task_id }) => guardedTool(() => getTaskCompletionPacket(service, task_id)),
   );
 
   server.registerTool(
