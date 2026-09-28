@@ -1,6 +1,6 @@
 import type { MachineOrchestratorService } from "./machine-orchestrator.js";
 import { TaskStore } from "./state.js";
-import type { OrchestratorTask, TaskStatus } from "./types.js";
+import type { GitSnapshot, OrchestratorTask, TaskStatus } from "./types.js";
 
 export const TASK_COMPLETION_PACKET_SCHEMA_VERSION = 1 as const;
 export const TASK_COMPLETION_REPORT_MAX_CHARS = 40_000 as const;
@@ -157,8 +157,7 @@ function sanitizeWorkerReport(
   };
 }
 
-function gitEvidence(snapshot: OrchestratorTask["lastRunGit"] extends infer T ? any : never) {
-  if (!snapshot) return undefined;
+function gitEvidence(snapshot: GitSnapshot) {
   return {
     capturedAt: snapshot.capturedAt,
     available: snapshot.available,
