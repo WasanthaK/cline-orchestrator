@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   normalizeRemoteControlRegistration,
   RemoteControlContractError,
+  type RemoteControlPlaneCapabilityV1,
   type RemoteControlRegistrationV1,
 } from "./remote-control-contract.js";
 import type {
@@ -25,12 +26,14 @@ export interface RemoteRegistrationCreateRequestV1 {
   remotePrincipalId: string;
   allowedMutationActions: OperatorMutationActionV1[];
   allowedReadOnlyCapabilities: OperatorReadOnlyCapabilityV1[];
+  allowedControlCapabilities?: RemoteControlPlaneCapabilityV1[];
 }
 
 export interface RemoteRegistrationUpdateRequestV1 {
   expectedRevision: number;
   allowedMutationActions: OperatorMutationActionV1[];
   allowedReadOnlyCapabilities: OperatorReadOnlyCapabilityV1[];
+  allowedControlCapabilities?: RemoteControlPlaneCapabilityV1[];
 }
 
 export interface RemoteRegistrationRevokeRequestV1 {
@@ -48,6 +51,7 @@ export interface RemoteRegistrationPublicViewV1 {
   revokedAt?: string;
   allowedMutationActions: OperatorMutationActionV1[];
   allowedReadOnlyCapabilities: OperatorReadOnlyCapabilityV1[];
+  allowedControlCapabilities: RemoteControlPlaneCapabilityV1[];
 }
 
 export interface RemoteRegistrationStoreOptions {
@@ -89,6 +93,7 @@ function publicView(registration: RemoteControlRegistrationV1): RemoteRegistrati
     ...(registration.revokedAt ? { revokedAt: registration.revokedAt } : {}),
     allowedMutationActions: [...registration.allowedMutationActions],
     allowedReadOnlyCapabilities: [...registration.allowedReadOnlyCapabilities],
+    allowedControlCapabilities: [...(registration.allowedControlCapabilities ?? [])],
   };
 }
 
@@ -230,6 +235,7 @@ export class RemoteRegistrationStore {
         createdAt: this.nowIso(),
         allowedMutationActions: request.allowedMutationActions,
         allowedReadOnlyCapabilities: request.allowedReadOnlyCapabilities,
+        allowedControlCapabilities: request.allowedControlCapabilities ?? [],
       });
       if (snapshot.registrations.some((item) => item.registrationId === registration.registrationId)) {
         throw new RemoteRegistrationStoreError("remote registration id already exists", "registration_conflict");
@@ -263,6 +269,7 @@ export class RemoteRegistrationStore {
         revision: current.revision + 1,
         allowedMutationActions: request.allowedMutationActions,
         allowedReadOnlyCapabilities: request.allowedReadOnlyCapabilities,
+        allowedControlCapabilities: request.allowedControlCapabilities ?? [],
       });
       snapshot.registrations[index] = next;
       await this.writeSnapshot(snapshot);
