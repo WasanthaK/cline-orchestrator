@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 Branch: `phase-1/bootstrap`
 
 ## Canonical rules
@@ -40,7 +40,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A complete, CI `#811`; core CR1–CR3 single-machine completion/review proof complete; 12B next |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12B complete; latest CI `#851` attempt 2; distributed transport/writes remain disabled |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -174,18 +174,32 @@ Implemented `src/distributed-control-contract.ts`:
 
 Evidence: contract `d68a665291b974706348d4bb9ed9de50774e2385`; tests `f7fd7d2979f861ff270c072e83ba36047d49f82b`; CI `#811` / `36365596173` passed typecheck + full suite.
 
-## Slice 12B — Durable machine registration + workspace placement store — NEXT
+## Slice 12B — Durable machine registration + workspace placement store — COMPLETE
+
+Implemented controller-local durable distributed registry state without execution authority:
+
+- `src/distributed-registration-store.ts` persists opaque machine registrations with `identity_only` authority, exact expected-revision updates, terminal revocation, atomic replacement and restrictive `0600` file creation;
+- registration state fails closed on malformed records, duplicate registration IDs, multiple active registrations for one machine, unsupported capabilities, request-field widening and unsupported top-level persisted fields;
+- `src/distributed-placement-store.ts` persists opaque workspace placements with `routing_only` authority and derives machine identity only from a current exact-revision machine registration;
+- placement create/update rejects missing, revoked or revision-stale registrations; update can deliberately rebind a placement to a newer current registration revision or another current machine registration without granting execution authority;
+- placement create/list/get/update/disable use exact opaque identities and monotonic revisions; disablement is terminal for that placement while permitting a later distinct active placement for the same opaque workspace;
+- placement state fails closed on malformed records, duplicate placement IDs, multiple active placements for one workspace, request-field widening and unsupported top-level persisted fields;
+- both stores use the shared atomic-write primitive with restrictive persistence and contain no network endpoint, credential, workspace filesystem path, Safety Plan, command payload, Hub token, writer lease or release authority;
+- 12B remains registry/state only: no cross-machine network connection, no liveness authority, no placement-aware execution dispatch and no distributed writer execution.
+
+Evidence: machine registration store `8d48992d1a30fbc9f7cd108a54008729a26b9391`, CI `#847` / `36442499050` passed typecheck + full suite; placement store `69ebe3ccd290c723bda0e2c5dcc4a12d22f075ad`; placement regression tests `364ca98e970a1c472a816ca7f695871cda7b00d6`; CI `#851` / `36498752454` attempt 2 passed typecheck + full suite unchanged after the first attempt exposed one unrelated timing-sensitive existing completion-event assertion.
+
+## Slice 12C — Authenticated machine transport + liveness contract — NEXT
 
 Planned bounded scope:
 
-- machine-local/controller-side durable store for opaque machine registrations and workspace placements;
-- atomic replacement, restrictive permissions, monotonic revision + exact expected-revision mutation;
-- explicit create/list/get/update/revoke/disable boundaries only;
-- fail closed on malformed, duplicate or ambiguous state;
-- no network endpoints, credentials, workspace filesystem paths, Safety Plans, command payloads, Hub tokens or release authority in distributed registry state;
-- 12B remains registry/state only: no cross-machine network connection and no distributed writer execution.
+- define authenticated machine-to-controller transport identity and liveness evidence without converting transport possession or heartbeat status into task authority;
+- bind all transport observations to exact machine registration identity/revision and fail closed on revocation or revision drift;
+- expose only bounded distributed status/candidate-coordination surfaces already admitted by the M12A capability contract;
+- keep workspace filesystem paths, Safety Plans, command payloads, Hub credentials/tokens, local writer leases and release authority off the transport;
+- keep distributed writer execution disabled; 12C must not dispatch or execute cross-machine writes.
 
-Later M12 slices must separately introduce authenticated machine transport, liveness, placement-aware scheduling, and a reviewed distributed fencing/consensus mechanism before any multi-machine writer execution is enabled.
+Later M12 slices must separately introduce placement-aware scheduling and a reviewed distributed fencing/consensus mechanism before any multi-machine writer execution is enabled.
 
 ---
 
@@ -209,8 +223,8 @@ Later M12 slices must separately introduce authenticated machine transport, live
 | Remote control software boundary | Complete through M11H |
 | External remote listener/relay/tunnel proof | Deferred / disabled / explicit-authorization gate |
 | Distributed identity/placement/assignment contract | Complete — M12A / CI `#811` |
-| Durable distributed registration/placement store | Next — M12B |
-| Distributed network transport | Disabled — later M12 slice |
+| Durable distributed registration/placement store | Complete — M12B / CI `#851` attempt 2 |
+| Distributed network transport | Disabled — M12C next |
 | Distributed writer execution | Disabled pending distributed fencing |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
@@ -251,9 +265,10 @@ Later M12 slices must separately introduce authenticated machine transport, live
 5. **COMPLETE — CR1 Cline completion review packet + read-only MCP surface.** CI `#822`.
 6. **COMPLETE — CR2 supervisor consumption + bounded correction handoff.** CI `#829`.
 7. **COMPLETE — CR3 real Cline client completion/review/correction proof.** CI `#840` + authorized Windows physical proof; external ChatGPT transport intentionally not claimed.
-8. **NEXT — M12B durable machine registration + workspace placement store.** State/registry only; no distributed network or writer execution.
-9. **DO NOT enable cross-machine writer execution** until an independently reviewed distributed fencing boundary exists in a later M12 slice.
-10. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+8. **COMPLETE — M12B durable machine registration + workspace placement store.** CI `#847` for registrations; CI `#851` attempt 2 for placements. State/registry only; no distributed network or writer execution.
+9. **NEXT — M12C authenticated machine transport + liveness contract.** Identity/status/coordination only; no cross-machine write dispatch or execution.
+10. **DO NOT enable cross-machine writer execution** until an independently reviewed distributed fencing boundary exists in a later M12 slice.
+11. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -272,9 +287,11 @@ Later M12 slices must separately introduce authenticated machine transport, live
 - 2026-09-28: CR1 completion review packet and `get_task_completion` read-only MCP surface completed; CI `#822` passed typecheck + full suite.
 - 2026-09-28: CR2 completion packet → advisory supervisor review → durable decision/journal → trusted bounded repair handoff completed; prompt-injection and failed-handoff regression coverage passed in CI `#829`.
 - 2026-09-28: CR3 guarded physical proof added and CI `#840` passed. The authorized Windows proof then passed twice against real Cline execution in an isolated disposable workspace/Hub, including automatic completion capture, one bounded supervisor repair handoff, second completion and advisory pass. External ChatGPT transport remains a separate unproven M11 physical boundary.
+- 2026-09-29: M12B durable machine registration store completed in `8d48992d1a30fbc9f7cd108a54008729a26b9391`; CI `#847` passed typecheck + full suite.
+- 2026-09-29: M12B durable routing-only workspace placement store completed in `69ebe3ccd290c723bda0e2c5dcc4a12d22f075ad` with regression tests in `364ca98e970a1c472a816ca7f695871cda7b00d6`; CI `#851` attempt 2 passed typecheck + full suite unchanged after an unrelated timing-sensitive existing test failed attempt 1. Distributed transport and writer execution remain disabled.
 
 ---
 
 # Current next step
 
-**M12B — durable machine registration + workspace placement store.** Implement only opaque distributed registry/placement state with atomic/restrictive persistence, exact expected-revision mutation, fail-closed validation and explicit create/list/get/update/revoke/disable boundaries. Do not add cross-machine transport, workspace paths, credentials, Safety Plans, command payloads, Hub tokens, distributed writer execution or release authority in this slice.
+**M12C — authenticated machine transport + liveness contract.** Define only transport identity, revocation/revision binding, bounded liveness/status evidence and the already-admitted M12A coordination capabilities. Do not add cross-machine write dispatch/execution, workspace paths, Safety Plans, command payloads, Hub credentials/tokens, local writer-lease authority or release authority. Distributed writer execution remains disabled pending a separately reviewed distributed fencing boundary.
