@@ -100,7 +100,7 @@ test("M12K renewal-aware guard advances exact claim state without changing gener
   );
 });
 
-test("M12K lifecycle renews through the same guard and remains authority-free", async () => {
+test("M12N lifecycle renews same candidate before same-generation fence and remains authority-free", async () => {
   const value = await fixture();
   let scheduled: (() => void) | undefined;
   const lifecycle = new DistributedFenceLifecycle(value.guard, {
@@ -112,23 +112,37 @@ test("M12K lifecycle renews through the same guard and remains authority-free", 
     }) as typeof setTimeout,
     clearTimeoutFn: (() => undefined) as typeof clearTimeout,
   });
-  const before = lifecycle.currentClaim();
+  const beforeClaim = lifecycle.currentClaim();
+  const beforeAssignment = lifecycle.currentAssignment();
   lifecycle.start();
   assert.ok(scheduled);
 
   value.setNow(new Date("2026-09-29T10:30:05.000Z"));
   scheduled!();
-  await settle(() => lifecycle.currentClaim().issuedAt !== before.issuedAt);
-  const after = lifecycle.currentClaim();
-  assert.equal(after.generation, before.generation);
-  assert.equal(after.fenceId, before.fenceId);
+  await settle(() => lifecycle.currentClaim().issuedAt !== beforeClaim.issuedAt);
+  const afterClaim = lifecycle.currentClaim();
+  const afterAssignment = lifecycle.currentAssignment();
+
+  assert.equal(afterAssignment.assignmentId, beforeAssignment.assignmentId);
+  assert.equal(afterAssignment.taskId, beforeAssignment.taskId);
+  assert.equal(afterAssignment.workspaceId, beforeAssignment.workspaceId);
+  assert.equal(afterAssignment.machineId, beforeAssignment.machineId);
+  assert.equal(afterAssignment.machineRegistrationId, beforeAssignment.machineRegistrationId);
+  assert.equal(afterAssignment.machineRegistrationRevision, beforeAssignment.machineRegistrationRevision);
+  assert.equal(afterAssignment.placementId, beforeAssignment.placementId);
+  assert.equal(afterAssignment.placementRevision, beforeAssignment.placementRevision);
+  assert.ok(Date.parse(afterAssignment.expiresAt) > Date.parse(beforeAssignment.expiresAt));
+  assert.equal(afterClaim.generation, beforeClaim.generation);
+  assert.equal(afterClaim.fenceId, beforeClaim.fenceId);
+  assert.ok(Date.parse(afterClaim.expiresAt) > Date.parse(beforeClaim.expiresAt));
   assert.equal(lifecycle.signal.aborted, false);
+  assert.equal(DISTRIBUTED_FENCE_LIFECYCLE_CONTRACT.candidateRenewedBeforeFence, true);
   assert.equal(DISTRIBUTED_FENCE_LIFECYCLE_CONTRACT.renewalGrantsAuthority, false);
-  assert.equal(DISTRIBUTED_FENCE_LIFECYCLE_CONTRACT.candidateRenewalIncluded, false);
+  assert.equal(DISTRIBUTED_FENCE_LIFECYCLE_CONTRACT.candidateRenewalIncluded, true);
   await lifecycle.stop();
 });
 
-test("M12K lifecycle fails closed when candidate authority disappears", async () => {
+test("M12N lifecycle fails closed when candidate authority disappears", async () => {
   const value = await fixture();
   let scheduled: (() => void) | undefined;
   const lifecycle = new DistributedFenceLifecycle(value.guard, {
@@ -151,7 +165,7 @@ test("M12K lifecycle fails closed when candidate authority disappears", async ()
   await lifecycle.stop();
 });
 
-test("M12K refuses a non-renewable generic distributed fence guard", () => {
+test("M12K/M12N refuses a non-renewable generic distributed fence guard", () => {
   const generic: DistributedWriterFenceGuard = {
     taskId: crypto.randomUUID(),
     workspaceId: crypto.randomUUID(),
