@@ -40,7 +40,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12D complete; latest CI `#863`; distributed write dispatch/execution remain disabled |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12E complete; latest CI `#869`; distributed write dispatch/execution remain disabled pending 12F |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -220,16 +220,32 @@ Implemented `src/distributed-candidate-router.ts` as a controller-side routing c
 
 Evidence: router `87b502fb9dd30522dc7a0c6c8a54cac72af928d6`; integration/regression tests `aa62aaa842b2ce01c5d639dc33cae48088d7744f`; CI `#863` / workflow `36521552004` passed typecheck + full suite.
 
-## Slice 12E — Distributed fencing / split-brain prevention boundary — NEXT
+## Slice 12E — Distributed fencing / split-brain prevention boundary — COMPLETE
+
+Implemented `src/distributed-fencing.ts` as an authority-free distributed fencing contract plus deterministic reference backend:
+
+- production fencing is defined around an independently linearizable compare-exchange backend keyed by opaque workspace ID; backend state must persist monotonic workspace generations across restart/failover and must never reset, reuse or skip generations;
+- a `fencing_only` claim binds the exact workspace, task, machine, machine-registration revision, placement revision and M12A candidate-assignment ID; it grants no task, filesystem, Safety Plan, local writer lease, credential, release or execution authority;
+- acquisition requires a current M12D candidate assignment and issues generation 1 only for a new workspace fence state; every replacement after expiry/revocation advances to `N+1` through compare-exchange;
+- one current live generation excludes another machine; after failover advances the generation, the stale machine cannot validate, renew or revoke its old claim even if it reconnects with the original evidence;
+- fence lifetime is bounded to at most 60 seconds and can never outlive the candidate assignment that authorized its creation; candidate/placement/registration/liveness invalidation makes the fence unusable immediately through candidate revalidation;
+- renewal preserves the generation but advances exact backend state so the prior claim copy becomes stale; revocation clears the current holder while retaining the monotonic generation history for the next acquisition;
+- backend corruption, wrong workspace binding, generation rollback/reset, malformed authority flags and bounded compare-exchange contention fail closed;
+- `ReferenceLinearizableFenceBackend` is deliberately single-process proof infrastructure only. The contract explicitly records that no production distributed backend is configured and distributed write dispatch/execution remain disabled;
+- future write execution must independently compose current immutable task/Safety Plan/workspace-registry authority, a current local `WorkspaceWriterClaimV1`, and immediate revalidation of the current distributed fence at the target-machine write boundary. The distributed fence replaces none of those controls.
+
+Evidence: fencing contract/reference backend `61ce376d626c24f54471c171486d2c31b067de7d`; split-brain/failover regression tests `d017ca09156b3197adfd545b1ad4c288e45c3ee8`; CI `#869` / workflow `36523436303` passed typecheck + full suite.
+
+## Slice 12F — Production shared fencing backend + target write-boundary composition/proof — NEXT
 
 Planned bounded scope:
 
-- define an independently authoritative distributed fencing contract for each writable workspace so two machines cannot both retain valid writer authority during failover, reconnect or partition scenarios;
-- fencing generations/tokens must be monotonic, exact-workspace bound, non-reusable and independently revalidated at the target-machine write boundary;
-- stale machines, stale fence generations, expired/revoked authority, machine loss/rejoin and placement changes must fail closed and must not resurrect earlier writer authority;
-- the existing machine-local workspace lock store, local writer scheduler, placement state, liveness and candidate assignments remain insufficient by themselves and must not be reinterpreted as distributed fencing;
-- distributed fencing must compose with the existing immutable task/Safety Plan/workspace-registry authority and the current local fenced writer lease rather than replacing either;
-- 12E is a fencing contract/backend proof slice only. Cross-machine write dispatch/execution must remain disabled until the fencing boundary has independent CI and failure-mode proof.
+- select and implement a production-grade shared fencing backend whose compare-exchange is linearizable across independent controller/machine processes and whose monotonic generations survive process/machine restart;
+- keep backend credentials/configuration machine-local and outside model-facing task/distributed state;
+- compose current M12E fencing revalidation with current target-machine task/Safety Plan/workspace-registry authority and the existing local fenced writer lease immediately before every write-capable side effect;
+- prove partition/failover/rejoin behavior with independent processes so an old generation cannot write after a newer generation is committed;
+- do not expose a raw public listener or add external transport/network mutations without the separately gated authorization already required by M11/M12;
+- cross-machine write dispatch/execution stays disabled until 12F backend + write-boundary failure-mode proof is complete.
 
 ---
 
@@ -256,9 +272,10 @@ Planned bounded scope:
 | Durable distributed registration/placement store | Complete — M12B / CI `#851` attempt 2 |
 | Authenticated distributed machine transport/liveness contract | Complete — M12C / CI `#857`; controller-side only, no network listener |
 | Placement-aware distributed candidate routing | Complete — M12D / CI `#863`; coordination-only, no command delivery or task execution |
+| Distributed fencing contract / split-brain semantics | Complete — M12E / CI `#869`; reference backend only, no production distributed backend |
+| Production shared fencing backend + target write-boundary composition | NEXT — M12F |
 | Distributed network listener/adapter | Disabled — later M12 slice / external exposure remains separately gated |
-| Distributed fencing / split-brain prevention | NEXT — M12E |
-| Distributed writer execution | Disabled pending distributed fencing |
+| Distributed writer execution | Disabled pending M12F production fencing/write-boundary proof |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
 | Push/merge/deploy authority | Disabled — M15 |
@@ -281,12 +298,13 @@ Planned bounded scope:
 12. External exposure/physical remote proof requires explicit user authorization immediately before any listener/relay/tunnel/network mutation and must use a reviewed secure transport; no raw public bind is acceptable.
 13. Runtime recovery must remain narrowly classified and bounded. It must not retry unknown side-effect failures or use recovery as authority expansion.
 14. No M12 routing/placement/assignment artifact may become a substitute for target-machine task/Safety Plan/workspace-registry revalidation.
-15. Cross-machine writes remain disabled until distributed fencing is designed, reviewed and CI/physical-failure proven.
+15. Cross-machine writes remain disabled until the M12E fencing contract is backed by a production-grade shared linearizable backend and composed/proven at the target write boundary in M12F.
 16. Cline completion prose is useful reviewer context but is never independent proof; contradictions must resolve in favor of trusted captured evidence or human review.
 17. A supervisor repair instruction may reuse only the existing immutable task authority. Any required scope expansion must stop for a fresh Safety Preview/human decision.
 18. Completion-review journal records are evidence only. They do not grant execution or completion authority, and a failed repair handoff must remain visibly failed rather than being silently retried outside trusted task continuation.
 19. CR3 proves the real local Cline completion/review/correction path with a deterministic local reviewer; it does not prove external ChatGPT transport or grant remote/local release authority.
-20. M12D candidate selection is coordination evidence only; the selected machine must still satisfy later fencing plus target-machine task/Safety Plan/workspace-registry and local writer-lease checks before any future write execution.
+20. M12D candidate selection is coordination evidence only; the selected machine must still satisfy M12E/M12F fencing plus target-machine task/Safety Plan/workspace-registry and local writer-lease checks before any future write execution.
+21. `ReferenceLinearizableFenceBackend` is a deterministic single-process proof backend only; using it as cross-process or cross-machine fencing would violate the M12E contract.
 
 ---
 
@@ -302,9 +320,10 @@ Planned bounded scope:
 8. **COMPLETE — M12B durable machine registration + workspace placement store.** CI `#847` for registrations; CI `#851` attempt 2 for placements. State/registry only; no distributed network or writer execution.
 9. **COMPLETE — M12C authenticated machine transport + liveness contract.** CI `#857`; controller-local session/liveness gateway only, no network listener and no distributed write dispatch/execution.
 10. **COMPLETE — M12D placement-aware candidate routing/scheduling.** CI `#863`; current placement + current registration + fresh liveness only, producing coordination-only candidate assignments with post-creation revalidation.
-11. **NEXT — M12E distributed fencing / split-brain prevention boundary.** Design and prove independent fencing before any cross-machine writer execution.
-12. **DO NOT enable cross-machine writer execution** until the independently reviewed M12E fencing boundary is complete and failure-proven.
-13. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+11. **COMPLETE — M12E distributed fencing / split-brain prevention contract.** CI `#869`; monotonic workspace generations and stale-owner failure modes proven with a deliberately single-process reference backend; write execution remains disabled.
+12. **NEXT — M12F production shared fencing backend + target write-boundary composition/proof.** Prove independent-process failover/rejoin safety before any distributed writer execution.
+13. **DO NOT enable cross-machine writer execution** until M12F proves a production-grade shared linearizable fencing backend composed with target-machine authority + local fenced writer lease checks.
+14. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -324,12 +343,13 @@ Planned bounded scope:
 - 2026-09-28: CR2 completion packet → advisory supervisor review → durable decision/journal → trusted bounded repair handoff completed; prompt-injection and failed-handoff regression coverage passed in CI `#829`.
 - 2026-09-28: CR3 guarded physical proof added and CI `#840` passed. The authorized Windows proof then passed twice against real Cline execution in an isolated disposable workspace/Hub, including automatic completion capture, one bounded supervisor repair handoff, second completion and advisory pass. External ChatGPT transport remains a separate unproven M11 physical boundary.
 - 2026-09-29: M12B durable machine registration store completed in `8d48992d1a30fbc9f7cd108a54008729a26b9391`; CI `#847` passed typecheck + full suite.
-- 2026-09-29: M12B durable routing-only workspace placement store completed in `69ebe3ccd290c723bda0e2c5dcc4a12d22f075ad` with regression tests in `364ca98e970a1c472a816ca7f695871cda7b00d6`; CI `#851` attempt 2 passed typecheck + full suite unchanged after an unrelated timing-sensitive existing test failed attempt 1. Distributed transport and writer execution remain disabled.
+- 2026-09-29: M12B durable routing-only workspace placement store completed in `69ebe3ccd290c723bda0e2c5dcc4a12d22f075ad` with regression tests in `364ca98e970a1c472a816ca7f695871cda7b00d6`; CI `#851` attempt 2 passed typecheck + full suite unchanged after an unrelated timing-sensitive existing completion-event assertion failed attempt 1. Distributed transport and writer execution remain disabled.
 - 2026-09-29: M12C controller-local authenticated machine transport/liveness contract completed in `fa81ab281e7fc0f326f153f059ddd12f1e4d3245`, with regression tests in `3efc4b45f852cb7f116d8698009e59898cef777d`; CI `#857` / `36500722073` passed typecheck + full suite. No network listener or distributed write dispatch/execution was introduced.
 - 2026-09-29: M12D placement-aware candidate router completed in `87b502fb9dd30522dc7a0c6c8a54cac72af928d6`, with integration/regression tests in `aa62aaa842b2ce01c5d639dc33cae48088d7744f`; CI `#863` / `36521552004` passed typecheck + full suite. Candidate assignments remain coordination-only and distributed write dispatch/execution remain disabled.
+- 2026-09-29: M12E distributed fencing contract/reference backend completed in `61ce376d626c24f54471c171486d2c31b067de7d`, with split-brain/failover regression tests in `d017ca09156b3197adfd545b1ad4c288e45c3ee8`; CI `#869` / `36523436303` passed typecheck + full suite. The reference backend is intentionally single-process only; production distributed fencing and writer execution remain disabled pending M12F.
 
 ---
 
 # Current next step
 
-**M12E — distributed fencing / split-brain prevention boundary.** Design and prove an independent monotonic fencing mechanism that composes with current task/Safety Plan/workspace-registry authority and local fenced writer leases. Do not enable cross-machine command delivery or write execution merely because routing selected a live candidate; stale/rejoined machines and stale fence generations must fail closed.
+**M12F — production shared fencing backend + target write-boundary composition/proof.** Implement a genuinely shared linearizable fencing backend whose monotonic workspace generations survive independent process/machine restarts, then compose current distributed-fence validation with current target-machine task/Safety Plan/workspace-registry authority and the existing local fenced writer lease immediately before write-capable side effects. Prove stale-generation failure under independent-process failover/rejoin. Do not enable cross-machine command delivery/write execution before that proof, and do not perform external listener/tunnel/DNS/firewall/credential/network mutations without the separate immediate authorization gate.
