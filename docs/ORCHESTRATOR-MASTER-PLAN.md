@@ -40,7 +40,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12B complete; latest CI `#851` attempt 2; distributed transport/writes remain disabled |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12C complete; latest CI `#857`; distributed write dispatch/execution remain disabled |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -189,17 +189,33 @@ Implemented controller-local durable distributed registry state without executio
 
 Evidence: machine registration store `8d48992d1a30fbc9f7cd108a54008729a26b9391`, CI `#847` / `36442499050` passed typecheck + full suite; placement store `69ebe3ccd290c723bda0e2c5dcc4a12d22f075ad`; placement regression tests `364ca98e970a1c472a816ca7f695871cda7b00d6`; CI `#851` / `36498752454` attempt 2 passed typecheck + full suite unchanged after the first attempt exposed one unrelated timing-sensitive existing completion-event assertion.
 
-## Slice 12C — Authenticated machine transport + liveness contract — NEXT
+## Slice 12C — Authenticated machine transport + liveness contract — COMPLETE
+
+Implemented `src/distributed-machine-transport.ts` as a controller-local authenticated machine identity/liveness boundary:
+
+- short-lived opaque bearer sessions are process-local, controller-issued, and bind the exact machine registration ID, machine ID and registration revision; session capability projection is limited to the M12A allowlist (`report_status`, `accept_writer_candidates`);
+- every authorized request revalidates the current durable registration and fails closed on revocation, registration revision drift, expiry, unsupported capability or replayed request ID;
+- transport claims and authorized-request evidence explicitly grant no task, filesystem, Safety Plan, writer-lease, credential or release authority;
+- status reports contain only bounded `ready` / `busy` / `draining` state plus whether the machine currently accepts writer candidates; candidate acceptance cannot be advertised unless that exact capability exists in the authenticated session;
+- liveness timestamps are controller-generated observation evidence only, are bound to the exact registration revision, cannot outlive the authenticating session, become stale on timeout, and are cleared immediately on explicit session revocation;
+- process restart does not resurrect liveness or bearer sessions, and registration revision drift makes prior liveness unusable rather than carrying it forward;
+- unexpected transport/session/payload fields and forged authority fail closed; no workspace paths, commands, Safety Plans, credentials, Hub tokens, writer leases or release authority are accepted into the 12C surface;
+- 12C intentionally includes no network listener and no remote session-issuance endpoint. It proves the authenticated controller-side contract/gateway only; external listener/relay exposure remains separately gated;
+- cross-machine write dispatch and distributed writer execution remain explicitly disabled.
+
+Evidence: transport contract/gateway `fa81ab281e7fc0f326f153f059ddd12f1e4d3245`; regression tests `3efc4b45f852cb7f116d8698009e59898cef777d`; CI `#857` / workflow `36500722073` passed typecheck + full suite.
+
+## Slice 12D — Placement-aware candidate routing/scheduling — NEXT
 
 Planned bounded scope:
 
-- define authenticated machine-to-controller transport identity and liveness evidence without converting transport possession or heartbeat status into task authority;
-- bind all transport observations to exact machine registration identity/revision and fail closed on revocation or revision drift;
-- expose only bounded distributed status/candidate-coordination surfaces already admitted by the M12A capability contract;
-- keep workspace filesystem paths, Safety Plans, command payloads, Hub credentials/tokens, local writer leases and release authority off the transport;
-- keep distributed writer execution disabled; 12C must not dispatch or execute cross-machine writes.
+- combine only current workspace placement, exact current machine registration and fresh 12C liveness to select an eligible machine for one writer candidate;
+- create/validate the existing short-lived M12A writer-candidate assignment as coordination evidence only;
+- fail closed on stale/disabled placement, registration revision drift/revocation, stale/unknown liveness, capability mismatch or assignment expiry;
+- candidate routing must not carry workspace filesystem paths, Safety Plans, command payloads, credentials, Hub tokens, local writer leases or release authority;
+- no network command delivery and no task execution in 12D; distributed write dispatch/execution remain disabled.
 
-Later M12 slices must separately introduce placement-aware scheduling and a reviewed distributed fencing/consensus mechanism before any multi-machine writer execution is enabled.
+A later M12 slice must independently design/review/prove the distributed fencing/consensus boundary before any multi-machine writer execution is enabled.
 
 ---
 
@@ -224,7 +240,8 @@ Later M12 slices must separately introduce placement-aware scheduling and a revi
 | External remote listener/relay/tunnel proof | Deferred / disabled / explicit-authorization gate |
 | Distributed identity/placement/assignment contract | Complete — M12A / CI `#811` |
 | Durable distributed registration/placement store | Complete — M12B / CI `#851` attempt 2 |
-| Distributed network transport | Disabled — M12C next |
+| Authenticated distributed machine transport/liveness contract | Complete — M12C / CI `#857`; controller-side only, no network listener |
+| Distributed network listener/adapter | Disabled — later M12 slice / external exposure remains separately gated |
 | Distributed writer execution | Disabled pending distributed fencing |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
@@ -266,9 +283,10 @@ Later M12 slices must separately introduce placement-aware scheduling and a revi
 6. **COMPLETE — CR2 supervisor consumption + bounded correction handoff.** CI `#829`.
 7. **COMPLETE — CR3 real Cline client completion/review/correction proof.** CI `#840` + authorized Windows physical proof; external ChatGPT transport intentionally not claimed.
 8. **COMPLETE — M12B durable machine registration + workspace placement store.** CI `#847` for registrations; CI `#851` attempt 2 for placements. State/registry only; no distributed network or writer execution.
-9. **NEXT — M12C authenticated machine transport + liveness contract.** Identity/status/coordination only; no cross-machine write dispatch or execution.
-10. **DO NOT enable cross-machine writer execution** until an independently reviewed distributed fencing boundary exists in a later M12 slice.
-11. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+9. **COMPLETE — M12C authenticated machine transport + liveness contract.** CI `#857`; controller-local session/liveness gateway only, no network listener and no distributed write dispatch/execution.
+10. **NEXT — M12D placement-aware candidate routing/scheduling.** Select and bind eligible routing candidates only; no command delivery or task execution.
+11. **DO NOT enable cross-machine writer execution** until an independently reviewed distributed fencing boundary exists in a later M12 slice.
+12. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -289,9 +307,10 @@ Later M12 slices must separately introduce placement-aware scheduling and a revi
 - 2026-09-28: CR3 guarded physical proof added and CI `#840` passed. The authorized Windows proof then passed twice against real Cline execution in an isolated disposable workspace/Hub, including automatic completion capture, one bounded supervisor repair handoff, second completion and advisory pass. External ChatGPT transport remains a separate unproven M11 physical boundary.
 - 2026-09-29: M12B durable machine registration store completed in `8d48992d1a30fbc9f7cd108a54008729a26b9391`; CI `#847` passed typecheck + full suite.
 - 2026-09-29: M12B durable routing-only workspace placement store completed in `69ebe3ccd290c723bda0e2c5dcc4a12d22f075ad` with regression tests in `364ca98e970a1c472a816ca7f695871cda7b00d6`; CI `#851` attempt 2 passed typecheck + full suite unchanged after an unrelated timing-sensitive existing test failed attempt 1. Distributed transport and writer execution remain disabled.
+- 2026-09-29: M12C controller-local authenticated machine transport/liveness contract completed in `fa81ab281e7fc0f326f153f059ddd12f1e4d3245`, with regression tests in `3efc4b45f852cb7f116d8698009e59898cef777d`; CI `#857` / `36500722073` passed typecheck + full suite. No network listener or distributed write dispatch/execution was introduced.
 
 ---
 
 # Current next step
 
-**M12C — authenticated machine transport + liveness contract.** Define only transport identity, revocation/revision binding, bounded liveness/status evidence and the already-admitted M12A coordination capabilities. Do not add cross-machine write dispatch/execution, workspace paths, Safety Plans, command payloads, Hub credentials/tokens, local writer-lease authority or release authority. Distributed writer execution remains disabled pending a separately reviewed distributed fencing boundary.
+**M12D — placement-aware candidate routing/scheduling.** Combine only current routing placement, exact current registration and fresh liveness to select/create bounded M12A candidate assignments. Do not add network command delivery, task execution, workspace paths, Safety Plans, command payloads, Hub credentials/tokens, local writer-lease authority or release authority. Distributed writer execution remains disabled pending a separately reviewed distributed fencing boundary.
