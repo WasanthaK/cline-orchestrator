@@ -10,6 +10,7 @@ import type {
   ClineRuntimeCreateRequest,
   ClineRuntimeFactory,
 } from "./cline-runtime.js";
+import type { DistributedWriterCandidateAssignmentV1 } from "./distributed-control-contract.js";
 import type { DistributedFenceClaimV1 } from "./distributed-fencing.js";
 import {
   DistributedTargetRuntimeStartError,
@@ -145,23 +146,50 @@ class TestFence implements DistributedWriterFenceGuard {
 
 class RenewableTestFence extends TestFence {
   private claimValue: DistributedFenceClaimV1;
+  private assignmentValue: DistributedWriterCandidateAssignmentV1;
   failRenewal = false;
+  failCandidateRenewal = false;
   renewCount = 0;
+  candidateRenewCount = 0;
 
   constructor(taskId: string, workspaceId: string) {
     super(taskId, workspaceId);
     const issuedAt = new Date();
+    const machineId = crypto.randomUUID();
+    const machineRegistrationId = crypto.randomUUID();
+    const placementId = crypto.randomUUID();
+    const assignmentId = crypto.randomUUID();
+    this.assignmentValue = {
+      schemaVersion: 1,
+      assignmentId,
+      taskId,
+      workspaceId,
+      machineId,
+      machineRegistrationId,
+      machineRegistrationRevision: 1,
+      placementId,
+      placementRevision: 1,
+      issuedAt: issuedAt.toISOString(),
+      expiresAt: new Date(issuedAt.getTime() + 120_000).toISOString(),
+      authority: "coordination_only",
+      grantsTaskAuthority: false,
+      grantsFilesystemAuthority: false,
+      grantsSafetyPlanAuthority: false,
+      grantsWriterLeaseAuthority: false,
+      grantsCredentialAuthority: false,
+      grantsReleaseAuthority: false,
+    };
     this.claimValue = {
       schemaVersion: 1,
       fenceId: crypto.randomUUID(),
       workspaceId,
       taskId,
-      machineId: crypto.randomUUID(),
-      machineRegistrationId: crypto.randomUUID(),
+      machineId,
+      machineRegistrationId,
       machineRegistrationRevision: 1,
-      placementId: crypto.randomUUID(),
+      placementId,
       placementRevision: 1,
-      candidateAssignmentId: crypto.randomUUID(),
+      candidateAssignmentId: assignmentId,
       generation: 1,
       issuedAt: issuedAt.toISOString(),
       expiresAt: new Date(issuedAt.getTime() + 10_000).toISOString(),
@@ -179,9 +207,25 @@ class RenewableTestFence extends TestFence {
     return structuredClone(this.claimValue);
   }
 
+  currentAssignment(): DistributedWriterCandidateAssignmentV1 {
+    return structuredClone(this.assignmentValue);
+  }
+
+  async renewCandidate(ttlMs: number): Promise<DistributedWriterCandidateAssignmentV1> {
+    this.candidateRenewCount += 1;
+    if (this.failCandidateRenewal) throw new Error("candidate no longer current");
+    const issuedAt = new Date();
+    this.assignmentValue = {
+      ...this.assignmentValue,
+      issuedAt: issuedAt.toISOString(),
+      expiresAt: new Date(issuedAt.getTime() + ttlMs).toISOString(),
+    };
+    return this.currentAssignment();
+  }
+
   async renew(ttlMs: number): Promise<DistributedFenceClaimV1> {
     this.renewCount += 1;
-    if (this.failRenewal) throw new Error("candidate no longer current");
+    if (this.failRenewal) throw new Error("distributed fence no longer current");
     const issuedAt = new Date();
     this.claimValue = {
       ...this.claimValue,
@@ -362,8 +406,8 @@ test("M12I local writer lease loss actively aborts an in-flight Cline run", asyn
   }
 });
 
-test("M12L distributed fence renewal loss actively aborts an in-flight Cline run", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "m12l-fence-renewal-loss-"));
+test("M12L/M12N distributed fence renewal loss actively aborts an in-flight Cline run", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "m12n-fence-renewal-loss-"));
   try {
     const task = await saveTask(root);
     const lease = new TestLease(task);
@@ -389,10 +433,50 @@ test("M12L distributed fence renewal loss actively aborts an in-flight Cline run
     scheduled!();
 
     const result = await startPromise;
+    assert.equal(fence.candidateRenewCount, 1);
     assert.equal(fence.renewCount, 1);
     assert.equal(runtime.abortCount, 1);
     assert.equal(result.status, "aborted");
-    assert.equal(lease.signal.aborted, false, "distributed fence loss must not masquerade as local lease loss");
+    assert.equal(lease.signal.aborted, false, "distributed renewal loss must not masquerade as local lease loss");
+    const persisted = await new TaskStore(root).load(task.id);
+    assert.equal(persisted.status, "aborted");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("M12N candidate renewal loss aborts before fence renewal is attempted", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "m12n-candidate-renewal-loss-"));
+  try {
+    const task = await saveTask(root);
+    const lease = new TestLease(task);
+    const fence = new RenewableTestFence(task.id, task.workspaceId!);
+    const runtime = new FakeRuntime("wait");
+    const factory = new FakeFactory(runtime);
+    let scheduled: (() => void) | undefined;
+    const startPromise = starter(task, factory, {
+      renewTtlMs: 10_000,
+      renewIntervalMs: 2_000,
+      setTimeoutFn: ((callback: () => void) => {
+        scheduled = callback;
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutFn: (() => undefined) as typeof clearTimeout,
+    }).start(contextFor(task, lease, fence));
+
+    while (!runtime.sendPrompt) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.ok(scheduled, "renewal lifecycle should schedule while the run is active");
+    fence.failCandidateRenewal = true;
+    scheduled!();
+
+    const result = await startPromise;
+    assert.equal(fence.candidateRenewCount, 1);
+    assert.equal(fence.renewCount, 0, "fence renewal must not run after candidate renewal fails");
+    assert.equal(runtime.abortCount, 1);
+    assert.equal(result.status, "aborted");
+    assert.equal(lease.signal.aborted, false, "candidate renewal loss must not masquerade as local lease loss");
     const persisted = await new TaskStore(root).load(task.id);
     assert.equal(persisted.status, "aborted");
   } finally {
