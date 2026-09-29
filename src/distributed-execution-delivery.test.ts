@@ -182,6 +182,10 @@ function handoffContext(bundle: DistributedExecutionDeliveryBundleV1): Distribut
   };
 }
 
+function causeCode(error: DistributedExecutionDeliveryError): string | undefined {
+  return (error.cause as { code?: string } | undefined)?.code;
+}
+
 test("M12C-authenticated target pull returns only exact authority-free execution evidence", async () => {
   const { token, controller } = await controllerFixture();
   const { dispatch, assignment, fence } = evidence();
@@ -193,7 +197,6 @@ test("M12C-authenticated target pull returns only exact authority-free execution
   assert.equal(bundle.transportRequest.sessionId, SESSION_ID);
   assert.equal(bundle.transportRequest.capability, "accept_writer_candidates");
   assert.equal(bundle.transportRequest.machineId, MACHINE_ID);
-  assert.equal(bundle.dispatch, bundle.dispatch);
   assert.equal(bundle.authority, "transport_delivery_evidence_only");
   assert.equal(bundle.grantsTaskAuthority, false);
   assert.equal(bundle.grantsFilesystemAuthority, false);
@@ -358,7 +361,7 @@ test("M12H admission failure is terminal for delivery and never falls through to
     () => receiver.execute(bundle),
     (error: any) => error instanceof DistributedExecutionDeliveryError
       && error.code === "handoff_failed"
-      && error.cause?.code === "dispatch_replayed",
+      && causeCode(error) === "dispatch_replayed",
   );
   assert.equal(starterCalls, 0);
 });
@@ -394,6 +397,6 @@ test("M12I rejection remains terminal and is not converted into transport author
     () => receiver.execute(bundle),
     (error: any) => error instanceof DistributedExecutionDeliveryError
       && error.code === "runtime_start_failed"
-      && error.cause?.code === "fence_not_current",
+      && causeCode(error) === "fence_not_current",
   );
 });
