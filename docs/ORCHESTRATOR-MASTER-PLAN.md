@@ -42,7 +42,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12N complete; latest code CI `#959`; target-pull delivery, target-local execution, candidate/fence renewal and fail-safe abort are proven in-process; real cross-machine network transport/listener and restart/takeover remain disabled pending separately reviewed slices |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12O complete; latest code CI `#967`; target-pull delivery, target-local execution, candidate/fence renewal, fail-safe abort and restart no-resurrection are proven in-process; real cross-machine network transport/listener and any distributed takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -167,21 +167,21 @@ If candidate renewal fails, fence renewal is not attempted. Candidate or fence r
 
 Evidence: candidate-aware guard `6e7b72fe019a8b9e871cfa8abeed3d49859d14c4`; composition `295316402f208edb03bdcf0adbef8f1852ef05e0`; lifecycle proof `bb617585409499d95eae93e2b7e257c6b7635180`; runtime abort proof `88ca5fd01431af5309d7b5490ca2fe81e168ff1d`; deterministic fixture correction `dc3f64dbf4e429ad42ebd437f47dd9cd06a2bf1a`; final runtime contract `242fecb2abce935bdbf1ca6c615e4adc8168bdb8`; final CI `#959` / `36574342286` passed typecheck + full suite.
 
-## 12O — Restart / stale-coordination no-resurrection proof — NEXT / DEFINED
+## 12O — Restart / stale-coordination no-resurrection proof — COMPLETE
 
-Bounded software-only objective: prove that controller/target process restart cannot silently resume distributed target execution from old coordination evidence. This slice is a denial/proof boundary, **not** a takeover or recovery feature.
+`src/distributed-restart-safety.ts` records an authority-free restart-safety contract: restart creates no authority, consumed dispatches are not reusable, stale candidates/fences are not reusable, process-local handoff context is not reusable, prior runtime history is not eligible for fresh admission, and distributed takeover remains disabled.
 
-Required proof:
+`src/distributed-restart-safety.test.ts` proves existing trusted barriers still fail closed when process-local objects are recreated:
 
-- an already consumed M12G dispatch remains consumed after process restart;
-- expired/stale candidate state cannot be renewed or reused after restart;
-- expired/stale/superseded fence state cannot be renewed or reused after restart;
-- a durable task with any prior run/session history cannot re-enter M12H as a fresh distributed target task;
-- generic local restart/recovery paths must not bypass M12G replay, M12H fresh-task/no-takeover admission, M12I current authority/lease/fence checks or M12F per-write validation;
-- restart evidence itself grants no task/filesystem/Safety/lease/credential/release authority;
-- no listener, external transport, credential provisioning, controller push or release action is introduced.
+- M12G durable replay markers survive replay-store object/process recreation, so a consumed dispatch stays consumed;
+- an expired candidate cannot be renewed by a freshly constructed candidate lifecycle/router;
+- a superseded fence cannot be validated or renewed by a freshly constructed fence authority object;
+- a task with prior runtime history (`runCount > 0`) is rejected by M12H before M12G admission is consumed;
+- no restart path creates task/filesystem/Safety/lease/credential/release authority and no takeover/recovery/listener/network path is introduced.
 
-Any future distributed takeover/recovery flow must be a later separately reviewed trusted path with fresh authority and fencing; M12O must not create it implicitly.
+Initial hosted CI `#965` failed only at TypeScript fixture typing, before tests ran: the restart test supplied lightweight objects where the handoff constructor requires concrete `DistributedExecutionAdmissionGateway` and `DistributedFenceAuthority` types. The fixture was corrected without weakening production validation. Evidence: restart safety contract/test commit through PR merge head before correction; fixture correction `17232804c98b024fda620c45d210dcb3cb55a75d`; final CI `#967` / `36580291353` passed typecheck + full suite.
+
+Any future distributed takeover/recovery flow must be a later separately reviewed trusted path with fresh authority and fencing. M12O deliberately does not create one.
 
 ---
 
@@ -203,7 +203,8 @@ Any future distributed takeover/recovery flow must be a later separately reviewe
 | Authenticated target-pull delivery composition | Complete — M12J; process-local adapter/receiver only |
 | Fence renewal + fail-safe abort | Complete — M12K–M12L |
 | Candidate renewal + candidate→fence composition | Complete — M12M–M12N |
-| Restart no-resurrection proof | Next — M12O |
+| Restart no-resurrection proof | Complete — M12O; CI `#967` |
+| Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
 | Distributed network listener/adapter | Disabled / separately gated |
 | Controller-to-target network push | Disabled |
 | Real cross-machine production writer execution | Disabled; no real network transport is production-wired |
@@ -249,9 +250,9 @@ Any future distributed takeover/recovery flow must be a later separately reviewe
 5. **COMPLETE — M12A–M12F distributed identity/routing/fencing/write-boundary prerequisites.**
 6. **COMPLETE — M12G–M12J admission, target-local handoff/start and authenticated target-pull composition.**
 7. **COMPLETE — M12K–M12N fence/candidate renewal and fail-safe abort lifecycle.** Final CI `#959`.
-8. **NEXT — M12O restart / stale-coordination no-resurrection proof.** Software-only; no takeover authority and no network exposure.
-9. **STOP after M12O proof and plan update** before choosing any real network adapter or distributed takeover/recovery design.
-10. **DO NOT production-wire cross-machine delivery/execution** until a later explicitly reviewed secure transport slice preserves M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle and M12F immediate write fencing.
+8. **COMPLETE — M12O restart / stale-coordination no-resurrection proof.** Final CI `#967`.
+9. **STOP for review before defining the next Milestone 12 slice.** Any next step touching real network transport or distributed takeover/recovery must be explicitly bounded and reviewed first.
+10. **DO NOT production-wire cross-machine delivery/execution** until a later explicitly reviewed secure transport slice preserves M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
 11. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
@@ -267,9 +268,10 @@ Any future distributed takeover/recovery flow must be a later separately reviewe
 - 2026-09-29: M12L fence-renewal-loss runtime abort completed; CI `#939`.
 - 2026-09-29: M12M writer candidate renewal completed; CI `#943`.
 - 2026-09-29: M12N candidate→fence renewal composition and candidate-renewal-loss abort completed; final CI `#959`.
+- 2026-09-29: M12O restart/stale-coordination no-resurrection proof completed; initial CI `#965` exposed test-fixture typing only; correction `17232804c98b024fda620c45d210dcb3cb55a75d`; final CI `#967` green.
 
 ---
 
 # Current next step
 
-**M12O is the first unfinished item.** Implement only the bounded restart/no-resurrection proof described above. Do not add distributed takeover, real network transport, listeners, controller push, credential provisioning or release authority. After M12O passes hosted CI, update this plan and stop for review of the next Milestone 12 slice.
+**STOP for review.** M12O is complete. The next Milestone 12 slice is intentionally not yet defined. Do not add real network transport, listeners, controller push, distributed takeover/recovery, credential provisioning or release authority until the next bounded slice is explicitly reviewed.
