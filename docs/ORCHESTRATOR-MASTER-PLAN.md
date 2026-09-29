@@ -42,7 +42,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12O complete; 12P secure transport profile/server-identity prerequisite is NEXT; real cross-machine network I/O/listener and any distributed takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12P complete; latest code CI `#975`; secure target-pull profile/server identity is proven, but real cross-machine network I/O/listener and any distributed takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -183,23 +183,17 @@ Initial hosted CI `#965` failed only at TypeScript fixture typing, before tests 
 
 Any future distributed takeover/recovery flow must be a later separately reviewed trusted path with fresh authority and fencing. M12O deliberately does not create one.
 
-## 12P — Secure target-pull transport profile + controller server-identity prerequisite — NEXT / DEFINED
+## 12P — Secure target-pull transport profile + controller server-identity prerequisite — COMPLETE
 
-Objective: define the local, authority-free configuration contract that a later real target-pull network adapter must satisfy before it is permitted to connect to a controller. M12P is configuration validation only; it performs no network I/O and does not enable cross-machine execution.
+`src/distributed-secure-transport-profile.ts` defines a machine-local, authority-free profile that a future network adapter must satisfy before it can connect. The profile requires a canonical HTTPS controller origin, normal system-CA verification plus one to three canonical SHA-256 SPKI pins, bounded connection timeout and bounded response size. It rejects unknown fields and cannot contain bearer tokens, private keys, client certificates or executable/task authority material.
 
-Required contract/proof:
+The M12P production module performs validation only: it imports no HTTP/HTTPS/TLS/net/DNS client or server primitive, performs no DNS lookup/TLS handshake/request, opens no listener/socket and leaves `networkIoEnabled` fixed to `false`. All task/filesystem/Safety/local-lease/credential/release grant flags remain false; controller push and distributed takeover remain disabled.
 
-- controller base endpoint must be absolute HTTPS only, with no userinfo, query, fragment or caller-controlled path; later adapters must compose fixed reviewed routes from the validated origin;
-- controller/server authentication must require locally configured SHA-256 SPKI pinning in addition to normal TLS verification; allow a small bounded pin set for certificate/key rotation, never an unbounded trust list;
-- connection timeout and maximum response size must be locally bounded and validated before any later adapter can consume them;
-- the profile must contain no bearer token, password, private key, client certificate, task prompt, command, workspace path, Safety Plan, local lease, distributed fence secret, release instruction or other credential/execution material;
-- configuration is machine-local transport configuration only and must never become task/project/model-facing authority state;
-- exact-schema validation rejects unknown fields and malformed/duplicate pins fail closed;
-- all task/filesystem/Safety/local-lease/credential/release grants remain false;
-- no listener, socket connection, DNS lookup, TLS handshake, HTTP request, controller push, tunnel, firewall/DNS change, credential provisioning or external-network mutation is included;
-- M12G replay, M12H target-local re-entry, M12I start guards, M12N renewal lifecycle, M12O no-resurrection and M12F immediate write fencing remain unchanged and authoritative.
+Tests prove accepted canonical configuration plus fail-closed rejection of HTTP/non-canonical origins, userinfo/path/query/fragment injection, empty/duplicate/oversized/malformed pin sets, timeout/response bounds, weakened server authentication, network enablement, authority widening and credential-like unknown fields.
 
-Acceptance: hosted CI proves accepted and rejected profile shapes and confirms the implementation contains no network adapter/listener behavior. After M12P is green, update this plan and stop before defining any network-I/O adapter slice.
+Evidence: slice definition `a79151c047a7bf47bbeb3abadd3db1bc88530058`; production contract `3c5ca3ffac941d37b1c4c361e0472d3e2aea22eb`; proof `4cf5dd3faedea6afca7b925b267f09e18ff8aa9d`; CI `#975` / `36586351473` passed typecheck + full suite.
+
+M12P does not authorize a network adapter. Any slice that actually performs DNS/TLS/HTTP I/O, opens a listener, provisions credentials, changes firewall/DNS/port forwarding or connects machines remains separately reviewed/gated.
 
 ---
 
@@ -222,7 +216,7 @@ Acceptance: hosted CI proves accepted and rejected profile shapes and confirms t
 | Fence renewal + fail-safe abort | Complete — M12K–M12L |
 | Candidate renewal + candidate→fence composition | Complete — M12M–M12N |
 | Restart no-resurrection proof | Complete — M12O; CI `#967` |
-| Secure distributed transport profile/server identity | NEXT — M12P; validation only, no network I/O |
+| Secure distributed transport profile/server identity | Complete — M12P; CI `#975`; no network I/O |
 | Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
 | Distributed network listener/adapter | Disabled / separately gated |
 | Controller-to-target network push | Disabled |
@@ -271,8 +265,8 @@ Acceptance: hosted CI proves accepted and rejected profile shapes and confirms t
 6. **COMPLETE — M12G–M12J admission, target-local handoff/start and authenticated target-pull composition.**
 7. **COMPLETE — M12K–M12N fence/candidate renewal and fail-safe abort lifecycle.** Final CI `#959`.
 8. **COMPLETE — M12O restart / stale-coordination no-resurrection proof.** Final CI `#967`.
-9. **NEXT — M12P secure target-pull transport profile + controller server-identity prerequisite.** Configuration/schema validation only; no network I/O, listener, credentials or takeover.
-10. **STOP after M12P hosted CI + plan update** before defining any network-I/O adapter slice.
+9. **COMPLETE — M12P secure target-pull transport profile + controller server-identity prerequisite.** Final CI `#975`.
+10. **STOP for review before defining any network-I/O adapter slice.** M12P validates configuration only and grants no authorization to connect.
 11. **DO NOT production-wire cross-machine delivery/execution** until a later explicitly reviewed secure transport slice preserves M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
 12. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
@@ -290,10 +284,10 @@ Acceptance: hosted CI proves accepted and rejected profile shapes and confirms t
 - 2026-09-29: M12M writer candidate renewal completed; CI `#943`.
 - 2026-09-29: M12N candidate→fence renewal composition and candidate-renewal-loss abort completed; final CI `#959`.
 - 2026-09-29: M12O restart/stale-coordination no-resurrection proof completed; initial CI `#965` exposed test-fixture typing only; correction `17232804c98b024fda620c45d210dcb3cb55a75d`; final CI `#967` green.
-- 2026-09-29: M12P reviewed and defined as a software-only secure transport profile/server-identity prerequisite; no network I/O authorized or added.
+- 2026-09-29: M12P secure transport profile/server-identity prerequisite defined and implemented without network I/O; final CI `#975` green.
 
 ---
 
 # Current next step
 
-**M12P is the first unfinished item.** Implement only the bounded secure target-pull transport profile/server-identity validation described above. Do not add a network adapter, listener, DNS/TLS/HTTP connection, controller push, distributed takeover/recovery, credential provisioning or release authority. After M12P passes hosted CI, update this plan and stop for review.
+**STOP for review.** M12P is complete. The next Milestone 12 slice is intentionally not yet defined. Do not add DNS/TLS/HTTP network I/O, listeners, controller push, distributed takeover/recovery, credential provisioning or release authority until the next bounded slice is explicitly reviewed.
