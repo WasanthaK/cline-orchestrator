@@ -40,7 +40,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12G complete; latest CI `#899`; network delivery and distributed writer execution remain disabled pending a separately reviewed next slice |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12H complete; latest code CI `#914`; network delivery and distributed writer execution remain disabled pending a separately reviewed next slice |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -271,6 +271,23 @@ Implemented `src/distributed-execution-admission.ts` as an authority-free pre-ex
 
 Evidence: admission boundary `ca22b671aedfbb5ac0470d60486852510625d050`; regression tests `bd5ce0f0aa5a2f596d5ccbc06d809f983c6438f4`; CI `#899` / workflow `36538216117` passed typecheck + full suite.
 
+## Slice 12H — Admitted target-runtime handoff contract — COMPLETE
+
+Implemented `src/distributed-target-runtime-handoff.ts` as an in-process, target-local handoff boundary that consumes M12G admission evidence without starting a worker or adding transport:
+
+- the distributed dispatch still contributes only opaque identity/coordination evidence; it cannot provide a prompt, command, workspace path, Safety Plan, credential, writer lease, Hub token or release instruction;
+- the target resolves the workspace root only from its own current `WorkspaceRegistry`, loads the task from that workspace's local `TaskStore`, and checks the durable task binding against the current registry/profile before any handoff can be prepared;
+- deliberately narrowed Safety Plan `allowedPathPatterns` remain authoritative instead of being widened back to the workspace profile; current profile identity/revisions, protected paths, validation commands, worker profile and canonical workspace binding must still match;
+- only a fresh `created` task with no prior Cline session, run history or pending escalation is eligible. Interrupted-task recovery/takeover remains the existing separate trusted recovery path and cannot be implied by distributed admission;
+- before M12G admission is consumed, M12H requires current target-local durable task/Safety authority and the exact current local fenced writer lease for the same task/workspace/owner;
+- after one-shot M12G admission, the target constructs the already-proven M12F distributed fence guard, revalidates the current shared distributed fence, reloads the task from local durable state, and revalidates task authority plus the local lease again to close admission-time TOCTOU;
+- a concurrent local start/status/session transition after admission fails closed as `task_not_current` and no runtime context is returned;
+- the successful result is a process-local `DistributedTargetRuntimeHandoffContext` containing the target-loaded task plus the existing live `LeaseAwareHubSafetyOptions` (`lease`, current authority provider and distributed fence guard). It is deliberately not a transport payload and grants no authority itself;
+- M12H does not instantiate `LeaseAwareHubRuntimeFactory`, start `ClineRunner`, invoke an executor, open a listener, deliver a prompt/command or enable distributed writer execution. Any later runtime-start slice must consume this context through the existing lease-aware/M12F safety boundary rather than creating a parallel execution path;
+- regression coverage proves stale local authority rejection, wrong/replaced local lease rejection, one-shot admission failure, shared-fence drift rejection, post-admission authority TOCTOU rejection, target-local narrowed-scope loading, prior-runtime takeover rejection before dispatch consumption, and post-admission concurrent-start rejection.
+
+Evidence: initial handoff boundary `f53b49c732c0dde6278d62df5a1bc447ff0f8556`; core regression tests `1117a09ccbce33754982b2f0b5d63b0ba013c3ae`; narrowed-scope/takeover hardening `facbb036463fd7cb0ae5e43fa89438cbeb044810`; target-local loader proof `df8cb83d8a5579095a2720ddcc86ec1d82e0f5ce`; prior-runtime takeover proof `7d63aa8e46fa08c267f2422ebf7a2faf7fdc3ce5`; post-admission durable reload `b2924f2629c2f64135567111db4e81dc65c96c3f`; final TOCTOU regression `efeabe6a65100bae8e72bd1afc57e678cc7258bf`; CI `#914` / workflow `36540755746` passed typecheck + full suite.
+
 ---
 
 # Current capability snapshot
@@ -299,8 +316,9 @@ Evidence: admission boundary `ca22b671aedfbb5ac0470d60486852510625d050`; regress
 | Distributed fencing contract / split-brain semantics | Complete — M12E / CI `#869`; reference backend retained for deterministic single-process proof |
 | Production shared fencing backend + target write-boundary composition | Complete — M12F / CI `#892`; PostgreSQL shared backend + independent-process stale-generation proof |
 | Target execution admission / durable replay boundary | Complete — M12G / CI `#899`; no prompt/command delivery or worker execution |
+| Admitted target-runtime handoff contract | Complete — M12H / CI `#914`; process-local context only, no Cline start or transport |
 | Distributed network listener/adapter | Disabled — later M12 slice / external exposure remains separately gated |
-| Distributed writer execution | Disabled — M12G admits evidence only; no cross-machine execution path is production-wired |
+| Distributed writer execution | Disabled — M12H prepares local runtime context only; no cross-machine execution path is production-wired |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
 | Push/merge/deploy authority | Disabled — M15 |
@@ -332,6 +350,7 @@ Evidence: admission boundary `ca22b671aedfbb5ac0470d60486852510625d050`; regress
 21. `ReferenceLinearizableFenceBackend` remains a deterministic single-process proof backend only; using it as cross-process or cross-machine fencing would violate the M12E contract.
 22. `PostgresDistributedFenceBackend` is shared fencing infrastructure only. Database configuration/credentials remain machine-local and possession of a database-backed fence does not itself grant task, filesystem, Safety Plan, local writer-lease, credential, release or execution authority.
 23. An M12G dispatch/admission receipt is not an executable task and cannot carry prompt/command/path/Safety/credential/lease/release material. Any later executor must independently re-enter trusted target-machine task authority and the M12F write boundary rather than treating admission as permission to mutate.
+24. An M12H handoff context is process-local composition evidence only. It must never be serialized as a distributed authority token, and any later Cline start must use the target-loaded task plus the existing lease-aware runtime/M12F fence checks rather than trusting the dispatch or admission receipt as execution authority.
 
 ---
 
@@ -350,9 +369,10 @@ Evidence: admission boundary `ca22b671aedfbb5ac0470d60486852510625d050`; regress
 11. **COMPLETE — M12E distributed fencing / split-brain prevention contract.** CI `#869`; monotonic workspace generations and stale-owner failure modes proven with a deliberately single-process reference backend; write execution remains disabled.
 12. **COMPLETE — M12F production shared fencing backend + target write-boundary composition/proof.** PostgreSQL shared backend, independent-process durability/CAS proof, and stale-generation-before-editor proof passed in CI `#892`; distributed execution remains disabled.
 13. **COMPLETE — M12G target execution admission / durable replay boundary.** Exact target/evidence binding, stale-state rejection and restart-persistent single-use dispatch admission passed in CI `#899`; no prompt/command delivery, listener or worker execution was added.
-14. **STOP POINT — define/review the next bounded Milestone 12 slice before changing code.** M12G completion does not authorize network delivery, Cline start or cross-machine writer execution by itself.
-15. **DO NOT enable cross-machine writer execution** until a later explicitly reviewed slice wires an admitted request into the existing target-machine task/Safety/workspace authority + local fenced writer lease + M12F distributed fence boundary without widening authority.
-16. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+14. **COMPLETE — M12H admitted target-runtime handoff contract.** Target-local durable task reload, narrowed Safety Plan preservation, fresh-task/no-takeover rule, current local lease/authority revalidation, post-admission durable reload and M12F fence composition passed in CI `#914`; no Cline start, listener or distributed writer execution was added.
+15. **STOP POINT — define/review the next bounded Milestone 12 slice before changing code.** M12H completion does not authorize Cline start, network delivery or cross-machine writer execution by itself.
+16. **DO NOT enable cross-machine writer execution** until a later explicitly reviewed slice consumes M12H through the existing target-machine lease-aware runtime + M12F distributed fence boundary without widening authority.
+17. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -378,9 +398,10 @@ Evidence: admission boundary `ca22b671aedfbb5ac0470d60486852510625d050`; regress
 - 2026-09-29: M12E distributed fencing contract/reference backend completed in `61ce376d626c24f54471c171486d2c31b067de7d`, with split-brain/failover regression tests in `d017ca09156b3197adfd545b1ad4c288e45c3ee8`; CI `#869` / `36523436303` passed typecheck + full suite. The reference backend is intentionally single-process only; production distributed fencing and writer execution remain disabled pending M12F.
 - 2026-09-29: M12F production shared fencing backend and target write-boundary composition completed. PostgreSQL independent-process CAS/restart proof and stale-generation-before-editor failure-mode proof passed; final correction for `jsonb` key-order canonicalization is `f70037bac46d95bb66959a320aee94e86ac49cf0`; final CI `#892` / `36525707334` passed typecheck + full suite. Cross-machine dispatch/execution and all external network exposure remain disabled.
 - 2026-09-29: M12G target execution admission/replay boundary completed in `ca22b671aedfbb5ac0470d60486852510625d050`, with regression tests in `bd5ce0f0aa5a2f596d5ccbc06d809f983c6438f4`; CI `#899` / `36538216117` passed typecheck + full suite. The dispatch is opaque authority-free evidence only; no prompt/command delivery, listener, Cline start or distributed writer execution was introduced.
+- 2026-09-29: M12H admitted target-runtime handoff contract completed through `efeabe6a65100bae8e72bd1afc57e678cc7258bf`; CI `#914` / `36540755746` passed typecheck + full suite. The target now re-enters its own durable task/registry/Safety authority, current local writer lease and M12F distributed fence before producing a process-local runtime context, with a post-admission durable task reload that rejects concurrent local starts. No Cline start, command delivery, listener or distributed writer execution was introduced.
 
 ---
 
 # Current next step
 
-**M12G is complete. Stop before further implementation.** The next bounded Milestone 12 slice must be explicitly defined/reviewed before code changes. The natural next concern is how an admitted request is delivered to and consumed by the target runtime without allowing transport, dispatch or admission to become task authority. Any network listener/external exposure remains separately gated and requires explicit authorization immediately before that action; no raw public bind is acceptable.
+**M12H is complete. Stop before further implementation.** The next bounded Milestone 12 slice must be explicitly defined/reviewed before code changes. The natural next concern is whether and how the process-local M12H handoff may start the existing target-side lease-aware Hub runtime while preserving the fresh-task/no-takeover rule, revalidation immediately before runtime start, and M12F validation before every mutation. That next slice must still avoid adding a network listener or treating dispatch/admission/handoff evidence as task authority. Any network listener/external exposure remains separately gated and requires explicit authorization immediately before that action; no raw public bind is acceptable.
