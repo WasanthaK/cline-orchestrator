@@ -40,7 +40,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12E complete; latest CI `#869`; distributed write dispatch/execution remain disabled pending 12F |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12F complete; latest CI `#892`; distributed write dispatch/execution remain disabled pending a separately reviewed next slice |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -236,16 +236,23 @@ Implemented `src/distributed-fencing.ts` as an authority-free distributed fencin
 
 Evidence: fencing contract/reference backend `61ce376d626c24f54471c171486d2c31b067de7d`; split-brain/failover regression tests `d017ca09156b3197adfd545b1ad4c288e45c3ee8`; CI `#869` / workflow `36523436303` passed typecheck + full suite.
 
-## Slice 12F — Production shared fencing backend + target write-boundary composition/proof — NEXT
+## Slice 12F — Production shared fencing backend + target write-boundary composition/proof — COMPLETE
 
-Planned bounded scope:
+Implemented a PostgreSQL-backed shared fencing backend and composed distributed-fence revalidation into the existing target-machine Hub write boundary without enabling distributed execution:
 
-- select and implement a production-grade shared fencing backend whose compare-exchange is linearizable across independent controller/machine processes and whose monotonic generations survive process/machine restart;
-- keep backend credentials/configuration machine-local and outside model-facing task/distributed state;
-- compose current M12E fencing revalidation with current target-machine task/Safety Plan/workspace-registry authority and the existing local fenced writer lease immediately before every write-capable side effect;
-- prove partition/failover/rejoin behavior with independent processes so an old generation cannot write after a newer generation is committed;
-- do not expose a raw public listener or add external transport/network mutations without the separately gated authorization already required by M11/M12;
-- cross-machine write dispatch/execution stays disabled until 12F backend + write-boundary failure-mode proof is complete.
+- `PostgresDistributedFenceBackend` implements the existing M12E `DistributedFenceBackend` contract using one durable row per opaque workspace ID; first-writer `INSERT ... ON CONFLICT DO NOTHING` and exact-revision `UPDATE` operations provide a database serialization point across independent processes;
+- durable row state retains monotonic workspace generation and revision across orchestrator process restart; malformed state, workspace mismatch, revision misuse, generation rollback/reset/skip and generation advance without an active claim fail closed;
+- PostgreSQL connection material is supplied only through machine-local `Pool` / `PoolConfig` input and is not copied into task, assignment, placement, claim or other model-facing distributed state;
+- PostgreSQL `jsonb` legitimately reorders object keys, which exposed that the M12E opaque claim comparison depended on serialization order. The backend now reconstructs the already-validated fixed claim schema in canonical field order on read, preserving exact values and M12E stale-holder semantics without relaxing any check;
+- CI exercises the backend with an ephemeral PostgreSQL service and independent Node processes: exactly one process wins an initial compare-exchange, committed generations survive process restart, stale expected revisions cannot overwrite newer state, and invalid generation transitions are rejected;
+- `createLeaseAwareHubSafetySessionContributions()` now accepts an optional `DistributedWriterFenceGuard` for future distributed writer paths. When supplied, every `editor` / `applyPatch` mutation requires current durable task/Safety Plan/workspace-registry/profile/owner authority, the exact still-current local fenced writer lease, and then current shared distributed-fence validation immediately before the underlying path-governed mutation;
+- `createDistributedWriterFenceGuard()` binds one exact M12E claim to its exact candidate assignment and delegates every check to `DistributedFenceAuthority.validateCurrent()`. The guard carries no credentials and grants no task/filesystem/Safety Plan/writer-lease/release authority;
+- local/single-machine callers that do not supply a distributed guard retain the existing write-boundary behavior;
+- the end-to-end failure-mode proof acquires a real generation-1 fence, advances the same workspace to generation 2 from an independent Node process through PostgreSQL, then invokes the stale holder's target-machine editor path and proves `distributed_fence_invalid` is raised before the file changes while the newer generation remains durable;
+- the CI PostgreSQL service is ephemeral GitHub-hosted proof infrastructure only. No listener, tunnel, DNS/firewall/port-forwarding, credential provisioning or other network mutation was performed on user infrastructure;
+- distributed command delivery, dispatch and write execution remain disabled. M12F proves the required backend and target write boundary; it does not itself authorize or production-wire cross-machine execution.
+
+Evidence: PostgreSQL backend/dependency/CI path through `f70037bac46d95bb66959a320aee94e86ac49cf0`; target write-boundary composition `9cbc2647d029631cc7d00fa02ce7caa21052ca9f`; exact fence guard `205724c0c7942dbea966b32f4521660bdc92fbc9`; write-boundary unit tests `6f83e5e2d3c0bbc0078dd6a84cad1704fd77e532`; independent-process stale-generation/editor proof `b3fa5200cd86ff4b5690ec3e99190e47774f003a`; backend-only CI `#883`; final CI `#892` / workflow `36525707334` passed typecheck + full suite.
 
 ---
 
@@ -272,10 +279,10 @@ Planned bounded scope:
 | Durable distributed registration/placement store | Complete — M12B / CI `#851` attempt 2 |
 | Authenticated distributed machine transport/liveness contract | Complete — M12C / CI `#857`; controller-side only, no network listener |
 | Placement-aware distributed candidate routing | Complete — M12D / CI `#863`; coordination-only, no command delivery or task execution |
-| Distributed fencing contract / split-brain semantics | Complete — M12E / CI `#869`; reference backend only, no production distributed backend |
-| Production shared fencing backend + target write-boundary composition | NEXT — M12F |
+| Distributed fencing contract / split-brain semantics | Complete — M12E / CI `#869`; reference backend retained for deterministic single-process proof |
+| Production shared fencing backend + target write-boundary composition | Complete — M12F / CI `#892`; PostgreSQL shared backend + independent-process stale-generation proof |
 | Distributed network listener/adapter | Disabled — later M12 slice / external exposure remains separately gated |
-| Distributed writer execution | Disabled pending M12F production fencing/write-boundary proof |
+| Distributed writer execution | Disabled — M12F proves prerequisites but no cross-machine execution path is production-wired |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
 | Push/merge/deploy authority | Disabled — M15 |
@@ -298,13 +305,14 @@ Planned bounded scope:
 12. External exposure/physical remote proof requires explicit user authorization immediately before any listener/relay/tunnel/network mutation and must use a reviewed secure transport; no raw public bind is acceptable.
 13. Runtime recovery must remain narrowly classified and bounded. It must not retry unknown side-effect failures or use recovery as authority expansion.
 14. No M12 routing/placement/assignment artifact may become a substitute for target-machine task/Safety Plan/workspace-registry revalidation.
-15. Cross-machine writes remain disabled until the M12E fencing contract is backed by a production-grade shared linearizable backend and composed/proven at the target write boundary in M12F.
+15. M12F proves a production-grade shared linearizable fencing backend and its composition at the target write boundary, but cross-machine command delivery/write execution remain disabled until a separately reviewed execution/transport slice explicitly wires those prerequisites without widening authority.
 16. Cline completion prose is useful reviewer context but is never independent proof; contradictions must resolve in favor of trusted captured evidence or human review.
 17. A supervisor repair instruction may reuse only the existing immutable task authority. Any required scope expansion must stop for a fresh Safety Preview/human decision.
 18. Completion-review journal records are evidence only. They do not grant execution or completion authority, and a failed repair handoff must remain visibly failed rather than being silently retried outside trusted task continuation.
 19. CR3 proves the real local Cline completion/review/correction path with a deterministic local reviewer; it does not prove external ChatGPT transport or grant remote/local release authority.
-20. M12D candidate selection is coordination evidence only; the selected machine must still satisfy M12E/M12F fencing plus target-machine task/Safety Plan/workspace-registry and local writer-lease checks before any future write execution.
-21. `ReferenceLinearizableFenceBackend` is a deterministic single-process proof backend only; using it as cross-process or cross-machine fencing would violate the M12E contract.
+20. M12D candidate selection is coordination evidence only; any future target machine must still satisfy the now-proven M12E/M12F fencing plus target-machine task/Safety Plan/workspace-registry and local writer-lease checks before a write side effect.
+21. `ReferenceLinearizableFenceBackend` remains a deterministic single-process proof backend only; using it as cross-process or cross-machine fencing would violate the M12E contract.
+22. `PostgresDistributedFenceBackend` is shared fencing infrastructure only. Database configuration/credentials remain machine-local and possession of a database-backed fence does not itself grant task, filesystem, Safety Plan, local writer-lease, credential, release or execution authority.
 
 ---
 
@@ -321,9 +329,10 @@ Planned bounded scope:
 9. **COMPLETE — M12C authenticated machine transport + liveness contract.** CI `#857`; controller-local session/liveness gateway only, no network listener and no distributed write dispatch/execution.
 10. **COMPLETE — M12D placement-aware candidate routing/scheduling.** CI `#863`; current placement + current registration + fresh liveness only, producing coordination-only candidate assignments with post-creation revalidation.
 11. **COMPLETE — M12E distributed fencing / split-brain prevention contract.** CI `#869`; monotonic workspace generations and stale-owner failure modes proven with a deliberately single-process reference backend; write execution remains disabled.
-12. **NEXT — M12F production shared fencing backend + target write-boundary composition/proof.** Prove independent-process failover/rejoin safety before any distributed writer execution.
-13. **DO NOT enable cross-machine writer execution** until M12F proves a production-grade shared linearizable fencing backend composed with target-machine authority + local fenced writer lease checks.
-14. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+12. **COMPLETE — M12F production shared fencing backend + target write-boundary composition/proof.** PostgreSQL shared backend, independent-process durability/CAS proof, and stale-generation-before-editor proof passed in CI `#892`; distributed execution remains disabled.
+13. **STOP POINT — define/review the next bounded Milestone 12 slice before changing code.** M12F completion does not authorize cross-machine command delivery or write execution by itself.
+14. **DO NOT enable cross-machine writer execution** until the next explicitly reviewed slice wires the proven M12F backend + target-machine authority + local fenced writer lease without widening task/filesystem/Safety/release authority.
+15. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -347,9 +356,10 @@ Planned bounded scope:
 - 2026-09-29: M12C controller-local authenticated machine transport/liveness contract completed in `fa81ab281e7fc0f326f153f059ddd12f1e4d3245`, with regression tests in `3efc4b45f852cb7f116d8698009e59898cef777d`; CI `#857` / `36500722073` passed typecheck + full suite. No network listener or distributed write dispatch/execution was introduced.
 - 2026-09-29: M12D placement-aware candidate router completed in `87b502fb9dd30522dc7a0c6c8a54cac72af928d6`, with integration/regression tests in `aa62aaa842b2ce01c5d639dc33cae48088d7744f`; CI `#863` / `36521552004` passed typecheck + full suite. Candidate assignments remain coordination-only and distributed write dispatch/execution remain disabled.
 - 2026-09-29: M12E distributed fencing contract/reference backend completed in `61ce376d626c24f54471c171486d2c31b067de7d`, with split-brain/failover regression tests in `d017ca09156b3197adfd545b1ad4c288e45c3ee8`; CI `#869` / `36523436303` passed typecheck + full suite. The reference backend is intentionally single-process only; production distributed fencing and writer execution remain disabled pending M12F.
+- 2026-09-29: M12F production shared fencing backend and target write-boundary composition completed. PostgreSQL independent-process CAS/restart proof and stale-generation-before-editor failure-mode proof passed; final correction for `jsonb` key-order canonicalization is `f70037bac46d95bb66959a320aee94e86ac49cf0`; final CI `#892` / `36525707334` passed typecheck + full suite. Cross-machine dispatch/execution and all external network exposure remain disabled.
 
 ---
 
 # Current next step
 
-**M12F — production shared fencing backend + target write-boundary composition/proof.** Implement a genuinely shared linearizable fencing backend whose monotonic workspace generations survive independent process/machine restarts, then compose current distributed-fence validation with current target-machine task/Safety Plan/workspace-registry authority and the existing local fenced writer lease immediately before write-capable side effects. Prove stale-generation failure under independent-process failover/rejoin. Do not enable cross-machine command delivery/write execution before that proof, and do not perform external listener/tunnel/DNS/firewall/credential/network mutations without the separate immediate authorization gate.
+**M12F is complete. Stop before further implementation.** The next bounded Milestone 12 slice must be explicitly defined/reviewed from the milestone acceptance target and existing safety boundaries before code changes. In particular, M12F does not itself authorize or production-wire cross-machine command delivery or writer execution. Do not perform any external listener/tunnel/DNS/firewall/port-forward/credential/network mutation without the separate immediate authorization gate.
