@@ -40,7 +40,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12F complete; latest CI `#892`; distributed write dispatch/execution remain disabled pending a separately reviewed next slice |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12G complete; latest CI `#899`; network delivery and distributed writer execution remain disabled pending a separately reviewed next slice |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -254,6 +254,23 @@ Implemented a PostgreSQL-backed shared fencing backend and composed distributed-
 
 Evidence: PostgreSQL backend/dependency/CI path through `f70037bac46d95bb66959a320aee94e86ac49cf0`; target write-boundary composition `9cbc2647d029631cc7d00fa02ce7caa21052ca9f`; exact fence guard `205724c0c7942dbea966b32f4521660bdc92fbc9`; write-boundary unit tests `6f83e5e2d3c0bbc0078dd6a84cad1704fd77e532`; independent-process stale-generation/editor proof `b3fa5200cd86ff4b5690ec3e99190e47774f003a`; backend-only CI `#883`; final CI `#892` / workflow `36525707334` passed typecheck + full suite.
 
+## Slice 12G — Target execution admission / replay boundary — COMPLETE
+
+Implemented `src/distributed-execution-admission.ts` as an authority-free pre-execution admission boundary without network delivery or worker execution:
+
+- controller-side `createDistributedExecutionDispatch()` creates a short-lived dispatch envelope bound to the exact task, workspace, machine, machine-registration revision, placement revision, candidate assignment, fence ID and fence generation;
+- the dispatch contains only opaque IDs, revisions, generation and timestamps. It cannot contain a prompt, command, path, credential, Safety Plan, local writer lease, Hub token or release instruction;
+- dispatch TTL is bounded to 1–30 seconds and is capped by the earlier expiry of the current candidate assignment and distributed fence;
+- target admission requires an exact configured target machine identity and revalidates the current durable machine registration, exact current placement, current M12D candidate assignment and current M12E/M12F distributed fence before admission;
+- revoked/revision-stale registrations, disabled/revision-stale placements, expired dispatches, stale candidate assignments, stale fence generations, wrong-machine delivery and any cross-bound assignment/fence/dispatch mismatch fail closed;
+- `FileDistributedDispatchReplayStore` provides a machine-local durable single-consumption barrier using exclusive file creation with restrictive directory/file modes, so process restart cannot make an already admitted dispatch reusable;
+- replay evidence contains only dispatch ID and expiry. The replay-store path is trusted machine-local configuration rather than model/distributed input;
+- successful admission returns `admission_evidence_only`, which still grants no task, filesystem, Safety Plan, writer-lease, credential, release or execution authority;
+- regression tests prove exact-bound success, wrong-target non-consumption, revoked registration rejection, disabled placement rejection, stale candidate/fence rejection, expiry rejection, cross-bound evidence rejection and durable replay rejection after gateway restart;
+- M12G intentionally does not start Cline, invoke an executor, deliver a prompt/command, open a listener or enable distributed writer execution. A later slice must explicitly wire any execution path through the already-proven target-side task/Safety/workspace authority, local fenced writer lease and M12F distributed fence checks.
+
+Evidence: admission boundary `ca22b671aedfbb5ac0470d60486852510625d050`; regression tests `bd5ce0f0aa5a2f596d5ccbc06d809f983c6438f4`; CI `#899` / workflow `36538216117` passed typecheck + full suite.
+
 ---
 
 # Current capability snapshot
@@ -281,8 +298,9 @@ Evidence: PostgreSQL backend/dependency/CI path through `f70037bac46d95bb66959a3
 | Placement-aware distributed candidate routing | Complete — M12D / CI `#863`; coordination-only, no command delivery or task execution |
 | Distributed fencing contract / split-brain semantics | Complete — M12E / CI `#869`; reference backend retained for deterministic single-process proof |
 | Production shared fencing backend + target write-boundary composition | Complete — M12F / CI `#892`; PostgreSQL shared backend + independent-process stale-generation proof |
+| Target execution admission / durable replay boundary | Complete — M12G / CI `#899`; no prompt/command delivery or worker execution |
 | Distributed network listener/adapter | Disabled — later M12 slice / external exposure remains separately gated |
-| Distributed writer execution | Disabled — M12F proves prerequisites but no cross-machine execution path is production-wired |
+| Distributed writer execution | Disabled — M12G admits evidence only; no cross-machine execution path is production-wired |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
 | Push/merge/deploy authority | Disabled — M15 |
@@ -313,6 +331,7 @@ Evidence: PostgreSQL backend/dependency/CI path through `f70037bac46d95bb66959a3
 20. M12D candidate selection is coordination evidence only; any future target machine must still satisfy the now-proven M12E/M12F fencing plus target-machine task/Safety Plan/workspace-registry and local writer-lease checks before a write side effect.
 21. `ReferenceLinearizableFenceBackend` remains a deterministic single-process proof backend only; using it as cross-process or cross-machine fencing would violate the M12E contract.
 22. `PostgresDistributedFenceBackend` is shared fencing infrastructure only. Database configuration/credentials remain machine-local and possession of a database-backed fence does not itself grant task, filesystem, Safety Plan, local writer-lease, credential, release or execution authority.
+23. An M12G dispatch/admission receipt is not an executable task and cannot carry prompt/command/path/Safety/credential/lease/release material. Any later executor must independently re-enter trusted target-machine task authority and the M12F write boundary rather than treating admission as permission to mutate.
 
 ---
 
@@ -330,9 +349,10 @@ Evidence: PostgreSQL backend/dependency/CI path through `f70037bac46d95bb66959a3
 10. **COMPLETE — M12D placement-aware candidate routing/scheduling.** CI `#863`; current placement + current registration + fresh liveness only, producing coordination-only candidate assignments with post-creation revalidation.
 11. **COMPLETE — M12E distributed fencing / split-brain prevention contract.** CI `#869`; monotonic workspace generations and stale-owner failure modes proven with a deliberately single-process reference backend; write execution remains disabled.
 12. **COMPLETE — M12F production shared fencing backend + target write-boundary composition/proof.** PostgreSQL shared backend, independent-process durability/CAS proof, and stale-generation-before-editor proof passed in CI `#892`; distributed execution remains disabled.
-13. **STOP POINT — define/review the next bounded Milestone 12 slice before changing code.** M12F completion does not authorize cross-machine command delivery or write execution by itself.
-14. **DO NOT enable cross-machine writer execution** until the next explicitly reviewed slice wires the proven M12F backend + target-machine authority + local fenced writer lease without widening task/filesystem/Safety/release authority.
-15. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+13. **COMPLETE — M12G target execution admission / durable replay boundary.** Exact target/evidence binding, stale-state rejection and restart-persistent single-use dispatch admission passed in CI `#899`; no prompt/command delivery, listener or worker execution was added.
+14. **STOP POINT — define/review the next bounded Milestone 12 slice before changing code.** M12G completion does not authorize network delivery, Cline start or cross-machine writer execution by itself.
+15. **DO NOT enable cross-machine writer execution** until a later explicitly reviewed slice wires an admitted request into the existing target-machine task/Safety/workspace authority + local fenced writer lease + M12F distributed fence boundary without widening authority.
+16. **DO NOT perform raw public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -357,9 +377,10 @@ Evidence: PostgreSQL backend/dependency/CI path through `f70037bac46d95bb66959a3
 - 2026-09-29: M12D placement-aware candidate router completed in `87b502fb9dd30522dc7a0c6c8a54cac72af928d6`, with integration/regression tests in `aa62aaa842b2ce01c5d639dc33cae48088d7744f`; CI `#863` / `36521552004` passed typecheck + full suite. Candidate assignments remain coordination-only and distributed write dispatch/execution remain disabled.
 - 2026-09-29: M12E distributed fencing contract/reference backend completed in `61ce376d626c24f54471c171486d2c31b067de7d`, with split-brain/failover regression tests in `d017ca09156b3197adfd545b1ad4c288e45c3ee8`; CI `#869` / `36523436303` passed typecheck + full suite. The reference backend is intentionally single-process only; production distributed fencing and writer execution remain disabled pending M12F.
 - 2026-09-29: M12F production shared fencing backend and target write-boundary composition completed. PostgreSQL independent-process CAS/restart proof and stale-generation-before-editor failure-mode proof passed; final correction for `jsonb` key-order canonicalization is `f70037bac46d95bb66959a320aee94e86ac49cf0`; final CI `#892` / `36525707334` passed typecheck + full suite. Cross-machine dispatch/execution and all external network exposure remain disabled.
+- 2026-09-29: M12G target execution admission/replay boundary completed in `ca22b671aedfbb5ac0470d60486852510625d050`, with regression tests in `bd5ce0f0aa5a2f596d5ccbc06d809f983c6438f4`; CI `#899` / `36538216117` passed typecheck + full suite. The dispatch is opaque authority-free evidence only; no prompt/command delivery, listener, Cline start or distributed writer execution was introduced.
 
 ---
 
 # Current next step
 
-**M12F is complete. Stop before further implementation.** The next bounded Milestone 12 slice must be explicitly defined/reviewed from the milestone acceptance target and existing safety boundaries before code changes. In particular, M12F does not itself authorize or production-wire cross-machine command delivery or writer execution. Do not perform any external listener/tunnel/DNS/firewall/port-forward/credential/network mutation without the separate immediate authorization gate.
+**M12G is complete. Stop before further implementation.** The next bounded Milestone 12 slice must be explicitly defined/reviewed before code changes. The natural next concern is how an admitted request is delivered to and consumed by the target runtime without allowing transport, dispatch or admission to become task authority. Any network listener/external exposure remains separately gated and requires explicit authorization immediately before that action; no raw public bind is acceptable.
