@@ -20,7 +20,10 @@ import {
   ReferenceLinearizableFenceBackend,
   type DistributedFenceClaimV1,
 } from "./distributed-fencing.js";
-import { FileDistributedDispatchReplayStore } from "./distributed-execution-admission.js";
+import {
+  DistributedExecutionAdmissionGateway,
+  FileDistributedDispatchReplayStore,
+} from "./distributed-execution-admission.js";
 import {
   DistributedTargetRuntimeHandoffCoordinator,
   DistributedTargetRuntimeHandoffError,
@@ -320,17 +323,35 @@ test("M12O prior runtime history cannot re-enter M12H after target process resta
     grantsReleaseAuthority: false as const,
   };
 
-  const restartedCoordinator = new DistributedTargetRuntimeHandoffCoordinator({
-    admission: {
-      async admit() {
+  const restartedAdmission = new DistributedExecutionAdmissionGateway({
+    targetIdentity: {
+      machineId: ids.machine,
+      machineRegistrationId: ids.registration,
+      machineRegistrationRevision: 1,
+    },
+    registrations: {
+      async get() {
         admissionCalls += 1;
-        throw new Error("must not consume dispatch for prior runtime task");
+        return registration();
       },
     },
+    placements: { async get() { return placement(); } },
+    candidates: { async assertCandidateCurrent() {} },
+    fences: { async validateCurrent() {} },
+    replayStore: { async consume() { return true; } },
+    now: () => new Date(baseNow),
+  });
+  const restartedFenceAuthority = new DistributedFenceAuthority(
+    new ReferenceLinearizableFenceBackend(),
+    { async assertCandidateCurrent() {} },
+    { now: () => new Date(baseNow), idFactory: () => crypto.randomUUID() },
+  );
+  const restartedCoordinator = new DistributedTargetRuntimeHandoffCoordinator({
+    admission: restartedAdmission,
     tasks: { async loadCurrent() { return runtimeTask(); } },
     authorityProvider: { async revalidateCurrent() { return writerAuthority(); } },
     lease: lease(),
-    fenceAuthority: { async validateCurrent() {} } as DistributedFenceAuthority,
+    fenceAuthority: restartedFenceAuthority,
     now: () => new Date(baseNow),
   });
 
