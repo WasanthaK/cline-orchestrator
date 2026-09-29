@@ -171,21 +171,18 @@ export class PostgresDistributedFenceBackend implements DistributedFenceBackend 
     }
 
     return await this.query(async (client) => {
+      const stateJson = JSON.stringify(nextInput);
       const result = await client.query(
         `UPDATE ${this.table}
          SET revision = $3, generation = $4, state_json = $5::jsonb, updated_at = now()
          WHERE workspace_id = $1
            AND revision = $2
-           AND generation <= $4
-           AND generation >= ($4 - 1)
+           AND (
+             generation = $4
+             OR (generation + 1 = $4 AND ($5::jsonb ? 'activeFence'))
+           )
          RETURNING revision`,
-        [
-          id,
-          expectedRevision,
-          nextInput.revision,
-          nextInput.generation,
-          JSON.stringify(nextInput),
-        ],
+        [id, expectedRevision, nextInput.revision, nextInput.generation, stateJson],
       );
       return result.rowCount === 1;
     });
