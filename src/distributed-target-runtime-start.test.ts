@@ -10,6 +10,7 @@ import type {
   ClineRuntimeCreateRequest,
   ClineRuntimeFactory,
 } from "./cline-runtime.js";
+import type { DistributedFenceClaimV1 } from "./distributed-fencing.js";
 import {
   DistributedTargetRuntimeStartError,
   DistributedTargetRuntimeStarter,
@@ -142,6 +143,55 @@ class TestFence implements DistributedWriterFenceGuard {
   }
 }
 
+class RenewableTestFence extends TestFence {
+  private claimValue: DistributedFenceClaimV1;
+  failRenewal = false;
+  renewCount = 0;
+
+  constructor(taskId: string, workspaceId: string) {
+    super(taskId, workspaceId);
+    const issuedAt = new Date();
+    this.claimValue = {
+      schemaVersion: 1,
+      fenceId: crypto.randomUUID(),
+      workspaceId,
+      taskId,
+      machineId: crypto.randomUUID(),
+      machineRegistrationId: crypto.randomUUID(),
+      machineRegistrationRevision: 1,
+      placementId: crypto.randomUUID(),
+      placementRevision: 1,
+      candidateAssignmentId: crypto.randomUUID(),
+      generation: 1,
+      issuedAt: issuedAt.toISOString(),
+      expiresAt: new Date(issuedAt.getTime() + 10_000).toISOString(),
+      authority: "fencing_only",
+      grantsTaskAuthority: false,
+      grantsFilesystemAuthority: false,
+      grantsSafetyPlanAuthority: false,
+      grantsWriterLeaseAuthority: false,
+      grantsCredentialAuthority: false,
+      grantsReleaseAuthority: false,
+    };
+  }
+
+  currentClaim(): DistributedFenceClaimV1 {
+    return structuredClone(this.claimValue);
+  }
+
+  async renew(ttlMs: number): Promise<DistributedFenceClaimV1> {
+    this.renewCount += 1;
+    if (this.failRenewal) throw new Error("candidate no longer current");
+    const issuedAt = new Date();
+    this.claimValue = {
+      ...this.claimValue,
+      issuedAt: issuedAt.toISOString(),
+      expiresAt: new Date(issuedAt.getTime() + ttlMs).toISOString(),
+    };
+    return this.currentClaim();
+  }
+}
+
 class FakeRuntime implements ClineRuntime {
   startCount = 0;
   abortCount = 0;
@@ -182,7 +232,7 @@ class FakeFactory implements ClineRuntimeFactory {
 function contextFor(
   task: OrchestratorTask,
   lease: TestLease,
-  fence: TestFence,
+  fence: DistributedWriterFenceGuard,
 ): DistributedTargetRuntimeHandoffContext {
   const evidence: DistributedTargetRuntimeHandoffEvidenceV1 = {
     schemaVersion: 1,
@@ -201,7 +251,6 @@ function contextFor(
     grantsCredentialAuthority: false,
     grantsReleaseAuthority: false,
   };
-  const authority = leaseAwareWriterAuthorityFromTask(task, lease.ownerInstanceId);
   const authorityProvider: LeaseAwareWriterAuthorityProvider = {
     revalidateCurrent: async () => {
       const current = await new TaskStore(task.workspace).load(task.id);
@@ -215,7 +264,11 @@ function contextFor(
   };
 }
 
-function starter(task: OrchestratorTask, factory: FakeFactory) {
+function starter(
+  task: OrchestratorTask,
+  factory: FakeFactory,
+  distributedFenceLifecycle?: ConstructorParameters<typeof DistributedTargetRuntimeStarter>[0]["distributedFenceLifecycle"],
+) {
   return new DistributedTargetRuntimeStarter({
     tasks: {
       loadCurrent: async (taskId, workspaceId) => {
@@ -227,6 +280,7 @@ function starter(task: OrchestratorTask, factory: FakeFactory) {
     resolveWorkerProfile: async () => worker(),
     baseRuntimeFactory: factory,
     providerPreflight: async () => preflightOk(),
+    ...(distributedFenceLifecycle ? { distributedFenceLifecycle } : {}),
   });
 }
 
@@ -301,6 +355,44 @@ test("M12I local writer lease loss actively aborts an in-flight Cline run", asyn
     const result = await startPromise;
     assert.equal(runtime.abortCount, 1);
     assert.equal(result.status, "aborted");
+    const persisted = await new TaskStore(root).load(task.id);
+    assert.equal(persisted.status, "aborted");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("M12L distributed fence renewal loss actively aborts an in-flight Cline run", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "m12l-fence-renewal-loss-"));
+  try {
+    const task = await saveTask(root);
+    const lease = new TestLease(task);
+    const fence = new RenewableTestFence(task.id, task.workspaceId!);
+    const runtime = new FakeRuntime("wait");
+    const factory = new FakeFactory(runtime);
+    let scheduled: (() => void) | undefined;
+    const startPromise = starter(task, factory, {
+      renewTtlMs: 10_000,
+      renewIntervalMs: 2_000,
+      setTimeoutFn: ((callback: () => void) => {
+        scheduled = callback;
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutFn: (() => undefined) as typeof clearTimeout,
+    }).start(contextFor(task, lease, fence));
+
+    while (!runtime.sendPrompt) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.ok(scheduled, "renewal lifecycle should schedule while the run is active");
+    fence.failRenewal = true;
+    scheduled!();
+
+    const result = await startPromise;
+    assert.equal(fence.renewCount, 1);
+    assert.equal(runtime.abortCount, 1);
+    assert.equal(result.status, "aborted");
+    assert.equal(lease.signal.aborted, false, "distributed fence loss must not masquerade as local lease loss");
     const persisted = await new TaskStore(root).load(task.id);
     assert.equal(persisted.status, "aborted");
   } finally {
