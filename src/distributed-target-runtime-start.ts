@@ -5,6 +5,11 @@ import type {
   ClineRuntimeCreateRequest,
   ClineRuntimeFactory,
 } from "./cline-runtime.js";
+import {
+  DistributedFenceLifecycle,
+  type DistributedFenceLifecycleOptions,
+} from "./distributed-fence-lifecycle.js";
+import { isRenewableDistributedWriterFenceGuard } from "./distributed-write-fence-guard.js";
 import type {
   DistributedTargetRuntimeHandoffContext,
   DistributedTargetTaskLoader,
@@ -32,7 +37,9 @@ export const DISTRIBUTED_TARGET_RUNTIME_START_CONTRACT = Object.freeze({
   crossMachineDeliveryEnabled: false as const,
   networkListenerIncluded: false as const,
   commandTransportIncluded: false as const,
-  distributedFenceRenewalIncluded: false as const,
+  distributedFenceRenewalIncluded: true as const,
+  renewalFailureAbortsInFlightRun: true as const,
+  candidateRenewalIncluded: false as const,
   grantsTaskAuthority: false as const,
   grantsFilesystemAuthority: false as const,
   grantsSafetyPlanAuthority: false as const,
@@ -54,6 +61,7 @@ export interface DistributedTargetRuntimeStartOptions {
   resolveWorkerProfile: DistributedTargetWorkerProfileResolver;
   baseRuntimeFactory: ClineRuntimeFactory;
   providerPreflight?: DistributedTargetProviderPreflight;
+  distributedFenceLifecycle?: DistributedFenceLifecycleOptions;
 }
 
 export class DistributedTargetRuntimeStartError extends Error {
@@ -267,6 +275,50 @@ async function revalidateFence(context: DistributedTargetRuntimeHandoffContext):
   }
 }
 
+function defaultFenceLifecycleOptions(
+  context: DistributedTargetRuntimeHandoffContext,
+): DistributedFenceLifecycleOptions | undefined {
+  const guard = context.safetyOptions.distributedFenceGuard!;
+  if (!isRenewableDistributedWriterFenceGuard(guard)) return undefined;
+  const claim = guard.currentClaim();
+  const issuedAt = Date.parse(claim.issuedAt);
+  const expiresAt = Date.parse(claim.expiresAt);
+  const now = Date.now();
+  const ttlMs = expiresAt - issuedAt;
+  const remainingMs = expiresAt - now;
+  if (!Number.isFinite(ttlMs) || !Number.isFinite(remainingMs) || ttlMs < 1_000 || ttlMs > 60_000 || remainingMs <= 500) {
+    throw new DistributedTargetRuntimeStartError(
+      "distributed fence does not have enough valid lifetime to start renewal safely",
+      "fence_not_current",
+    );
+  }
+  return {
+    renewTtlMs: ttlMs,
+    renewIntervalMs: Math.max(250, Math.min(30_000, Math.floor(Math.min(ttlMs, remainingMs) / 2))),
+  };
+}
+
+function createFenceLifecycle(
+  context: DistributedTargetRuntimeHandoffContext,
+  configured?: DistributedFenceLifecycleOptions,
+): DistributedFenceLifecycle | undefined {
+  const guard = context.safetyOptions.distributedFenceGuard!;
+  if (!isRenewableDistributedWriterFenceGuard(guard)) return undefined;
+  try {
+    return new DistributedFenceLifecycle(
+      guard,
+      configured ?? defaultFenceLifecycleOptions(context)!,
+    );
+  } catch (error) {
+    if (error instanceof DistributedTargetRuntimeStartError) throw error;
+    throw new DistributedTargetRuntimeStartError(
+      "distributed fence renewal lifecycle could not be configured",
+      "context_invalid",
+      { cause: error },
+    );
+  }
+}
+
 class StartGuardRuntime implements ClineRuntime {
   constructor(
     private readonly base: ClineRuntime,
@@ -299,9 +351,11 @@ class StartGuardRuntimeFactory implements ClineRuntimeFactory {
 }
 
 /**
- * M12I target-local executor. It starts the existing ClineRunner only after M12H
- * has produced a process-local context. No dispatch/network payload is accepted.
- * The model prompt is always the current target-local task goal.
+ * M12I/M12L target-local executor. It starts the existing ClineRunner only after
+ * M12H has produced a process-local context. No dispatch/network payload is
+ * accepted. The model prompt is always the current target-local task goal. When
+ * the M12K renewal-aware fence guard is present, fence renewal is process-local and
+ * renewal loss aborts the same ClineRunner fail-safe as local lease loss.
  */
 export class DistributedTargetRuntimeStarter {
   private readonly providerPreflight: DistributedTargetProviderPreflight;
@@ -340,6 +394,7 @@ export class DistributedTargetRuntimeStarter {
       );
     }
 
+    const fenceLifecycle = createFenceLifecycle(context, this.options.distributedFenceLifecycle);
     const leaseAware = new LeaseAwareHubRuntimeFactory(
       this.options.baseRuntimeFactory,
       initial,
@@ -362,21 +417,26 @@ export class DistributedTargetRuntimeStarter {
     });
 
     let abortPromise: Promise<void> | undefined;
-    const abortForLeaseLoss = () => {
+    const abortFailSafe = (message: string) => {
       if (abortPromise) return;
       abortPromise = (async () => {
         try {
-          await runner.abort(
-            initial.id,
-            "Distributed target local writer lease was lost; execution aborted fail-safe",
-          );
+          await runner.abort(initial.id, message);
         } catch {
           // If the run became terminal in the same turn, M12F still rejects stale
           // writes and the durable terminal state remains authoritative.
         }
       })();
     };
+    const abortForLeaseLoss = () => abortFailSafe(
+      "Distributed target local writer lease was lost; execution aborted fail-safe",
+    );
+    const abortForFenceRenewalLoss = () => abortFailSafe(
+      "Distributed target distributed fence renewal was lost; execution aborted fail-safe",
+    );
     context.safetyOptions.lease.signal.addEventListener("abort", abortForLeaseLoss, { once: true });
+    fenceLifecycle?.signal.addEventListener("abort", abortForFenceRenewalLoss, { once: true });
+    fenceLifecycle?.start();
 
     try {
       if (context.safetyOptions.lease.signal.aborted) {
@@ -384,11 +444,22 @@ export class DistributedTargetRuntimeStarter {
         await abortPromise;
         throw new DistributedTargetRuntimeStartError("local writer lease was lost before runtime start", "lease_not_current");
       }
+      if (fenceLifecycle?.signal.aborted) {
+        abortForFenceRenewalLoss();
+        await abortPromise;
+        throw new DistributedTargetRuntimeStartError(
+          "distributed fence renewal was lost before runtime start",
+          "fence_not_current",
+          { cause: fenceLifecycle.signal.reason },
+        );
+      }
       const result = await runner.start(initial);
       if (abortPromise) await abortPromise;
       return result;
     } finally {
       context.safetyOptions.lease.signal.removeEventListener("abort", abortForLeaseLoss);
+      fenceLifecycle?.signal.removeEventListener("abort", abortForFenceRenewalLoss);
+      if (fenceLifecycle) await fenceLifecycle.stop();
       if (abortPromise) await abortPromise;
       await runner.close("distributed target runtime complete");
     }
