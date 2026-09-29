@@ -290,3 +290,46 @@ test("M12H rechecks local authority after admission to close TOCTOU", async () =
   );
   assert.equal(calls, 2);
 });
+
+test("M12H reloads target task after admission and rejects a concurrent local start", async () => {
+  let loads = 0;
+  let admissionCalls = 0;
+  const taskLoader: DistributedTargetTaskLoader = {
+    loadCurrent: async () => {
+      loads += 1;
+      const value = task();
+      if (loads > 1) {
+        value.clineSessionId = crypto.randomUUID();
+        value.sessionGeneration = 1;
+        value.runCount = 1;
+      }
+      return value;
+    },
+  };
+  const assigned = assignment();
+  const fenced = fence();
+  const dispatch = createDistributedExecutionDispatch(
+    { assignment: assigned, fence: fenced, ttlMs: 5_000 },
+    { now: () => now, idFactory: () => ids.dispatch },
+  );
+  const coordinator = new DistributedTargetRuntimeHandoffCoordinator({
+    tasks: taskLoader,
+    authorityProvider: { revalidateCurrent: async () => authority() },
+    lease: lease(),
+    fenceAuthority: { validateCurrent: async () => undefined } as unknown as DistributedFenceAuthority,
+    admission: {
+      admit: async () => {
+        admissionCalls += 1;
+        return admissionReceipt(dispatch);
+      },
+    } as any,
+    now: () => now,
+  });
+
+  await assert.rejects(
+    coordinator.prepare(dispatch, assigned, fenced),
+    (error: unknown) => error instanceof DistributedTargetRuntimeHandoffError && error.code === "task_not_current",
+  );
+  assert.equal(admissionCalls, 1);
+  assert.equal(loads, 2);
+});
