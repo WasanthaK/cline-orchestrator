@@ -39,7 +39,10 @@ function assignment(now: Date): DistributedWriterCandidateAssignmentV1 {
 }
 
 async function fixture() {
-  let now = new Date("2026-09-29T10:30:00.000Z");
+  // Candidate renewal currently uses the process coordination clock while the
+  // fence authority supports an injected clock. Anchor both to the same real
+  // instant, then advance only a few seconds for deterministic fence assertions.
+  let now = new Date();
   let candidateCurrent = true;
   const currentAssignment = assignment(now);
   const authority = new DistributedFenceAuthority(
@@ -61,7 +64,7 @@ async function fixture() {
     assignment: currentAssignment,
     originalClaim: claim,
     guard,
-    setNow(value: Date) { now = value; },
+    advance(ms: number) { now = new Date(now.getTime() + ms); },
     invalidateCandidate() { candidateCurrent = false; },
   };
 }
@@ -76,7 +79,7 @@ async function settle(predicate: () => boolean, timeoutMs = 1000): Promise<void>
 
 test("M12K renewal-aware guard advances exact claim state without changing generation", async () => {
   const value = await fixture();
-  value.setNow(new Date("2026-09-29T10:30:05.000Z"));
+  value.advance(5_000);
 
   const renewed = await value.guard.renew(10_000);
   assert.equal(renewed.fenceId, value.originalClaim.fenceId);
@@ -117,7 +120,7 @@ test("M12N lifecycle renews same candidate before same-generation fence and rema
   lifecycle.start();
   assert.ok(scheduled);
 
-  value.setNow(new Date("2026-09-29T10:30:05.000Z"));
+  value.advance(5_000);
   scheduled!();
   await settle(() => lifecycle.currentClaim().issuedAt !== beforeClaim.issuedAt);
   const afterClaim = lifecycle.currentClaim();
@@ -156,7 +159,7 @@ test("M12N lifecycle fails closed when candidate authority disappears", async ()
   });
   lifecycle.start();
   value.invalidateCandidate();
-  value.setNow(new Date("2026-09-29T10:30:05.000Z"));
+  value.advance(5_000);
   scheduled!();
 
   await settle(() => lifecycle.signal.aborted);
