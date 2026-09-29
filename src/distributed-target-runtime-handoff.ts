@@ -33,6 +33,7 @@ export const DISTRIBUTED_TARGET_RUNTIME_HANDOFF_CONTRACT = Object.freeze({
   requiresM12GAdmission: true as const,
   taskLoadedFromTargetLocalStore: true as const,
   dispatchMaySupplyPromptOrCommand: false as const,
+  requiresFreshTargetTask: true as const,
   requiresCurrentTargetRegistryBinding: true as const,
   requiresCurrentTaskSafetyAuthority: true as const,
   requiresCurrentLocalWriterLease: true as const,
@@ -115,8 +116,10 @@ function normalizePath(value: string): string {
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
-function sameStrings(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function sameStrings(left: string[] | undefined, right: string[]): boolean {
+  return Array.isArray(left)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
 }
 
 function sameAuthority(
@@ -165,6 +168,21 @@ function currentTime(now: (() => Date) | undefined): Date {
   return value;
 }
 
+function assertFreshTargetTask(task: OrchestratorTask): void {
+  if (
+    task.status !== "created"
+    || Boolean(task.clineSessionId)
+    || (task.sessionGeneration ?? 0) > 0
+    || (task.runCount ?? 0) > 0
+    || Boolean(task.pendingEscalation)
+  ) {
+    throw new DistributedTargetRuntimeHandoffError(
+      `distributed target handoff requires a fresh created task with no prior runtime or escalation state; task ${task.id} is ${task.status}`,
+      "task_not_current",
+    );
+  }
+}
+
 function assertReceiptMatches(
   receipt: DistributedExecutionAdmissionReceiptV1,
   dispatch: DistributedExecutionDispatchV1,
@@ -196,6 +214,10 @@ function assertReceiptMatches(
  * only opaque IDs. The filesystem root is resolved exclusively from the target's
  * current WorkspaceRegistry, then the task is loaded from that workspace's local
  * TaskStore and checked against the current registry/profile revision.
+ *
+ * Safety Plans may deliberately narrow allowedPathPatterns below the workspace
+ * profile; that narrower task scope remains authoritative. Protected paths and
+ * validation commands, however, must still match the current profile exactly.
  */
 export class RegisteredWorkspaceTargetTaskLoader implements DistributedTargetTaskLoader {
   constructor(private readonly registry: WorkspaceRegistry) {}
@@ -243,8 +265,8 @@ export class RegisteredWorkspaceTargetTaskLoader implements DistributedTargetTas
       || binding.safetyProfileRevision !== workspace.safetyProfile.revision
       || binding.policyVersion !== workspace.safetyProfile.policyVersion
       || binding.workerProfileId !== workspace.safetyProfile.workerProfileId
-      || !sameStrings(binding.allowedPathPatterns, workspace.safetyProfile.allowedPathPatterns)
       || !sameStrings(binding.protectedPathPatterns, workspace.safetyProfile.protectedPathPatterns)
+      || !sameStrings(task.validationCommands, workspace.safetyProfile.validationCommands)
       || normalizePath(task.workspace) !== normalizePath(workspace.canonicalRoot)
     ) {
       throw new DistributedTargetRuntimeHandoffError(
@@ -362,6 +384,7 @@ export class DistributedTargetRuntimeHandoffCoordinator {
         { cause: error },
       );
     }
+    assertFreshTargetTask(task);
 
     await this.revalidateLocalAuthority(task, dispatch);
     await this.revalidateLease(dispatch.taskId, dispatch.workspaceId);
@@ -396,6 +419,7 @@ export class DistributedTargetRuntimeHandoffCoordinator {
 
     // Close authority/lease TOCTOU around admission. No runtime is started by M12H;
     // every future write is still required to repeat these checks in M12F.
+    assertFreshTargetTask(task);
     await this.revalidateLocalAuthority(task, dispatch);
     await this.revalidateLease(dispatch.taskId, dispatch.workspaceId);
 
