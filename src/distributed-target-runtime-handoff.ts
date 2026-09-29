@@ -34,6 +34,7 @@ export const DISTRIBUTED_TARGET_RUNTIME_HANDOFF_CONTRACT = Object.freeze({
   taskLoadedFromTargetLocalStore: true as const,
   dispatchMaySupplyPromptOrCommand: false as const,
   requiresFreshTargetTask: true as const,
+  requiresPostAdmissionTaskReload: true as const,
   requiresCurrentTargetRegistryBinding: true as const,
   requiresCurrentTaskSafetyAuthority: true as const,
   requiresCurrentLocalWriterLease: true as const,
@@ -282,6 +283,21 @@ export class RegisteredWorkspaceTargetTaskLoader implements DistributedTargetTas
 export class DistributedTargetRuntimeHandoffCoordinator {
   constructor(private readonly options: DistributedTargetRuntimeHandoffOptions) {}
 
+  private async loadTargetTask(
+    dispatch: DistributedExecutionDispatchV1,
+  ): Promise<OrchestratorTask> {
+    try {
+      return await this.options.tasks.loadCurrent(dispatch.taskId, dispatch.workspaceId);
+    } catch (error) {
+      if (error instanceof DistributedTargetRuntimeHandoffError) throw error;
+      throw new DistributedTargetRuntimeHandoffError(
+        "target-local approved task could not be loaded",
+        "task_not_current",
+        { cause: error },
+      );
+    }
+  }
+
   private async revalidateLocalAuthority(
     task: OrchestratorTask,
     dispatch: DistributedExecutionDispatchV1,
@@ -373,19 +389,8 @@ export class DistributedTargetRuntimeHandoffCoordinator {
     const assignment = structuredClone(assignmentInput);
     const fence = structuredClone(fenceInput);
 
-    let task: OrchestratorTask;
-    try {
-      task = await this.options.tasks.loadCurrent(dispatch.taskId, dispatch.workspaceId);
-    } catch (error) {
-      if (error instanceof DistributedTargetRuntimeHandoffError) throw error;
-      throw new DistributedTargetRuntimeHandoffError(
-        "target-local approved task could not be loaded",
-        "task_not_current",
-        { cause: error },
-      );
-    }
+    const task = await this.loadTargetTask(dispatch);
     assertFreshTargetTask(task);
-
     await this.revalidateLocalAuthority(task, dispatch);
     await this.revalidateLease(dispatch.taskId, dispatch.workspaceId);
 
@@ -417,10 +422,13 @@ export class DistributedTargetRuntimeHandoffCoordinator {
       );
     }
 
-    // Close authority/lease TOCTOU around admission. No runtime is started by M12H;
-    // every future write is still required to repeat these checks in M12F.
-    assertFreshTargetTask(task);
-    await this.revalidateLocalAuthority(task, dispatch);
+    // Reload local durable task state after the one-shot admission. This prevents a
+    // concurrent local start/status/session transition from being hidden by the
+    // pre-admission task snapshot. No runtime is started by M12H; every future
+    // write is still required to repeat these checks in the M12F write boundary.
+    const currentTask = await this.loadTargetTask(dispatch);
+    assertFreshTargetTask(currentTask);
+    await this.revalidateLocalAuthority(currentTask, dispatch);
     await this.revalidateLease(dispatch.taskId, dispatch.workspaceId);
 
     const preparedAt = currentTime(this.options.now).toISOString();
@@ -442,7 +450,7 @@ export class DistributedTargetRuntimeHandoffCoordinator {
         grantsCredentialAuthority: false,
         grantsReleaseAuthority: false,
       }),
-      task,
+      task: currentTask,
       safetyOptions: {
         lease: this.options.lease,
         authorityProvider: this.options.authorityProvider,
