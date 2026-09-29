@@ -3,6 +3,7 @@ import {
   assertDistributedFenceState,
   DistributedFenceError,
   type DistributedFenceBackend,
+  type DistributedFenceClaimV1,
   type DistributedFenceStateV1,
 } from "./distributed-fencing.js";
 
@@ -55,6 +56,37 @@ function positiveInteger(value: unknown, field: string): number {
   return parsed;
 }
 
+/**
+ * PostgreSQL jsonb does not preserve object key order. M12E's opaque claim equality
+ * currently serializes the validated fixed-shape claim, so reconstruct that public
+ * schema order at the backend boundary rather than leaking jsonb's physical ordering
+ * into fencing semantics. No values are normalized or weakened here.
+ */
+function canonicalFenceClaim(claim: DistributedFenceClaimV1): DistributedFenceClaimV1 {
+  return {
+    schemaVersion: claim.schemaVersion,
+    fenceId: claim.fenceId,
+    workspaceId: claim.workspaceId,
+    taskId: claim.taskId,
+    machineId: claim.machineId,
+    machineRegistrationId: claim.machineRegistrationId,
+    machineRegistrationRevision: claim.machineRegistrationRevision,
+    placementId: claim.placementId,
+    placementRevision: claim.placementRevision,
+    candidateAssignmentId: claim.candidateAssignmentId,
+    generation: claim.generation,
+    issuedAt: claim.issuedAt,
+    expiresAt: claim.expiresAt,
+    authority: claim.authority,
+    grantsTaskAuthority: claim.grantsTaskAuthority,
+    grantsFilesystemAuthority: claim.grantsFilesystemAuthority,
+    grantsSafetyPlanAuthority: claim.grantsSafetyPlanAuthority,
+    grantsWriterLeaseAuthority: claim.grantsWriterLeaseAuthority,
+    grantsCredentialAuthority: claim.grantsCredentialAuthority,
+    grantsReleaseAuthority: claim.grantsReleaseAuthority,
+  };
+}
+
 function parseStateRow(row: Record<string, unknown>, expectedWorkspaceId: string): DistributedFenceStateV1 {
   const revision = positiveInteger(row.revision, "revision");
   const generation = positiveInteger(row.generation, "generation");
@@ -70,7 +102,14 @@ function parseStateRow(row: Record<string, unknown>, expectedWorkspaceId: string
       "backend_invalid",
     );
   }
-  return structuredClone(state);
+  return {
+    schemaVersion: state.schemaVersion,
+    workspaceId: state.workspaceId,
+    revision: state.revision,
+    generation: state.generation,
+    ...(state.activeFence ? { activeFence: canonicalFenceClaim(state.activeFence) } : {}),
+    authority: state.authority,
+  };
 }
 
 /**
