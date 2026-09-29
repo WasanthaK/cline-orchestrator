@@ -28,13 +28,26 @@ export interface LeaseAwareWriterAuthorityProvider {
   revalidateCurrent(taskId: string): Promise<LeaseAwareWriterAuthorityV1>;
 }
 
+/**
+ * Optional M12F extension used only by a future distributed writer path. The
+ * implementation must revalidate the exact current distributed fence against the
+ * shared backend. It grants no task/filesystem authority and cannot replace the
+ * durable authority or local writer-lease checks below.
+ */
+export interface DistributedWriterFenceGuard {
+  taskId: string;
+  workspaceId: string;
+  validateCurrent(): Promise<void>;
+}
+
 export type LeaseAwareWriterSafetyCode =
   | "binding_invalid"
   | "authority_revalidation_failed"
   | "authority_stale"
   | "lease_aborted"
   | "lease_identity_changed"
-  | "lease_invalid";
+  | "lease_invalid"
+  | "distributed_fence_invalid";
 
 export class LeaseAwareWriterSafetyError extends Error {
   constructor(
@@ -50,6 +63,7 @@ export class LeaseAwareWriterSafetyError extends Error {
 export interface LeaseAwareHubSafetyOptions {
   lease: WriterLeaseSession;
   authorityProvider: LeaseAwareWriterAuthorityProvider;
+  distributedFenceGuard?: DistributedWriterFenceGuard;
 }
 
 type BoundLeaseIdentity = {
@@ -143,6 +157,19 @@ function assertInitialLeaseBinding(
   return claimIdentity(claim);
 }
 
+function assertInitialDistributedFenceBinding(
+  expected: LeaseAwareWriterAuthorityV1,
+  guard: DistributedWriterFenceGuard | undefined,
+): void {
+  if (!guard) return;
+  if (guard.taskId !== expected.taskId || guard.workspaceId !== expected.workspaceId) {
+    throw new LeaseAwareWriterSafetyError(
+      "Distributed fence identity does not match the approved task/workspace binding",
+      "binding_invalid",
+    );
+  }
+}
+
 async function revalidateAuthority(
   expected: LeaseAwareWriterAuthorityV1,
   provider: LeaseAwareWriterAuthorityProvider,
@@ -166,20 +193,23 @@ async function revalidateAuthority(
 }
 
 /**
- * Revalidates both sources of permission immediately before invoking a write-capable
- * owner executor. Durable task/Safety Plan authority and the fenced lease are
- * independent: neither can substitute for the other.
+ * Revalidates every independent permission source immediately before invoking a
+ * write-capable owner executor. Durable task/Safety Plan authority, the local
+ * fenced writer lease and (when supplied) the shared distributed fence are all
+ * mandatory and none can substitute for another.
  *
  * The lease ID/fence token are bound when the adapter is created. Normal heartbeat
  * renewal may advance claim stateRevision/expiresAt, but may not replace either
  * identity. `validateCurrent()` remains authoritative for the current durable lock
- * state and expiry.
+ * state and expiry. The distributed guard is deliberately last so a stale shared
+ * generation fails immediately before the underlying path-governed mutation.
  */
 async function assertCurrentWriteBoundary(
   expected: LeaseAwareWriterAuthorityV1,
   boundLease: BoundLeaseIdentity,
   lease: WriterLeaseSession,
   provider: LeaseAwareWriterAuthorityProvider,
+  distributedFenceGuard?: DistributedWriterFenceGuard,
 ): Promise<void> {
   if (lease.signal.aborted) {
     throw new LeaseAwareWriterSafetyError("Writer lease was aborted before write execution", "lease_aborted");
@@ -216,19 +246,42 @@ async function assertCurrentWriteBoundary(
       "lease_identity_changed",
     );
   }
+
+  if (distributedFenceGuard) {
+    try {
+      await distributedFenceGuard.validateCurrent();
+    } catch (error) {
+      throw new LeaseAwareWriterSafetyError(
+        "Current shared distributed fence is no longer valid",
+        "distributed_fence_invalid",
+        { cause: error },
+      );
+    }
+    if (lease.signal.aborted) {
+      throw new LeaseAwareWriterSafetyError("Writer lease was aborted during distributed fence validation", "lease_aborted");
+    }
+    if (!sameLeaseIdentity(boundLease, lease.currentClaim())) {
+      throw new LeaseAwareWriterSafetyError(
+        "Writer lease/fence identity changed during distributed fence validation",
+        "lease_identity_changed",
+      );
+    }
+  }
 }
 
 /**
- * Slice 9A trusted adapter.
+ * Slice 9A trusted adapter, extended in M12F with an optional shared distributed
+ * fence guard. Local/single-machine callers that omit the guard retain the exact
+ * existing behavior.
  *
- * This does not enable live concurrency. It composes the already-reviewed Hub
- * owner-targeted safety contributions with an additional current-authority +
- * fenced-lease guard on write-capable executors only. Reads/search remain governed
- * by the existing Safety Plan path policy and do not require writer lease authority.
+ * This composes the already-reviewed Hub owner-targeted safety contributions with
+ * current durable authority + local fenced lease checks on write-capable executors.
+ * When a future distributed writer explicitly supplies a distributed guard, that
+ * exact fence is additionally revalidated immediately before the underlying owner
+ * executor. Reads/search remain governed by the existing Safety Plan path policy.
  *
- * The outer guard executes immediately before the existing `editor`/`applyPatch`
- * owner executor is invoked. That underlying executor still independently enforces
- * current approved path/action policy before the SDK filesystem mutation.
+ * The underlying editor/applyPatch executor still independently enforces current
+ * approved path/action policy before the SDK filesystem mutation.
  */
 export function createLeaseAwareHubSafetySessionContributions(
   task: OrchestratorTask,
@@ -242,6 +295,7 @@ export function createLeaseAwareHubSafetySessionContributions(
 
   const expected = leaseAwareWriterAuthorityFromTask(task, options.lease.ownerInstanceId);
   const boundLease = assertInitialLeaseBinding(expected, options.lease);
+  assertInitialDistributedFenceBinding(expected, options.distributedFenceGuard);
   const safety = createHubSafetySessionContributions(task, workspaceRoot, worker);
   const executors = safety.capabilities.toolExecutors;
   const editor = executors?.editor;
@@ -256,6 +310,7 @@ export function createLeaseAwareHubSafetySessionContributions(
       boundLease,
       options.lease,
       options.authorityProvider,
+      options.distributedFenceGuard,
     );
     return await editor(input, cwd, context);
   };
@@ -266,6 +321,7 @@ export function createLeaseAwareHubSafetySessionContributions(
       boundLease,
       options.lease,
       options.authorityProvider,
+      options.distributedFenceGuard,
     );
     return await applyPatch(input, cwd, context);
   };
