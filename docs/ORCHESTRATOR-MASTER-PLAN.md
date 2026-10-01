@@ -21,6 +21,7 @@ Branch: `phase-1/bootstrap`
 14. No listener, tunnel, DNS/firewall/port-forwarding change, credential provisioning, external network mutation, merge, deploy or destructive Git operation may be performed without the separately required explicit authorization.
 15. Distributed restart/recovery must fail closed. A prior dispatch, candidate, fence, handoff context or runtime history must never become takeover authority after process/machine restart.
 16. Distributed machine-authentication bootstrap must prove possession of an explicitly registered machine-local key; registration identifiers alone are never sufficient to mint an M12C session.
+17. A target pull may present only transport authentication/request identity. Task, workspace, dispatch, candidate-assignment and fence selection remain controller-owned and must not be chosen by the target.
 
 ## End goal
 
@@ -43,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12Q complete; latest code CI `#985`; machine-authentication bootstrap now gates M12C issuance, while controller pending-work selection, real cross-machine network I/O/listener and distributed takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12R complete; latest code CI `#993`; controller-owned pending-work selection is proven, while real cross-machine HTTPS I/O/listener and distributed takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -214,6 +215,24 @@ Evidence: slice definition `41ceaff443e2d4a07d79225b6ac03724d08aed15`; productio
 
 M12Q does not define public-key provisioning or a network challenge route. Those remain separately reviewed/gated.
 
+## 12R — Controller-owned pending-work selection — COMPLETE
+
+`src/distributed-controller-pending-work.ts` adds a controller-owned target-pull selector that accepts only the authenticated machine bearer plus an opaque request ID. The pull API contains no task ID, workspace ID, dispatch ID, candidate-assignment ID or fence ID, so the target cannot choose which work evidence it receives.
+
+Selection begins with M12C authentication for `accept_writer_candidates`. The exact machine ID, registration ID and registration revision are derived from the resulting authority-free transport identity. The controller then atomically claims the next FIFO work item already prepared for that exact identity. Work for a different machine/revision remains unclaimable.
+
+Every claimed item is exact-schema, authority-free controller-selection evidence containing only the existing M12G dispatch, M12D assignment and M12E fence. M12R revalidates current candidate state and current fence state after claim, then enters M12J through the new `DistributedExecutionPullDeliveryController.deliverAuthorized(...)` reuse point. M12J therefore remains the single delivery-bundle construction boundary; M12R does not create parallel delivery authority.
+
+Claimed stale/invalid work fails closed and is not resurrected. A successful claim is one-shot; a later pull cannot receive the same pending item. "No work" returns `null` and grants nothing. Tests prove controller FIFO choice, cross-machine isolation, one-shot claim, authentication-before-selection, stale-candidate rejection before fence/delivery, stale-fence rejection before delivery, malformed/cross-bound evidence rejection and authority-widening rejection.
+
+`ReferenceControllerPendingWorkQueue` is deterministic single-process proof only. A later production network/scheduler composition may inject a different controller-owned atomic source, but that source must preserve the same exact-identity, no-target-selector and one-shot claim contract.
+
+No DNS/TLS/HTTP/network I/O, listener/socket, controller push, private-key provisioning, distributed takeover/recovery or release authority was introduced.
+
+Evidence: M12J authorized-builder reuse `4927e2c906378dc6c13a925b3abbdca9ff8f65fc`; selector `71b55fa651a00b1919c11e5d8540bda93ad999a8`; proof `cf43622164499dcafff8aa21bc967835a7f8ad54`; CI `#993` / `36893284376` passed typecheck + full suite.
+
+M12R does not authorize a real HTTPS adapter or public listener. Network I/O remains the next separately reviewed boundary.
+
 ---
 
 # Current capability snapshot
@@ -237,7 +256,8 @@ M12Q does not define public-key provisioning or a network challenge route. Those
 | Restart no-resurrection proof | Complete — M12O; CI `#967` |
 | Secure distributed transport profile/server identity | Complete — M12P; CI `#975`; no network I/O |
 | Machine authentication bootstrap | Complete — M12Q; CI `#985`; Ed25519 possession proof delegates to M12C only |
-| Controller pending-work selection | Not yet defined; identified by review as next prerequisite before network pull |
+| Controller pending-work selection | Complete — M12R; CI `#993`; target cannot select task/workspace/dispatch/candidate/fence |
+| Secure target-pull HTTPS adapter | Not yet defined; next review boundary |
 | Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
 | Distributed network listener/adapter | Disabled / separately gated |
 | Controller-to-target network push | Disabled |
@@ -274,8 +294,9 @@ M12Q does not define public-key provisioning or a network challenge route. Those
 22. M12P transport profiles may contain public endpoint/pinning metadata only. Bearer tokens, private keys, client certificates and other credentials remain outside the profile and outside model-facing/durable task state.
 23. M12Q private keys remain machine-local and outside the orchestrator bootstrap/controller/task/project/model-facing state. Public keys/fingerprints are authentication metadata only, not task authority.
 24. M12Q challenge state is intentionally process-local; process restart invalidates outstanding challenges. Durable bootstrap challenge recovery, if ever needed, requires a separate review.
-25. A future target-pull network route must not let the target choose or submit dispatch/assignment/fence evidence. Controller-owned pending-work selection must produce the exact M12J inputs for the authenticated machine.
-26. Cline completion prose is reviewer context only; trusted captured evidence wins conflicts.
+25. M12R requires controller-owned work selection derived only from authenticated machine identity. The target must never submit task/workspace/dispatch/candidate/fence selectors to a future network route.
+26. `ReferenceControllerPendingWorkQueue` is deterministic single-process proof only. Any production pending-work source must preserve atomic exact-target claim semantics and revalidation before M12J delivery.
+27. Cline completion prose is reviewer context only; trusted captured evidence wins conflicts.
 
 ---
 
@@ -291,9 +312,10 @@ M12Q does not define public-key provisioning or a network challenge route. Those
 8. **COMPLETE — M12O restart / stale-coordination no-resurrection proof.** Final CI `#967`.
 9. **COMPLETE — M12P secure target-pull transport profile + controller server-identity prerequisite.** Final CI `#975`.
 10. **COMPLETE — M12Q machine authentication bootstrap + bounded M12C session issuance.** Final CI `#985`.
-11. **STOP for review before defining the controller-owned pending-work selection slice.** Do not add a network pull route before the controller, not the target, owns selection of dispatch/assignment/fence evidence.
-12. **DO NOT production-wire cross-machine delivery/execution** until later explicitly reviewed slices preserve M12C/M12Q authentication, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
-13. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+11. **COMPLETE — M12R controller-owned pending-work selection.** Final CI `#993`.
+12. **STOP for review before defining a real HTTPS target-pull adapter slice.** M12R grants no authorization to perform DNS/TLS/HTTP I/O or open a listener.
+13. **DO NOT production-wire cross-machine delivery/execution** until a later explicitly reviewed secure transport slice preserves M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
+14. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -312,9 +334,10 @@ M12Q does not define public-key provisioning or a network challenge route. Those
 - 2026-09-29: M12P secure transport profile/server-identity prerequisite defined and implemented without network I/O; final CI `#975` green.
 - 2026-10-01: Post-M12P security review identified machine-authentication bootstrap/session issuance and controller-owned pending-work selection as prerequisites before network I/O.
 - 2026-10-01: M12Q Ed25519 possession-proof bootstrap completed; valid proof delegates only to existing M12C issuance, with replay/stale/key-rotation/authority-widening proofs; final CI `#985` green.
+- 2026-10-01: M12R controller-owned pending-work selection completed; target pull inputs contain no work selectors; exact-machine FIFO claim, candidate/fence revalidation and M12J reuse proven; final CI `#993` green.
 
 ---
 
 # Current next step
 
-**STOP for review.** M12Q is complete. The next Milestone 12 slice is intentionally not yet defined. Review the controller-owned pending-work selection boundary before adding any DNS/TLS/HTTP network I/O, listener, controller push, distributed takeover/recovery, private-key provisioning or release authority.
+**STOP for review.** M12R is complete. The next Milestone 12 slice is intentionally not yet defined. Review the secure target-pull HTTPS network adapter boundary before adding DNS/TLS/HTTP I/O, any listener, controller push, distributed takeover/recovery, private-key provisioning or release authority.
