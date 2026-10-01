@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
 import {
+  assertDistributedMachineAuthenticationBinding,
   createDistributedMachineAuthenticationBinding,
   distributedMachineAuthenticationChallengePayload,
   DISTRIBUTED_MACHINE_AUTH_BOOTSTRAP_CONTRACT,
@@ -381,19 +382,24 @@ test("binding rejects authority widening, unknown private-key material and non-E
       && error.code === "binding_invalid",
   );
 
-  const widened = { ...binding, grantsCredentialAuthority: true };
   assert.throws(
-    () => {
-      const bootstrapModuleBinding = widened as unknown;
-      // Exercise exact runtime validation through a lookup on challenge issuance.
-      return bootstrapModuleBinding;
-    },
-    undefined,
+    () => assertDistributedMachineAuthenticationBinding({
+      ...binding,
+      grantsCredentialAuthority: true,
+    }),
+    (error: unknown) => error instanceof DistributedMachineAuthenticationBootstrapError
+      && error.code === "binding_invalid",
   );
 
-  const withPrivateKey = { ...binding, privateKey: "secret" };
+  assert.throws(
+    () => assertDistributedMachineAuthenticationBinding({
+      ...binding,
+      privateKey: "secret",
+    }),
+    (error: unknown) => error instanceof DistributedMachineAuthenticationBootstrapError
+      && error.code === "binding_invalid",
+  );
   assert.equal(Object.hasOwn(binding, "privateKey"), false);
-  assert.equal(Object.hasOwn(withPrivateKey, "privateKey"), true);
 });
 
 test("new bootstrap process does not resurrect an outstanding challenge", async () => {
