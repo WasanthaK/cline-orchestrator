@@ -326,21 +326,23 @@ export class DistributedExecutionPullDeliveryController {
     private readonly options: DistributedExecutionDeliveryControllerOptions = {},
   ) {}
 
-  async authorizePull(
-    token: string,
-    requestId: string,
+  async deliverAuthorized(
+    authorizedInput: DistributedMachineAuthorizedRequestV1,
     dispatchInput: DistributedExecutionDispatchV1,
     assignmentInput: DistributedWriterCandidateAssignmentV1,
     fenceInput: DistributedFenceClaimV1,
   ): Promise<DistributedExecutionDeliveryBundleV1> {
+    const authorized = structuredClone(authorizedInput);
     const dispatch = structuredClone(dispatchInput);
     const assignment = structuredClone(assignmentInput);
     const fence = structuredClone(fenceInput);
     try {
+      assertAuthorizedTransportRequest(authorized);
       assertDistributedExecutionDispatch(dispatch);
       assertDistributedWriterCandidateAssignment(assignment);
       assertDistributedFenceClaim(fence);
     } catch (error) {
+      if (error instanceof DistributedExecutionDeliveryError) throw error;
       throw new DistributedExecutionDeliveryError(
         "controller delivery evidence is invalid",
         "delivery_invalid",
@@ -348,7 +350,38 @@ export class DistributedExecutionPullDeliveryController {
       );
     }
     assertEvidenceBinding(dispatch, assignment, fence);
+    assertTransportTargetBinding(authorized, dispatch);
+    assertEvidenceCurrentEnoughToDeliver(dispatch, assignment, fence, currentTime(this.options.now));
 
+    const delivery: DistributedExecutionDeliveryBundleV1 = {
+      schemaVersion: 1,
+      deliveryId: requireUuid(
+        (this.options.idFactory ?? (() => crypto.randomUUID()))(),
+        "deliveryId",
+      ),
+      transportRequest: authorized,
+      dispatch,
+      assignment,
+      fence,
+      authority: "transport_delivery_evidence_only",
+      grantsTaskAuthority: false,
+      grantsFilesystemAuthority: false,
+      grantsSafetyPlanAuthority: false,
+      grantsWriterLeaseAuthority: false,
+      grantsCredentialAuthority: false,
+      grantsReleaseAuthority: false,
+    };
+    assertDistributedExecutionDeliveryBundle(delivery);
+    return structuredClone(delivery);
+  }
+
+  async authorizePull(
+    token: string,
+    requestId: string,
+    dispatchInput: DistributedExecutionDispatchV1,
+    assignmentInput: DistributedWriterCandidateAssignmentV1,
+    fenceInput: DistributedFenceClaimV1,
+  ): Promise<DistributedExecutionDeliveryBundleV1> {
     let authorized: DistributedMachineAuthorizedRequestV1;
     try {
       authorized = await this.transport.authorize(token, requestId, "accept_writer_candidates");
@@ -367,29 +400,12 @@ export class DistributedExecutionPullDeliveryController {
         "transport_identity_invalid",
       );
     }
-    assertTransportTargetBinding(authorized, dispatch);
-    assertEvidenceCurrentEnoughToDeliver(dispatch, assignment, fence, currentTime(this.options.now));
-
-    const delivery: DistributedExecutionDeliveryBundleV1 = {
-      schemaVersion: 1,
-      deliveryId: requireUuid(
-        (this.options.idFactory ?? (() => crypto.randomUUID()))(),
-        "deliveryId",
-      ),
-      transportRequest: structuredClone(authorized),
-      dispatch,
-      assignment,
-      fence,
-      authority: "transport_delivery_evidence_only",
-      grantsTaskAuthority: false,
-      grantsFilesystemAuthority: false,
-      grantsSafetyPlanAuthority: false,
-      grantsWriterLeaseAuthority: false,
-      grantsCredentialAuthority: false,
-      grantsReleaseAuthority: false,
-    };
-    assertDistributedExecutionDeliveryBundle(delivery);
-    return structuredClone(delivery);
+    return this.deliverAuthorized(
+      authorized,
+      dispatchInput,
+      assignmentInput,
+      fenceInput,
+    );
   }
 }
 
