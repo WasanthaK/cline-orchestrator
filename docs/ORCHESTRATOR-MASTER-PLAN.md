@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-09-29
+Last updated: 2026-10-01
 Branch: `phase-1/bootstrap`
 
 ## Canonical rules
@@ -20,6 +20,7 @@ Branch: `phase-1/bootstrap`
 13. Cline completion text is untrusted worker testimony. Preserve it for supervisor context, but never let it override independently captured validation, diff-safety, Git, checkpoint or runtime evidence.
 14. No listener, tunnel, DNS/firewall/port-forwarding change, credential provisioning, external network mutation, merge, deploy or destructive Git operation may be performed without the separately required explicit authorization.
 15. Distributed restart/recovery must fail closed. A prior dispatch, candidate, fence, handoff context or runtime history must never become takeover authority after process/machine restart.
+16. Distributed machine-authentication bootstrap must prove possession of an explicitly registered machine-local key; registration identifiers alone are never sufficient to mint an M12C session.
 
 ## End goal
 
@@ -42,7 +43,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12P complete; latest code CI `#975`; secure target-pull profile/server identity is proven, but real cross-machine network I/O/listener and any distributed takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12P complete; 12Q machine-authentication bootstrap is NEXT; real cross-machine network I/O/listener and any distributed takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -195,6 +196,26 @@ Evidence: slice definition `a79151c047a7bf47bbeb3abadd3db1bc88530058`; productio
 
 M12P does not authorize a network adapter. Any slice that actually performs DNS/TLS/HTTP I/O, opens a listener, provisions credentials, changes firewall/DNS/port forwarding or connects machines remains separately reviewed/gated.
 
+## 12Q — Machine authentication bootstrap + bounded M12C session issuance — NEXT / DEFINED
+
+Objective: prove that a target machine can obtain an existing M12C short-lived bearer session only after possession of an explicitly registered machine-authentication key is demonstrated. M12Q is cryptographic/controller-local composition only; it performs no network I/O and does not provision private keys.
+
+Required contract/proof:
+
+- machine authentication uses Ed25519 public-key verification; private keys are generated/stored outside the orchestrator bootstrap contract and never enter controller/task/project/model-facing durable state;
+- controller holds an explicit authentication binding from machine registration ID + exact registration revision to one active Ed25519 public key identity/fingerprint; registration identity by itself is insufficient;
+- bootstrap challenge is opaque, short-lived, one-time, cryptographically random and bound to exact machine ID, registration ID/revision, requested M12C capabilities and requested session TTL;
+- target signs a canonical domain-separated challenge payload; signature verification must fail on any binding/capability/TTL/challenge mutation;
+- challenge consumption is one-shot and replay fails closed; expired challenges fail closed; a new process/bootstrap authority must not infer old challenge validity unless backed by an explicitly reviewed durable store later;
+- immediately before M12C session issuance, revalidate the exact current machine registration revision and ensure requested capabilities remain a subset of current registered capabilities;
+- successful proof delegates session creation only to the existing `DistributedMachineTransportGateway.issue()` boundary; M12Q must not mint a parallel bearer/session format;
+- returned session keeps existing M12C authority semantics: authenticated machine identity only, short-lived and capability-bounded, with all task/filesystem/Safety/local-lease/credential/release grants false;
+- public-key material/fingerprint is authentication metadata only and grants no task/write/release authority;
+- no DNS lookup, HTTPS/TLS/HTTP request, listener, socket, controller push, credential provisioning, private-key generation, firewall/DNS/port-forwarding change, distributed takeover/recovery or release action is included;
+- M12P server-identity profile and M12G–M12O execution/replay/fencing boundaries remain unchanged.
+
+Acceptance: hosted CI proves valid Ed25519 possession can reach the existing M12C `issue()` function once, and rejects wrong key/signature, mutated challenge bindings, stale registration revision, disallowed capability, expired/replayed challenge and authority-widening data. After M12Q is green, update this plan and stop before defining controller pending-work selection or any network-I/O adapter slice.
+
 ---
 
 # Current capability snapshot
@@ -217,6 +238,8 @@ M12P does not authorize a network adapter. Any slice that actually performs DNS/
 | Candidate renewal + candidate→fence composition | Complete — M12M–M12N |
 | Restart no-resurrection proof | Complete — M12O; CI `#967` |
 | Secure distributed transport profile/server identity | Complete — M12P; CI `#975`; no network I/O |
+| Machine authentication bootstrap | NEXT — M12Q; Ed25519 possession proof + existing M12C issuance only |
+| Controller pending-work selection | Not yet defined |
 | Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
 | Distributed network listener/adapter | Disabled / separately gated |
 | Controller-to-target network push | Disabled |
@@ -251,7 +274,9 @@ M12P does not authorize a network adapter. Any slice that actually performs DNS/
 20. After restart, old dispatch/candidate/fence/handoff/runtime evidence must remain stale or consumed. Restart must never reconstruct an in-memory lifecycle and call it current.
 21. Generic local scheduled-writer/workflow recovery cannot be silently reused as distributed takeover authority. Any future distributed recovery needs a separately reviewed fresh-admission/fresh-fence design.
 22. M12P transport profiles may contain public endpoint/pinning metadata only. Bearer tokens, private keys, client certificates and other credentials remain outside the profile and outside model-facing/durable task state.
-23. Cline completion prose is reviewer context only; trusted captured evidence wins conflicts.
+23. M12Q private keys must remain machine-local and outside orchestrator model-facing/durable state. Public keys/fingerprints are authentication metadata only, not task authority.
+24. M12Q challenge state is process-local for this slice; process restart invalidates outstanding challenges rather than resurrecting them. Durable bootstrap challenge recovery, if ever needed, requires a separate review.
+25. Cline completion prose is reviewer context only; trusted captured evidence wins conflicts.
 
 ---
 
@@ -266,9 +291,10 @@ M12P does not authorize a network adapter. Any slice that actually performs DNS/
 7. **COMPLETE — M12K–M12N fence/candidate renewal and fail-safe abort lifecycle.** Final CI `#959`.
 8. **COMPLETE — M12O restart / stale-coordination no-resurrection proof.** Final CI `#967`.
 9. **COMPLETE — M12P secure target-pull transport profile + controller server-identity prerequisite.** Final CI `#975`.
-10. **STOP for review before defining any network-I/O adapter slice.** M12P validates configuration only and grants no authorization to connect.
-11. **DO NOT production-wire cross-machine delivery/execution** until a later explicitly reviewed secure transport slice preserves M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
-12. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+10. **NEXT — M12Q machine authentication bootstrap + bounded M12C session issuance.** Controller-local cryptographic proof only; no network I/O or private-key provisioning.
+11. **STOP after M12Q hosted CI + plan update** before defining controller pending-work selection or any network-I/O adapter slice.
+12. **DO NOT production-wire cross-machine delivery/execution** until later explicitly reviewed slices preserve M12C authentication, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
+13. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -285,9 +311,10 @@ M12P does not authorize a network adapter. Any slice that actually performs DNS/
 - 2026-09-29: M12N candidate→fence renewal composition and candidate-renewal-loss abort completed; final CI `#959`.
 - 2026-09-29: M12O restart/stale-coordination no-resurrection proof completed; initial CI `#965` exposed test-fixture typing only; correction `17232804c98b024fda620c45d210dcb3cb55a75d`; final CI `#967` green.
 - 2026-09-29: M12P secure transport profile/server-identity prerequisite defined and implemented without network I/O; final CI `#975` green.
+- 2026-10-01: Post-M12P security review identified two prerequisites before network I/O: machine-authentication bootstrap/session issuance and controller-owned pending-work selection. M12Q defined as the first prerequisite.
 
 ---
 
 # Current next step
 
-**STOP for review.** M12P is complete. The next Milestone 12 slice is intentionally not yet defined. Do not add DNS/TLS/HTTP network I/O, listeners, controller push, distributed takeover/recovery, credential provisioning or release authority until the next bounded slice is explicitly reviewed.
+**M12Q is the first unfinished item.** Implement only the bounded Ed25519 challenge/response bootstrap that delegates successful issuance to existing M12C `issue()`. Do not add DNS/TLS/HTTP network I/O, listeners, controller push, pending-work selection, distributed takeover/recovery, private-key provisioning or release authority. After M12Q passes hosted CI, update this plan and stop for review.
