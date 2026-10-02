@@ -308,6 +308,14 @@ test("M12S rejects unknown pull fields and invalid profile/bearer/request id bef
   await assert.rejects(
     () => client.pull({
       profile: profile(),
+      bearerToken: `dmt_${"x".repeat(40)}☃`,
+      requestId: REQUEST_ID,
+    }),
+    expectCode("bearer_invalid"),
+  );
+  await assert.rejects(
+    () => client.pull({
+      profile: profile(),
       bearerToken: TOKEN,
       requestId: "not-a-uuid",
     }),
