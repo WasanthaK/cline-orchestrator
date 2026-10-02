@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import test from "node:test";
 import {
   assertDistributedMachineAuthenticationBinding,
+  assertDistributedMachineAuthenticationChallenge,
   createDistributedMachineAuthenticationBinding,
   distributedMachineAuthenticationChallengePayload,
   DISTRIBUTED_MACHINE_AUTH_BOOTSTRAP_CONTRACT,
@@ -144,6 +145,46 @@ function fixture(options: {
     issueSpy,
   };
 }
+
+test("M12Q challenge nonce must be canonical base64url for exactly 32 bytes", () => {
+  const { binding } = keyPair();
+  const base: DistributedMachineAuthenticationChallengeV1 = {
+    schemaVersion: 1,
+    challengeId: CHALLENGE_ID,
+    registrationId: REGISTRATION_ID,
+    machineId: MACHINE_ID,
+    registrationRevision: 1,
+    publicKeyFingerprint: binding.publicKeyFingerprint,
+    capabilities: ["accept_writer_candidates"],
+    sessionTtlMs: 60_000,
+    nonce: "A".repeat(43),
+    issuedAt: BASE_NOW.toISOString(),
+    expiresAt: new Date(BASE_NOW.getTime() + 30_000).toISOString(),
+    authority: "authentication_challenge_only",
+    grantsTaskAuthority: false,
+    grantsFilesystemAuthority: false,
+    grantsSafetyPlanAuthority: false,
+    grantsWriterLeaseAuthority: false,
+    grantsCredentialAuthority: false,
+    grantsReleaseAuthority: false,
+  };
+
+  assert.doesNotThrow(() => assertDistributedMachineAuthenticationChallenge(base));
+
+  for (const nonce of [
+    "A".repeat(42),
+    "A".repeat(44),
+    Buffer.alloc(31).toString("base64url"),
+    Buffer.alloc(33).toString("base64url"),
+    `${Buffer.alloc(32).toString("base64url")}=`,
+  ]) {
+    assert.throws(
+      () => assertDistributedMachineAuthenticationChallenge({ ...base, nonce }),
+      (error: unknown) => error instanceof DistributedMachineAuthenticationBootstrapError
+        && error.code === "request_invalid",
+    );
+  }
+});
 
 test("M12Q contract is possession-proof only and grants no execution or network authority", () => {
   assert.deepEqual(DISTRIBUTED_MACHINE_AUTH_BOOTSTRAP_CONTRACT, {
