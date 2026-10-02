@@ -56,7 +56,7 @@ function profile(overrides: Partial<DistributedSecureTransportProfileV1> = {}): 
 
 function bundle(): DistributedExecutionDeliveryBundleV1 {
   const issuedAt = "2026-10-02T00:00:00.000Z";
-  const expiresAt = "2026-10-02T00:01:00.000Z";
+  const expiresAt = "2026-10-02T00:00:20.000Z";
   return {
     schemaVersion: 1,
     deliveryId: DELIVERY_ID,
