@@ -529,6 +529,7 @@ function createServerHarness(overrides: Partial<{
   maxConcurrentBodyCollectors: number;
 }> = {}) {
   const bootstrap = new Bootstrap();
+  const tlsIdentity = identity();
   let pullCalls = 0;
   let capturedOptions: https.ServerOptions | undefined;
   let capturedListener: ((request: IncomingMessage, response: ServerResponse) => void) | undefined;
@@ -557,7 +558,7 @@ function createServerHarness(overrides: Partial<{
         },
       },
       bootstrap,
-      tlsIdentityProvider: identity,
+      tlsIdentityProvider: () => tlsIdentity,
       now: () => new Date(TEST_NOW),
       ...(overrides.peerIssueLimitPerMinute === undefined
         ? {}
@@ -578,6 +579,7 @@ function createServerHarness(overrides: Partial<{
     capturedOptions: () => capturedOptions,
     capturedListener: () => capturedListener,
     listenCalls: () => listenCalls,
+    tlsIdentity,
   };
 }
 
@@ -654,7 +656,7 @@ test("shared server is unbound, strict, uses the exact preflighted identity and 
   assert.equal(options?.joinDuplicateHeaders, false);
   assert.equal(options?.maxHeaderSize, 8192);
   assert.equal(options?.handshakeTimeout, 10_000);
-  assert.equal(options?.key, identity().privateKey, "different KeyObject instances are not reference-equal");
+  assert.equal(options?.key, harness.tlsIdentity.privateKey);
   assert.deepEqual(options?.cert, [TEST_CERT_PEM]);
 
   const listener = harness.capturedListener();
