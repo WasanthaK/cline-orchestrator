@@ -532,11 +532,13 @@ function createServerHarness(overrides: Partial<{
   const tlsIdentity = identity();
   let pullCalls = 0;
   let capturedOptions: https.ServerOptions | undefined;
+  let capturedKeyPem: Buffer | undefined;
   let capturedListener: ((request: IncomingMessage, response: ServerResponse) => void) | undefined;
   let listenCalls = 0;
   const builder: DistributedSharedHttpsServerBuilder = {
     create(options, listener) {
       capturedOptions = options;
+      if (Buffer.isBuffer(options.key)) capturedKeyPem = Buffer.from(options.key);
       capturedListener = listener;
       const server = https.createServer({}, listener);
       const originalListen = server.listen.bind(server);
@@ -577,6 +579,7 @@ function createServerHarness(overrides: Partial<{
       return pullCalls;
     },
     capturedOptions: () => capturedOptions,
+    capturedKeyPem: () => capturedKeyPem,
     capturedListener: () => capturedListener,
     listenCalls: () => listenCalls,
     tlsIdentity,
@@ -656,8 +659,14 @@ test("shared server is unbound, strict, uses the exact preflighted identity and 
   assert.equal(options?.joinDuplicateHeaders, false);
   assert.equal(options?.maxHeaderSize, 8192);
   assert.equal(options?.handshakeTimeout, 10_000);
-  assert.ok(Array.isArray(options?.key));
-  assert.equal(options?.key?.[0], harness.tlsIdentity.privateKey);
+  assert.ok(Buffer.isBuffer(options?.key));
+  assert.equal((options?.key as Buffer).every((value) => value === 0), true);
+  const capturedKeyPem = harness.capturedKeyPem();
+  assert.ok(capturedKeyPem);
+  assert.equal(
+    new X509Certificate(TEST_CERT_PEM).checkPrivateKey(createPrivateKey(capturedKeyPem)),
+    true,
+  );
   assert.deepEqual(options?.cert, [TEST_CERT_PEM]);
 
   const listener = harness.capturedListener();
