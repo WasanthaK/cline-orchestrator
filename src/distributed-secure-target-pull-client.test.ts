@@ -172,9 +172,12 @@ class FakeTransport implements DistributedSecureTargetPullRequestTransport {
   async request(plan: DistributedSecureTargetPullRequestPlan): Promise<DistributedSecureTargetPullRawResponse> {
     this.calls += 1;
     this.plans.push(plan);
-    return typeof this.behavior === "function"
-      ? this.behavior(plan)
-      : structuredClone(this.behavior);
+    if (typeof this.behavior === "function") return this.behavior(plan);
+    return {
+      statusCode: this.behavior.statusCode,
+      headers: structuredClone(this.behavior.headers),
+      body: Buffer.from(this.behavior.body),
+    };
   }
 }
 
