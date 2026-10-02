@@ -234,9 +234,9 @@ Evidence: M12J authorized-builder reuse `4927e2c906378dc6c13a925b3abbdca9ff8f65f
 M12R does not authorize a real HTTPS adapter or public listener. Network I/O remains the next separately reviewed boundary.
 
 
-## 12S — Secure HTTPS target-pull client adapter — REVIEWED / DEFINED
+## 12S — Secure HTTPS target-pull client adapter — COMPLETE
 
-Security review is complete and the exact client-side contract is recorded in `docs/M12S-SECURE-TARGET-PULL-CLIENT-CONTRACT.md`. M12S is **not yet implemented**.
+Security review and implementation are complete. The exact client-side contract remains recorded in `docs/M12S-SECURE-TARGET-PULL-CLIENT-CONTRACT.md`, with production code in `src/distributed-secure-target-pull-client.ts` and socket-free proof in `src/distributed-secure-target-pull-client.test.ts`.
 
 The reviewed boundary is target→controller outbound HTTPS only. The client accepts only a validated M12P profile, an already-issued short-lived M12C bearer and a fresh request ID. It sends one fixed `POST /v1/distributed/execution/pull` request with no body and no task/workspace/dispatch/candidate/fence selector. M12R remains the sole controller-side work selector and M12J remains the sole delivery-bundle schema/validator.
 
@@ -246,9 +246,11 @@ The review identified two deliberate later boundaries. First, M12Q bootstrap/ses
 
 The review also found that the package-wide `node >=22` declaration is too broad to guarantee the explicit OS/system-CA APIs required by M12S. Implementation must tighten/enforce a Node runtime floor that supports the reviewed trust-store behavior rather than silently falling back to an unspecified/default CA set.
 
-M12S implementation proof must remain socket-free in hosted CI through an injected/fake request transport. No listener, real DNS/TLS/HTTP connection, credential provisioning, firewall/DNS/tunnel mutation or physical cross-machine proof is authorized by this review.
+M12S implementation proof remained socket-free in hosted CI through an injected/fake request transport. No listener, real DNS/TLS/HTTP connection, credential provisioning, firewall/DNS/tunnel mutation or physical cross-machine proof was performed.
 
-Definition evidence: `493c35f91d0d4bc9bab7c0d2e8149c3361f6f1b2`.
+Implementation details: the client uses a fixed selector-free `POST /v1/distributed/execution/pull`, explicit Node system roots, `tls.checkServerIdentity` plus exact leaf-SPKI SHA-256 pinning, no redirects/proxy/connection reuse/automatic retry, bounded 200/204 response handling, strict UTF-8/M12J validation, sanitized errors and explicit ambiguous-outcome handling. The project runtime floor is now Node `>=22.15.0`, matching availability of `tls.getCACertificates("system")`. Final hardening rejects unsafe bearer characters before request construction.
+
+Evidence: definition `493c35f91d0d4bc9bab7c0d2e8149c3361f6f1b2`; initial implementation `1e4c8b1953ef9ef6959677f9ea142cdd6d1cd07e`; exact input guard `9faeb81f7957ff50c890aa84e6fd6ce50825c26d`; proof `3981674f1830684ce68d7601b59f9e3a216993d9`; fixture-only corrections `2c1fd92ce3564ccb4c70eb9a7b130a173ae4c134` and `cba2301a7605f8374639697ce84168cfc57e862f`; bearer hardening `3ca06e4ffc6e2703a866f66994bda25ce00c36c4` + `484ea8cf547cbe768829b4dfaa9b13a95022bbfb`; final CI `#1015` / `36957941941` passed typecheck + full suite.
 
 ---
 
@@ -330,8 +332,8 @@ Definition evidence: `493c35f91d0d4bc9bab7c0d2e8149c3361f6f1b2`.
 9. **COMPLETE — M12P secure target-pull transport profile + controller server-identity prerequisite.** Final CI `#975`.
 10. **COMPLETE — M12Q machine authentication bootstrap + bounded M12C session issuance.** Final CI `#985`.
 11. **COMPLETE — M12R controller-owned pending-work selection.** Final CI `#993`.
-12. **REVIEWED / DEFINED — M12S secure HTTPS target-pull client contract.** Implement only the reviewed client-only boundary next; hosted proof must use injected/fake transport and must not open sockets/listeners.
-13. **DO NOT add the controller HTTPS route/listener, networked M12Q bootstrap, delivery retry/ack/reconciliation, or physical cross-machine proof in M12S.** Those are later separately reviewed/gated slices.
+12. **COMPLETE — M12S secure HTTPS target-pull client.** Final CI `#1015`; implementation is outbound-client-only and hosted proof opened no socket/listener.
+13. **STOP for review before defining the controller HTTPS route/listener slice.** Also keep networked M12Q bootstrap and delivery retry/ack/reconciliation separate unless explicitly reviewed.
 14. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
 15. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
@@ -353,10 +355,10 @@ Definition evidence: `493c35f91d0d4bc9bab7c0d2e8149c3361f6f1b2`.
 - 2026-10-01: Post-M12P security review identified machine-authentication bootstrap/session issuance and controller-owned pending-work selection as prerequisites before network I/O.
 - 2026-10-01: M12Q Ed25519 possession-proof bootstrap completed; valid proof delegates only to existing M12C issuance, with replay/stale/key-rotation/authority-widening proofs; final CI `#985` green.
 - 2026-10-01: M12R controller-owned pending-work selection completed; target pull inputs contain no work selectors; exact-machine FIFO claim, candidate/fence revalidation and M12J reuse proven; final CI `#993` green.
-- 2026-10-02: M12S secure HTTPS target-pull client security review completed and exact contract recorded. Review requires fixed outbound-only POST, explicit system-CA + hostname + leaf-SPKI pin validation, no redirects/proxy/retries/work selectors, strict bounded 200/204 responses, sanitized errors, and socket-free CI proof. Implementation remains pending.
+- 2026-10-02: M12S secure HTTPS target-pull client security review and implementation completed. Fixed outbound-only POST, explicit system-CA + hostname + leaf-SPKI pin validation, no redirects/proxy/retries/work selectors, strict bounded 200/204 responses, sanitized errors, explicit ambiguous outcome and socket-free hosted proof completed; final CI `#1015` green.
 
 ---
 
 # Current next step
 
-**M12S REVIEW COMPLETE.** Implement the reviewed client-only contract in `docs/M12S-SECURE-TARGET-PULL-CLIENT-CONTRACT.md` next. Do not add a controller listener/route, networked M12Q bootstrap, automatic retry/claim recovery, runtime execution wiring or real socket/network proof in the M12S implementation.
+**STOP for review.** M12S is complete. Review the controller HTTPS route/listener boundary before adding any server listener, certificate/private-key provisioning, networked M12Q bootstrap, delivery acknowledgement/reconciliation, runtime auto-execution wiring or physical cross-machine proof.
