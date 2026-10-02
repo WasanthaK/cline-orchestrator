@@ -377,23 +377,58 @@ test("invalid signer output is rejected and completion is never attempted", asyn
 
 test("invalid input and private-key-shaped extra fields fail before transport", async () => {
   const keys = machineKeys();
-  for (const input of [
-    {
+
+  const unsortedTransport = new FakeTransport([]);
+  const unsortedClient = new DistributedNetworkMachineAuthClient({
+    transport: unsortedTransport,
+    systemCaProvider: () => [SYSTEM_CA],
+    requestIdFactory: requestIds(),
+  });
+  await assert.rejects(
+    () => unsortedClient.bootstrapSession({
       profile: profile(),
       registrationId: REGISTRATION_ID,
       capabilities: ["report_status", "accept_writer_candidates"],
       sessionTtlMs: 60_000,
-      signer: { publicKeyFingerprint: keys.fingerprint, sign: async () => Buffer.alloc(64) },
-    },
-    {
+      signer: {
+        publicKeyFingerprint: keys.fingerprint,
+        sign: async () => Buffer.alloc(64),
+      },
+    }),
+    expectCode("request_invalid"),
+  );
+  assert.equal(unsortedTransport.calls, 0);
+
+  const topLevelTransport = new FakeTransport([]);
+  const topLevelClient = new DistributedNetworkMachineAuthClient({
+    transport: topLevelTransport,
+    systemCaProvider: () => [SYSTEM_CA],
+    requestIdFactory: requestIds(),
+  });
+  await assert.rejects(
+    () => topLevelClient.bootstrapSession({
       profile: profile(),
       registrationId: REGISTRATION_ID,
       capabilities: ["accept_writer_candidates"],
       sessionTtlMs: 60_000,
-      signer: { publicKeyFingerprint: keys.fingerprint, sign: async () => Buffer.alloc(64) },
+      signer: {
+        publicKeyFingerprint: keys.fingerprint,
+        sign: async () => Buffer.alloc(64),
+      },
       privateKey: "forbidden",
-    },
-    {
+    } as any),
+    expectCode("request_invalid"),
+  );
+  assert.equal(topLevelTransport.calls, 0);
+
+  const signerTransport = new FakeTransport([]);
+  const signerClient = new DistributedNetworkMachineAuthClient({
+    transport: signerTransport,
+    systemCaProvider: () => [SYSTEM_CA],
+    requestIdFactory: requestIds(),
+  });
+  await assert.rejects(
+    () => signerClient.bootstrapSession({
       profile: profile(),
       registrationId: REGISTRATION_ID,
       capabilities: ["accept_writer_candidates"],
@@ -402,21 +437,11 @@ test("invalid input and private-key-shaped extra fields fail before transport", 
         publicKeyFingerprint: keys.fingerprint,
         sign: async () => Buffer.alloc(64),
         privateKey: "forbidden",
-      },
-    },
-  ]) {
-    const transport = new FakeTransport([]);
-    const client = new DistributedNetworkMachineAuthClient({
-      transport,
-      systemCaProvider: () => [SYSTEM_CA],
-      requestIdFactory: requestIds(),
-    });
-    await assert.rejects(
-      () => client.bootstrapSession(input as any),
-      expectCode("request_invalid"),
-    );
-    assert.equal(transport.calls, 0);
-  }
+      } as any,
+    }),
+    expectCode("signer_invalid"),
+  );
+  assert.equal(signerTransport.calls, 0);
 });
 
 test("M12U client does not retry transport failure or ambiguous completion", async () => {
