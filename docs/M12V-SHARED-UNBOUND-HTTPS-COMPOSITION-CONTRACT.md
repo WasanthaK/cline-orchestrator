@@ -82,7 +82,7 @@ TLS/key loading/provisioning remains a later local/admin concern.
 
 ## Mandatory local TLS identity preflight
 
-Before constructing the shared server, M12V performs a pure local preflight against the same identity object that will be passed to `https.createServer`.
+Before constructing the shared server, M12V performs a pure local preflight against the same identity object whose verified private key/certificate chain will be used for `https.createServer`. Node's HTTPS server key option is PEM/Buffer based in the supported runtime contract, so only after successful preflight the exact verified private `KeyObject` is exported to an ephemeral unencrypted PKCS#8 PEM `Buffer` for synchronous server construction; that temporary buffer is zeroed immediately after the server builder returns.
 
 The preflight MUST:
 
@@ -300,7 +300,7 @@ Before M12V can be marked complete, hosted CI must remain listener/socket-free a
 17. leaf/private-key consistency is locally verified;
 18. expired/not-yet-valid/CA/malformed leaf fails before server construction;
 19. preflight receipt contains no credential material;
-20. the exact preflighted key/certificate chain is the one supplied to the server builder;
+20. the certificate chain supplied to the server builder is the exact preflighted chain, and the server private key is an ephemeral PKCS#8 PEM export of the exact preflighted KeyObject whose bytes are zeroed immediately after synchronous construction;
 21. shared server is HTTP/1.1-only, strict-parser, bounded, one-request-per-socket;
 22. server returns unbound and production contains zero `.listen(` calls;
 23. production contains zero direct M12C authorize/issue calls and zero direct M12Q challenge/completion calls;
