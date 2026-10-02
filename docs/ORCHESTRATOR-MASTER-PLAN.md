@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12V complete; M12W deployment credential/binding/listener-activation security review defined but not implemented; physical credential provisioning, listener binding, delivery reconciliation and distributed takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W complete; latest code CI `#1099`; durable public M12Q binding storage, strict read-only TLS loading, revision-safe key rotation, explicit private/loopback bind config and one-shot listener activation permits are implemented/proven software-only, while physical credential provisioning/listener activation, delivery reconciliation and distributed takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -312,9 +312,9 @@ Production audit: zero `.listen(` calls; zero direct M12C `.authorize(` or `.iss
 Evidence: definition `bbece84ec9639a306fced77ccc92040d708f9754`; implementation `0e9505620a78d7c2e576dd2f990c88dd6d613e53`; initial proof `3eddc16a82531388cff4bf45756d58de0ba82bef`; fixture correction `e3b5e20fb3a72ae6e10bb880a5f8786b8881f567`; Node HTTPS key typing fixes `dfc504f2db8c26d66cf91697f6dc5608666fbfdf` + `99eb446fa2e18552a13d79c1a7d02a2e57c4dc92`; ephemeral key hardening `12d6806c498e16f8b98cd08370f5f1104fecaeb1` + proof `a55a2b7e15cc93c21095a4cb81ee972e5fa6d660`; contract clarification `924c93be2f5000c3a3c55a3cc77805fd6bd7e685`; IPv6/preflight edge hardening `cc14b84c773ab81e359dbf89f436d8a81b866e07` + proof `4578f8aa93ef80238136022d43162ce886a99268`; final CI `#1080` / `36990529928` passed typecheck + full suite.
 
 
-## 12W — Deployment credentials, durable machine binding + listener activation — REVIEWED / DEFINED
+## 12W — Deployment credentials, durable machine binding + listener activation — COMPLETE
 
-Security review is complete and the exact software-only deployment contract is recorded in `docs/M12W-DEPLOYMENT-CREDENTIALS-LISTENER-ACTIVATION-CONTRACT.md`. M12W is **not yet implemented**.
+Security review and software-only implementation are complete. The exact deployment contract remains recorded in `docs/M12W-DEPLOYMENT-CREDENTIALS-LISTENER-ACTIVATION-CONTRACT.md`, with durable binding storage in `src/distributed-machine-auth-binding-store.ts` and deployment/listener composition in `src/distributed-deployment-listener.ts`.
 
 The review deliberately separates software deployment readiness from physical activation. M12W will add a durable controller-local store for M12Q **public** machine-authentication bindings, strict read-only loaders for already-provisioned controller TLS material, exact listener bind configuration, short-lived process-local one-shot listener activation permits, and a narrowly scoped activation adapter whose hosted proof uses an injected fake bind primitive and opens no real socket.
 
@@ -330,9 +330,17 @@ A bind configuration is not bind authority. Listener activation requires a fresh
 
 The later physical sequence is staged: P0 inspect-only prerequisites; P1 separately authorized credential provisioning/enrollment; P2 separately authorized exact-address listener activation; P3 client-observed TLS proof; P4 M12U bootstrap proof; P5 M12S/M12T **no-work 204** proof. Real writer delivery is not automatically included; delivery acknowledgement/reconciliation must be reviewed before a live writer proof if still unresolved.
 
-No TLS certificate/private-key issuance, target Ed25519 key generation/provisioning, OS trust-store change, DNS/firewall/NAT/tunnel mutation, real listener bind, physical cross-machine proof or runtime auto-start is authorized by this review.
+Hosted M12W proof remained software-only. The binding store proves canonical create/get/replace/delete, duplicate/corrupt/oversized/private-field rejection, symlink/non-regular-path rejection, optimistic fingerprint/revision checks, same-directory atomic replacement and POSIX `0600` creation. Enrollment binds only to the exact current registration. Rotation bumps the registration revision before binding replacement; a replacement failure leaves the machine fail-closed, and a direct M12C proof confirms that the revision bump makes an already-issued session stale.
 
-Definition evidence: `198932fbc34b1eafd7f7150e502aaec167bf73f4`.
+The TLS loader accepts only exact trusted absolute local paths, rejects symlinks/non-regular/oversized/encrypted-or-invalid key material, enforces restrictive POSIX private-key permissions, and returns only in-memory parsed identity for mandatory M12V preflight. Bind configuration accepts only explicit loopback/private/local IP literals with a port matching the M12P controller origin; wildcard/public/multicast/mismatched-port configurations fail closed.
+
+Listener activation is guarded by a process-local short-lived one-shot permit bound to exact profile/origin/address/port + M12V leaf pin. Permits are consumed before bind, burned on bind failure, lost across a fresh issuer/process, and cannot be reused. Hosted tests inject a fake bind primitive; they create unbound `https.Server` objects but contain zero `.listen(` calls and open no real socket. Production contains exactly one narrowly scoped `server.listen({host, port, exclusive:true})` inside `NodeDistributedListenerBindPrimitive`, reachable only after the permit/controller checks; it was not invoked by hosted proof.
+
+Static audit: the durable binding store contains zero listener/network calls; deployment production contains zero direct M12C `.authorize(` / `.issue(` calls, zero direct M12Q `.issueChallenge(` / `.completeChallenge(` calls, and no M12H/M12I runtime dependency. Firewall/DNS/tunnel references are immutable `false` contract flags only.
+
+No TLS certificate/private-key issuance, target Ed25519 key generation/provisioning, OS trust-store change, DNS/firewall/NAT/tunnel mutation, real listener bind, physical cross-machine proof or runtime auto-start was performed.
+
+Evidence: definition `198932fbc34b1eafd7f7150e502aaec167bf73f4`; binding store `5040739a70ea97db08acbb47e37647617c4f5252`; deployment substrate `6f8542d3d96835049933c7bf7d30f547b24335c1`; bind revalidation hardening `0dc2d48dd3a66d3507989e427c45e4a5b2174a65`; binding proof `33b47a77f32d5f4bf9b9f6dab29896986196e486`; deployment proof `52ca7a88d1ecf23ad4647da017417033db779669`; final corruption/credential/permit edge proofs `d5df8ffdfe922132f0688d2a08c87b553104967d` + `c859b34a2fdac8cab445d801d2b2a8777f8b4f00`; final CI `#1099` / `37002297374` passed typecheck + full suite.
 
 ---
 
@@ -362,9 +370,9 @@ Definition evidence: `198932fbc34b1eafd7f7150e502aaec167bf73f4`.
 | Controller HTTPS target-pull server | Complete — M12T; CI `#1025`; strict unbound server/route, no `listen()` path |
 | Networked machine-auth bootstrap | Complete — M12U; CI `#1055`; canonical M12Q challenge/session envelope + signer-only target client, socket-free proof |
 | Shared unbound HTTPS composition | Complete — M12V; CI `#1080`; exact M12T+M12U route isolation, bounded bootstrap body collection, local M12P TLS identity preflight, one unbound server |
-| Deployment credential/binding/listener substrate | Reviewed/defined — M12W; durable public M12Q binding store + read-only TLS loader + explicit bind config + one-shot activation permit; implementation not started |
+| Deployment credential/binding/listener substrate | Complete — M12W; CI `#1099`; durable public M12Q binding store + revision-safe key rotation + read-only TLS loader + explicit private/loopback bind config + one-shot activation permit; hosted fake-bind proof only |
 | Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
-| Shared distributed HTTPS listener binding / credential deployment | Not yet reviewed; M12V is unbound and physical TLS/machine-key provisioning + `listen()` remain separately gated |
+| Physical distributed HTTPS credential provisioning / listener activation | Not performed; M12W software substrate is ready but P0–P5 physical proof remains separately reviewed and explicitly authorized |
 | Controller-to-target network push | Disabled |
 | Real cross-machine production writer execution | Disabled; no real network transport is production-wired |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
@@ -422,11 +430,12 @@ Definition evidence: `198932fbc34b1eafd7f7150e502aaec167bf73f4`.
 13. **COMPLETE — M12T controller HTTPS target-pull route / unbound server.** Final CI `#1025`; hosted proof opened no listener/socket and production has no `listen()` call.
 14. **COMPLETE — M12U networked M12Q bootstrap.** Final CI `#1055`; exact nonce hardening, controller challenge/session envelope and target signer client are proven socket-free.
 15. **COMPLETE — M12V shared unbound HTTPS composition + TLS identity preflight.** Final CI `#1080`; hosted proof remained socket/listener-free and production contains no `listen()` path.
-16. **REVIEWED / DEFINED — M12W deployment credential/binding/listener substrate.** Implement only the reviewed software-only boundary next: durable public M12Q binding store, strict read-only TLS identity loader, exact loopback/private bind config, process-local one-shot activation permit and injected/fake-bind proof.
-17. **DO NOT perform real credential provisioning or real `listen()` in M12W hosted proof.** Physical TLS/Ed25519 provisioning, listener activation and any firewall/DNS/NAT/tunnel mutation remain a later separately authorized slice.
-18. **DO NOT add delivery retry/ack/reconciliation, reverse-proxy trust or physical cross-machine proof without a separately reviewed/gated slice.**
-19. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
-20. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+16. **COMPLETE — M12W deployment credential/binding/listener substrate.** Final CI `#1099`; hosted proof used fake bind primitives only and performed no real credential/network mutation.
+17. **STOP for review before M12X physical deployment proof.** Reconfirm P0 inspect-only facts, exact controller/target machines, canonical origin, private bind IP/port, existing TLS material/trust, target signer storage and current registration/binding state before any mutation.
+18. **DO NOT provision TLS/Ed25519 credentials or invoke real `listen()` without explicit user authorization immediately before P1/P2.** Firewall/DNS/NAT/tunnel changes require separate explicit authorization if later needed.
+19. **DO NOT add delivery retry/ack/reconciliation, reverse-proxy trust or real writer proof without a separately reviewed/gated slice.** P5 must stop at M12S/M12T no-work `204` unless delivery reliability is reviewed first.
+20. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
+21. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -450,10 +459,10 @@ Definition evidence: `198932fbc34b1eafd7f7150e502aaec167bf73f4`.
 - 2026-10-02: M12T controller HTTPS target-pull route/unbound-server security review and implementation completed. Exact M12S headers/no body, duplicate-preserving validation, exactly one M12R call with no separate M12C pre-auth, bodyless/sanitized errors, bounded strict HTTP/1.1/TLS server settings, fail-closed special events and an unbound server factory were proven socket-free; final CI `#1025` green.
 - 2026-10-02: M12U networked M12Q bootstrap security review and implementation completed. Exact 32-byte M12Q nonce validation, two fixed canonical JSON bootstrap routes, M12Q-only delegation, challenge idempotency/one-active challenge/rate + concurrency defenses, anti-enumeration, signer-only target private-key boundary, M12P TLS client validation and no completion retry were proven socket-free; final CI `#1055` green.
 - 2026-10-02: M12V shared unbound HTTPS composition/deployment-readiness review and implementation completed. Exact three-route isolation, bounded bootstrap collection, strict unbound HTTP/1.1 server, local M12P leaf DNS/IP + SPKI pin + private-key-match preflight, ephemeral/zeroed server-key export and IPv6 handling were proven socket-free; final CI `#1080` green.
-- 2026-10-02: M12W deployment credential/binding/listener activation security review completed and exact software-only contract recorded. Review defines durable public M12Q binding storage, revision-bumping Ed25519 rotation, read-only TLS loading/overlap pin rotation, explicit loopback/private bind config, one-shot local activation permits, fake-bind hosted proof and a separately gated P0–P5 physical proof sequence; implementation remains pending.
+- 2026-10-02: M12W deployment credential/binding/listener activation software substrate completed. Durable public M12Q binding storage, revision-bumping Ed25519 rotation, strict read-only TLS loading, explicit private/loopback bind validation, short-lived one-shot activation permits and fake-bind activation were proven without opening a real listener; final CI `#1099` green.
 
 ---
 
 # Current next step
 
-**M12W REVIEW COMPLETE.** Implement the reviewed software-only deployment substrate in `docs/M12W-DEPLOYMENT-CREDENTIALS-LISTENER-ACTIVATION-CONTRACT.md` next. Hosted proof must use fake/injected bind primitives and must not generate/provision credentials, mutate network configuration or open a real listener.
+**STOP for review.** M12W is complete. Review M12X P0 inspect-only deployment prerequisites and the exact P1–P5 physical proof inputs before any real TLS/Ed25519 provisioning or listener bind is authorized. P5 stops at a no-work `204`; do not run real distributed writer delivery until delivery acknowledgement/reconciliation is separately reviewed.
