@@ -248,12 +248,397 @@ test("same challenge request id with different body is 409 and second active cha
     bootstrap,
     now: () => new Date(NOW),
   });
+
   const firstBody = challengeBody();
+  assert.equal(
+    (await route.handle(request("/v1/distributed/auth/challenge", firstBody))).statusCode,
+    200,
+  );
+
+  const differentBody = challengeBody(REGISTRATION_ID, ["report_status"]);
+  bodyless(
+    await route.handle(request("/v1/distributed/auth/challenge", differentBody)),
+    409,
+  );
+
   bodyless(
     await route.handle(request(
       "/v1/distributed/auth/challenge",
-      challengeBody(REGISTRATION_ID, ["report_status"]),
+      firstBody,
+      REQUEST_ID_2,
     )),
+    409,
+  );
+
+  assert.equal(bootstrap.issueCalls.length, 1);
+});
+
+test("protocol, exact headers and canonical JSON fail closed before M12Q", async () => {
+  const canonical = challengeBody();
+  const badHeaders = [
+    [...headers(canonical), "Authorization", "Bearer forbidden"],
+    [...headers(canonical), "Transfer-Encoding", "chunked"],
+    [...headers(canonical), "Expect", "100-continue"],
+    [...headers(canonical), "Forwarded", "for=10.0.0.20"],
+    [...headers(canonical), "X-Forwarded-For", "10.0.0.20"],
+    [...headers(canonical), "Cookie", "a=b"],
+    [...headers(canonical), "Host", "controller.example.com:8443"],
+  ];
+
+  for (const rawHeaders of badHeaders) {
+    const bootstrap = new Bootstrap();
+    const route = new DistributedNetworkMachineAuthRoute({
+      controllerOrigin: ORIGIN,
+      bootstrap,
+      now: () => new Date(NOW),
+    });
+    bodyless(
+      await route.handle(request("/v1/distributed/auth/challenge", canonical, REQUEST_ID, { rawHeaders })),
+      400,
+    );
+    assert.equal(bootstrap.issueCalls.length, 0);
+  }
+
+  const protocolCases: DistributedNetworkMachineAuthRequestV1[] = [
+    request("/v1/distributed/auth/challenge", canonical, REQUEST_ID, { method: "GET" }),
+    request("/v1/distributed/auth/challenge", canonical, REQUEST_ID, { httpVersion: "2.0" }),
+    {
+      ...request("/v1/distributed/auth/challenge", canonical),
+      url: "/v1/distributed/auth/other",
+    },
+  ];
+
+  const statuses = [405, 400, 404];
+  for (let i = 0; i < protocolCases.length; i += 1) {
+    const bootstrap = new Bootstrap();
+    const route = new DistributedNetworkMachineAuthRoute({
+      controllerOrigin: ORIGIN,
+      bootstrap,
+      now: () => new Date(NOW),
+    });
+    bodyless(await route.handle(protocolCases[i]!), statuses[i]!);
+    assert.equal(bootstrap.issueCalls.length, 0);
+  }
+
+  const nonCanonicalBodies = [
+    Buffer.from(JSON.stringify({
+      capabilities: ["accept_writer_candidates"],
+      registrationId: REGISTRATION_ID,
+      schemaVersion: 1,
+      sessionTtlMs: 60_000,
+    }), "utf8"),
+    Buffer.from(` ${challengeBody().toString("utf8")}`, "utf8"),
+    challengeBody(REGISTRATION_ID, ["report_status", "accept_writer_candidates"]),
+    Buffer.from(
+      `{"schemaVersion":1,"registrationId":"${REGISTRATION_ID}","registrationId":"${REGISTRATION_ID}","capabilities":["accept_writer_candidates"],"sessionTtlMs":60000}`,
+      "utf8",
+    ),
+  ];
+
+  for (const body of nonCanonicalBodies) {
+    const bootstrap = new Bootstrap();
+    const route = new DistributedNetworkMachineAuthRoute({
+      controllerOrigin: ORIGIN,
+      bootstrap,
+      now: () => new Date(NOW),
+    });
+    bodyless(
+      await route.handle(request("/v1/distributed/auth/challenge", body)),
+      400,
+    );
+    assert.equal(bootstrap.issueCalls.length, 0);
+  }
+});
+
+test("challenge enumeration-sensitive failures collapse to bodyless 404", async () => {
+  for (const code of [
+    "registration_not_current",
+    "binding_invalid",
+    "binding_not_current",
+    "capability_not_allowed",
+  ] as const) {
+    const bootstrap = new Bootstrap(
+      new DistributedMachineAuthenticationBootstrapError("sensitive", code),
+    );
+    const route = new DistributedNetworkMachineAuthRoute({
+      controllerOrigin: ORIGIN,
+      bootstrap,
+      now: () => new Date(NOW),
+    });
+    const output = await route.handle(
+      request("/v1/distributed/auth/challenge", challengeBody()),
+    );
+    bodyless(output, 404);
+    assert.equal(output.body.toString().includes("sensitive"), false);
+  }
+});
+
+test("challenge issuance rate limits are applied before repeated M12Q work", async () => {
+  const bootstrap = new Bootstrap(
+    new DistributedMachineAuthenticationBootstrapError(
+      "missing",
+      "registration_not_current",
+    ),
+  );
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(NOW),
+    peerIssueLimitPerMinute: 1,
+    registrationIssueLimitPerMinute: 4,
+  });
+
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+      REQUEST_ID,
+    )),
+    404,
+  );
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+      REQUEST_ID_2,
+    )),
+    429,
+  );
+  assert.equal(bootstrap.issueCalls.length, 1);
+});
+
+test("global concurrency saturation returns 503 without a second M12Q call", async () => {
+  let release!: () => void;
+  const blocker = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let calls = 0;
+  const bootstrap = {
+    async issueChallenge(): Promise<DistributedMachineAuthenticationChallengeV1> {
+      calls += 1;
+      await blocker;
+      return challenge();
+    },
+    async completeChallenge(): Promise<DistributedMachineTransportIssueResultV1> {
+      return issueResult();
+    },
+  };
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(NOW),
+    maxConcurrent: 1,
+  });
+
+  const first = route.handle(request(
+    "/v1/distributed/auth/challenge",
+    challengeBody(),
+    REQUEST_ID,
+  ));
+  await Promise.resolve();
+
+  const second = await route.handle(request(
+    "/v1/distributed/auth/challenge",
+    challengeBody(),
+    REQUEST_ID_2,
+    { peerAddress: "10.0.0.21" },
+  ));
+  bodyless(second, 503);
+  assert.equal(calls, 1);
+
+  release();
+  assert.equal((await first).statusCode, 200);
+});
+
+test("successful completion delegates exactly once and returns validated short-lived M12C issue result", async () => {
+  const bootstrap = new Bootstrap();
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(NOW),
+  });
+
+  assert.equal(
+    (await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+    ))).statusCode,
     200,
+  );
+
+  const body = sessionBody();
+  const output = await route.handle(request(
+    "/v1/distributed/auth/session",
+    body,
+    REQUEST_ID_2,
+  ));
+
+  assert.equal(output.statusCode, 200);
+  assert.equal(output.headers["Content-Type"], "application/json; charset=utf-8");
+  assert.equal(output.headers.Pragma, "no-cache");
+  assert.equal(output.headers["Content-Length"], String(output.body.length));
+  assert.deepEqual(JSON.parse(output.body.toString("utf8")), issueResult());
+  assert.deepEqual(bootstrap.completeCalls, [{
+    challengeId: CHALLENGE_ID,
+    signatureBase64Url: Buffer.alloc(64, 7).toString("base64url"),
+  }]);
+});
+
+test("completion authentication failures collapse to bodyless 401 and clear active challenge", async () => {
+  const bootstrap = new Bootstrap();
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(NOW),
+  });
+
+  assert.equal(
+    (await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+      REQUEST_ID,
+    ))).statusCode,
+    200,
+  );
+
+  bootstrap.completeBehavior = new DistributedMachineAuthenticationBootstrapError(
+    "bad signature sensitive detail",
+    "signature_invalid",
+  );
+
+  const failed = await route.handle(request(
+    "/v1/distributed/auth/session",
+    sessionBody(),
+    REQUEST_ID_2,
+  ));
+  bodyless(failed, 401);
+  assert.equal(failed.body.toString().includes("sensitive"), false);
+  assert.equal(bootstrap.completeCalls.length, 1);
+
+  bootstrap.issueBehavior = challenge({
+    challengeId: "77777777-7777-4777-8777-777777777777",
+  });
+  const next = await route.handle(request(
+    "/v1/distributed/auth/challenge",
+    challengeBody(),
+    "88888888-8888-4888-8888-888888888888",
+  ));
+  assert.equal(next.statusCode, 200);
+  assert.equal(bootstrap.issueCalls.length, 2);
+});
+
+test("completion protocol rejects malformed signature and completion rate-limit fires before M12Q", async () => {
+  const malformed = sessionBody(CHALLENGE_ID, "A".repeat(85));
+  const bootstrap = new Bootstrap();
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(NOW),
+  });
+  bodyless(
+    await route.handle(request("/v1/distributed/auth/session", malformed)),
+    400,
+  );
+  assert.equal(bootstrap.completeCalls.length, 0);
+
+  const replaying = new Bootstrap(
+    challenge(),
+    new DistributedMachineAuthenticationBootstrapError("missing", "challenge_replayed"),
+  );
+  const limited = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap: replaying,
+    now: () => new Date(NOW),
+    peerCompletionLimitPerMinute: 1,
+  });
+  bodyless(
+    await limited.handle(request(
+      "/v1/distributed/auth/session",
+      sessionBody(),
+      REQUEST_ID,
+    )),
+    401,
+  );
+  bodyless(
+    await limited.handle(request(
+      "/v1/distributed/auth/session",
+      sessionBody("99999999-9999-4999-8999-999999999999"),
+      REQUEST_ID_2,
+    )),
+    429,
+  );
+  assert.equal(replaying.completeCalls.length, 1);
+});
+
+test("session issue failure exposes no detail and nested M12C capacity maps to 503", async () => {
+  const nested = new DistributedMachineAuthenticationBootstrapError(
+    "session failed",
+    "session_issue_failed",
+    {
+      cause: new DistributedMachineTransportError("capacity secret", "capacity_exceeded"),
+    },
+  );
+  const bootstrap = new Bootstrap(challenge(), nested);
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(NOW),
+  });
+
+  assert.equal(
+    (await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+    ))).statusCode,
+    200,
+  );
+  const output = await route.handle(request(
+    "/v1/distributed/auth/session",
+    sessionBody(),
+    REQUEST_ID_2,
+  ));
+  bodyless(output, 503);
+  assert.equal(output.body.toString().includes("secret"), false);
+});
+
+test("invalid M12Q challenge or invalid M12C issue result fails closed", async () => {
+  const invalidChallenge = new Bootstrap(challenge({
+    capabilities: ["report_status"],
+  }));
+  const challengeRoute = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap: invalidChallenge,
+    now: () => new Date(NOW),
+  });
+  bodyless(
+    await challengeRoute.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+    )),
+    500,
+  );
+
+  const invalidResult = issueResult();
+  invalidResult.token = "short";
+  const invalidSession = new Bootstrap(challenge(), invalidResult);
+  const sessionRoute = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap: invalidSession,
+    now: () => new Date(NOW),
+  });
+  assert.equal(
+    (await sessionRoute.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+    ))).statusCode,
+    200,
+  );
+  bodyless(
+    await sessionRoute.handle(request(
+      "/v1/distributed/auth/session",
+      sessionBody(),
+      REQUEST_ID_2,
+    )),
+    500,
   );
 });
