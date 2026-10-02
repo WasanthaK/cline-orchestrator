@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12R complete; latest code CI `#993`; controller-owned pending-work selection is proven, while real cross-machine HTTPS I/O/listener and distributed takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12U complete; latest code CI `#1055`; secure target pull, unbound controller pull server and networked M12Q bootstrap/client are implemented/proven socket-free, while shared route composition, TLS/key provisioning, listener binding, delivery reconciliation and distributed takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -270,9 +270,9 @@ Hosted implementation proof remained socket/listener-free. The pure route valida
 Evidence: definition `68083d6b33274eda2efad0804878dede04f63c64`; implementation `9aac35df515178018e3bf9c6b5e11c6e8eee6b6e`; proof `cd0cd298849042bcfafb91fa9ac06b985908179c`; final CI `#1025` / `36961422096` passed typecheck + full suite.
 
 
-## 12U — Networked M12Q machine authentication bootstrap — REVIEWED / DEFINED
+## 12U — Networked M12Q machine authentication bootstrap — COMPLETE
 
-Security review is complete and the exact protocol/client/server contract is recorded in `docs/M12U-NETWORK-MACHINE-AUTH-BOOTSTRAP-CONTRACT.md`. M12U is **not yet implemented**.
+Security review and implementation are complete. The exact protocol/client/server contract remains recorded in `docs/M12U-NETWORK-MACHINE-AUTH-BOOTSTRAP-CONTRACT.md`, with the controller route in `src/distributed-network-machine-auth-bootstrap.ts`, the target signer client in `src/distributed-network-machine-auth-client.ts`, and socket-free proof in their corresponding test files.
 
 M12U wraps the existing M12Q Ed25519 possession proof with two fixed HTTPS/HTTP/1.1 routes on the same canonical controller origin as M12T: `POST /v1/distributed/auth/challenge` and `POST /v1/distributed/auth/session`. Registration ID remains a selector only; only successful possession proof with the exact current pre-enrolled Ed25519 binding may delegate to existing M12C session issuance. There is no direct network M12C `issue()` route.
 
@@ -280,13 +280,13 @@ The reviewed network envelope uses canonical bounded JSON, duplicate-preserving 
 
 The target client uses the same M12P TLS policy as M12S and an injected signer interface exposing only `publicKeyFingerprint` + `sign(payload)`; raw private-key bytes are not accepted. The returned challenge must match registration/capabilities/TTL and signer fingerprint before the signer is invoked. Completion is never automatically retried.
 
-The review identified a prerequisite correction before network exposure: M12Q nonce validation must require canonical base64url decoding to exactly 32 bytes, matching its existing random 32-byte generator. The current minimum-length-only validator is too loose for a network-visible signed structure.
+The prerequisite M12Q nonce correction is complete: challenge validation now requires canonical base64url decoding to exactly 32 bytes, matching the existing random 32-byte generator.
 
 Deployment ordering is fixed: controller TLS identity must be provisioned and verified against M12P first; target Ed25519 private key and matching controller-side M12Q binding must already be provisioned second; only then may M12T + M12U be composed under one unbound server. An actual `listen()`/bind remains a later explicitly authorized physical action. M12U is not a machine-enrollment, TLS-provisioning or key-provisioning endpoint.
 
-Hosted M12U proof must remain socket/listener-free. No TLS credential provisioning, Ed25519 key provisioning, DNS/firewall/tunnel mutation, listener binding or physical cross-machine proof is authorized by this review.
+Hosted M12U proof remained socket/listener-free. The controller envelope now proves exact canonical JSON/header rules, challenge request idempotency, one active challenge per registration, peer + registration rate limits with stale-bucket pruning, bounded concurrency, anti-enumeration responses, one-shot completion and validated M12C issue results. The target client uses M12P system-CA/hostname/leaf-SPKI authentication, exact challenge matching before an exact signer-only boundary, the existing M12Q signed payload and no automatic completion retry. No TLS credential provisioning, Ed25519 key provisioning, DNS/firewall/tunnel mutation, listener binding or physical cross-machine proof was performed.
 
-Definition evidence: `c736a0a310422fbff75cf702febf4b16e857a1ae`.
+Evidence: definition `c736a0a310422fbff75cf702febf4b16e857a1ae`; nonce hardening `7225a168f396881afdd575eaf73f4b532031d9e4` + proof `06535f923a14880c519ac0e8fbccd51c468aa4a0`; controller route `eaf9ba30e09193d4a1cbafab3262d778cacb497f`; route proof `028e77d9cab0b8c1085d0c0627ddd2a49b426c30`; target client `aae35db2f9980f0f7ba0dcbd9acef76b6eba2af2`; client proof `6c1acb9e9f7abc2c6693ec399b590e294aa6845f`; signer/CA hardening `4e93d5d512011f722fb924093c8bd48079e61d68` + proof `24e2ca0d359a2d8922ec124399ccfead618f4edc`; proof correction `7163d31e8f9288a1e1f9b885ec190fec64a8156c`; peer/rate-state hardening `41b1d59e5f4b676a5cf0e398331ed881f68b24ed` + proof `25a80ffa437c114270a904b9806dedc005243c78`; final CI `#1055` / `36985140555` passed typecheck + full suite.
 
 ---
 
@@ -312,9 +312,11 @@ Definition evidence: `c736a0a310422fbff75cf702febf4b16e857a1ae`.
 | Secure distributed transport profile/server identity | Complete — M12P; CI `#975`; no network I/O |
 | Machine authentication bootstrap | Complete — M12Q; CI `#985`; Ed25519 possession proof delegates to M12C only |
 | Controller pending-work selection | Complete — M12R; CI `#993`; target cannot select task/workspace/dispatch/candidate/fence |
-| Secure target-pull HTTPS adapter | Not yet defined; next review boundary |
+| Secure target-pull HTTPS client | Complete — M12S; CI `#1015`; M12P-authenticated outbound-only client |
+| Controller HTTPS target-pull server | Complete — M12T; CI `#1025`; strict unbound server/route, no `listen()` path |
+| Networked machine-auth bootstrap | Complete — M12U; CI `#1055`; canonical M12Q challenge/session envelope + signer-only target client, socket-free proof |
 | Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
-| Distributed network listener/adapter | Disabled / separately gated |
+| Shared distributed HTTPS router/listener binding | Not yet reviewed; M12S/M12T/M12U remain unbound or client-only and physical binding is separately gated |
 | Controller-to-target network push | Disabled |
 | Real cross-machine production writer execution | Disabled; no real network transport is production-wired |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
@@ -370,11 +372,12 @@ Definition evidence: `c736a0a310422fbff75cf702febf4b16e857a1ae`.
 11. **COMPLETE — M12R controller-owned pending-work selection.** Final CI `#993`.
 12. **COMPLETE — M12S secure HTTPS target-pull client.** Final CI `#1015`; implementation is outbound-client-only and hosted proof opened no socket/listener.
 13. **COMPLETE — M12T controller HTTPS target-pull route / unbound server.** Final CI `#1025`; hosted proof opened no listener/socket and production has no `listen()` call.
-14. **REVIEWED / DEFINED — M12U networked M12Q bootstrap.** Implement only the reviewed socket-free bootstrap protocol next, starting with exact 32-byte M12Q nonce validation, then controller route envelope and target signer client.
-15. **DO NOT call `listen()`, provision TLS identity, provision/rotate Ed25519 keys or authentication bindings, expose direct M12C issuance, add delivery reconciliation, reverse-proxy trust or physical network proof in M12U.**
-16. **DO NOT add listener binding, certificate/private-key provisioning, delivery retry/ack/reconciliation, reverse-proxy trust or physical cross-machine proof without a separately reviewed/gated slice.**
-17. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
-18. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+14. **COMPLETE — M12U networked M12Q bootstrap.** Final CI `#1055`; exact nonce hardening, controller challenge/session envelope and target signer client are proven socket-free.
+15. **STOP for review before defining shared unbound HTTPS route composition / deployment readiness.** M12T pull + M12U bootstrap must share one canonical origin/listener without widening either route contract.
+16. **DO NOT call `listen()`, provision TLS identity, provision/rotate Ed25519 keys or authentication bindings, add delivery reconciliation, reverse-proxy trust or physical network proof until separately reviewed/gated.**
+17. **DO NOT add listener binding, certificate/private-key provisioning, delivery retry/ack/reconciliation, reverse-proxy trust or physical cross-machine proof without a separately reviewed/gated slice.**
+18. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
+19. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -396,10 +399,10 @@ Definition evidence: `c736a0a310422fbff75cf702febf4b16e857a1ae`.
 - 2026-10-01: M12R controller-owned pending-work selection completed; target pull inputs contain no work selectors; exact-machine FIFO claim, candidate/fence revalidation and M12J reuse proven; final CI `#993` green.
 - 2026-10-02: M12S secure HTTPS target-pull client security review and implementation completed. Fixed outbound-only POST, explicit system-CA + hostname + leaf-SPKI pin validation, no redirects/proxy/retries/work selectors, strict bounded 200/204 responses, sanitized errors, explicit ambiguous outcome and socket-free hosted proof completed; final CI `#1015` green.
 - 2026-10-02: M12T controller HTTPS target-pull route/unbound-server security review and implementation completed. Exact M12S headers/no body, duplicate-preserving validation, exactly one M12R call with no separate M12C pre-auth, bodyless/sanitized errors, bounded strict HTTP/1.1/TLS server settings, fail-closed special events and an unbound server factory were proven socket-free; final CI `#1025` green.
-- 2026-10-02: M12U networked M12Q bootstrap security review completed and exact client/server protocol recorded. Review fixes TLS/key/listener ordering, two fixed canonical JSON bootstrap routes, M12Q-only challenge/completion delegation, anti-exhaustion/idempotency, signer-only target private-key boundary, no completion retry, and exact 32-byte nonce hardening prerequisite; implementation remains pending.
+- 2026-10-02: M12U networked M12Q bootstrap security review and implementation completed. Exact 32-byte M12Q nonce validation, two fixed canonical JSON bootstrap routes, M12Q-only delegation, challenge idempotency/one-active challenge/rate + concurrency defenses, anti-enumeration, signer-only target private-key boundary, M12P TLS client validation and no completion retry were proven socket-free; final CI `#1055` green.
 
 ---
 
 # Current next step
 
-**M12U REVIEW COMPLETE.** Implement the reviewed socket-free network M12Q bootstrap contract in `docs/M12U-NETWORK-MACHINE-AUTH-BOOTSTRAP-CONTRACT.md` next. Begin with exact 32-byte canonical nonce validation, then the controller challenge/session route envelope and target signer client. Do not bind a listener or provision TLS/machine keys.
+**STOP for review.** M12U is complete. Review the shared unbound HTTPS routing/composition and deployment-readiness boundary that will place M12T pull + M12U bootstrap on one canonical controller origin before any TLS/key provisioning or real `listen()`/bind is authorized.
