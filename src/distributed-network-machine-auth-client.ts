@@ -213,10 +213,14 @@ function requireFingerprint(value: unknown): string {
 }
 
 function validateSigner(value: unknown): DistributedMachineBootstrapSigner {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw clientError("signer_invalid");
+  }
+  const keys = Object.keys(value as Record<string, unknown>);
   if (
-    !value
-    || typeof value !== "object"
-    || Array.isArray(value)
+    keys.length !== 2
+    || !keys.includes("publicKeyFingerprint")
+    || !keys.includes("sign")
     || typeof (value as DistributedMachineBootstrapSigner).sign !== "function"
   ) {
     throw clientError("signer_invalid");
@@ -609,7 +613,18 @@ export class DistributedNetworkMachineAuthClient {
     const sessionTtlMs = requireSessionTtl(input.sessionTtlMs);
     const signer = validateSigner(input.signer);
     const fingerprint = requireFingerprint(signer.publicKeyFingerprint);
-    const roots = validateSystemRoots(this.systemCaProvider());
+    let roots: string[];
+    try {
+      roots = validateSystemRoots(this.systemCaProvider());
+    } catch (error) {
+      if (
+        error instanceof DistributedNetworkMachineAuthClientError
+        && (error.code === "system_ca_unavailable" || error.code === "unsupported_runtime")
+      ) {
+        throw error;
+      }
+      throw clientError("system_ca_unavailable");
+    }
 
     const challengeRequestId = requireUuid(this.requestIdFactory());
     const challengeBody = Buffer.from(JSON.stringify({
