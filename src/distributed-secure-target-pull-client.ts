@@ -236,7 +236,7 @@ function requireBearer(value: unknown): string {
     || value.length < 32
     || value.length > MAX_BEARER_LENGTH
     || value !== value.trim()
-    || /[\u0000-\u001f\u007f]/.test(value)
+    || !/^[A-Za-z0-9._~+\/-]+=*$/.test(value)
   ) {
     throw publicError("bearer_invalid");
   }
