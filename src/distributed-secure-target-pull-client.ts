@@ -217,6 +217,19 @@ function validateSystemCaCertificates(value: unknown): string[] {
   return roots;
 }
 
+function assertPullInputShape(
+  value: unknown,
+): asserts value is DistributedSecureTargetPullClientInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw publicError("profile_invalid");
+  }
+  const keys = Object.keys(value as Record<string, unknown>);
+  const allowed = ["profile", "bearerToken", "requestId"];
+  if (keys.length !== allowed.length || keys.some((key) => !allowed.includes(key))) {
+    throw publicError("profile_invalid");
+  }
+}
+
 function requireBearer(value: unknown): string {
   if (
     typeof value !== "string"
@@ -281,6 +294,7 @@ export function createDistributedSecureTargetPullRequestPlan(
   input: DistributedSecureTargetPullClientInput,
   systemCaCertificates: readonly string[],
 ): DistributedSecureTargetPullRequestPlan {
+  assertPullInputShape(input);
   try {
     assertDistributedSecureTransportProfile(input.profile);
   } catch {
@@ -600,6 +614,7 @@ export class DistributedSecureTargetPullClient {
   async pull(
     input: DistributedSecureTargetPullClientInput,
   ): Promise<DistributedExecutionDeliveryBundleV1 | null> {
+    assertPullInputShape(input);
     try {
       assertDistributedSecureTransportProfile(input.profile);
     } catch {
