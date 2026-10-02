@@ -370,8 +370,24 @@ export function assertDistributedMachineAuthenticationChallenge(
     DISTRIBUTED_MACHINE_TRANSPORT_CONTRACT.maxSessionTtlMs,
     "request_invalid",
   );
-  if (typeof record.nonce !== "string" || record.nonce.length < 32 || !BASE64URL.test(record.nonce)) {
+  if (typeof record.nonce !== "string" || !BASE64URL.test(record.nonce)) {
     throw new DistributedMachineAuthenticationBootstrapError("challenge nonce is invalid", "request_invalid");
+  }
+  let nonceBytes: Buffer;
+  try {
+    nonceBytes = Buffer.from(record.nonce, "base64url");
+  } catch (error) {
+    throw new DistributedMachineAuthenticationBootstrapError(
+      "challenge nonce is invalid",
+      "request_invalid",
+      { cause: error },
+    );
+  }
+  if (nonceBytes.length !== 32 || nonceBytes.toString("base64url") !== record.nonce) {
+    throw new DistributedMachineAuthenticationBootstrapError(
+      "challenge nonce must be canonical base64url for exactly 32 bytes",
+      "request_invalid",
+    );
   }
   const issuedAt = iso(record.issuedAt, "issuedAt");
   const expiresAt = iso(record.expiresAt, "expiresAt");
