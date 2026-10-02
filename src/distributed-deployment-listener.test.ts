@@ -240,6 +240,20 @@ test("M12W TLS loader reads only strict local regular files and returns parsed i
     expectCode("credential_file_invalid"),
   );
 
+  const encryptedKey=path.join(dir,"encrypted-key.pem");
+  const generated=crypto.generateKeyPairSync("rsa",{modulusLength:2048}).privateKey;
+  const encrypted=generated.export({
+    format:"pem",
+    type:"pkcs8",
+    cipher:"aes-256-cbc",
+    passphrase:"test-only",
+  });
+  await writeFile(encryptedKey,encrypted,{mode:0o600});
+  await assert.rejects(
+    ()=>loadDistributedLocalTlsIdentity(tlsConfig(encryptedKey,certPath)),
+    expectCode("private_key_invalid"),
+  );
+
   const invalidKey=path.join(dir,"invalid-key.pem");
   await writeFile(invalidKey,"not a key",{mode:0o600});
   await assert.rejects(
@@ -492,4 +506,63 @@ test("M12W permit mismatch/expiry fails before fake bind and failed bind burns p
     }),
     expectCode("permit_replayed"),
   );
+});
+
+test("M12W permit issuer rejects forged public bind config and fresh process-local issuer cannot consume old permit", async()=>{
+  const valid=createDistributedListenerBindingConfig(profile(),{
+    bindAddress:"127.0.0.1",port:8443,exposure:"loopback",
+  });
+  const issuer=new DistributedListenerActivationPermitIssuer({
+    now:()=>new Date(NOW),
+    idFactory:()=>PERMIT_ID,
+  });
+
+  const forged={...valid,bindAddress:"8.8.8.8",exposure:"private_network" as const};
+  assert.throws(
+    ()=>issuer.issue(forged,preflight()),
+    expectCode("bind_invalid"),
+  );
+
+  const permit=issuer.issue(valid,preflight());
+  const freshIssuer=new DistributedListenerActivationPermitIssuer({
+    now:()=>new Date(NOW),
+  });
+  const controller=new DistributedListenerActivationController(freshIssuer,{
+    async bind(){assert.fail("fresh issuer must fail before bind");},
+  });
+  await assert.rejects(
+    ()=>controller.activate({
+      server:https.createServer(),
+      bindConfig:valid,
+      preflight:preflight(),
+      permit,
+    }),
+    expectCode("permit_replayed"),
+  );
+});
+
+test("M12W activation rejects preflight pin mismatch before fake bind", async()=>{
+  const bind=createDistributedListenerBindingConfig(profile(),{
+    bindAddress:"127.0.0.1",port:8443,exposure:"loopback",
+  });
+  const issuer=new DistributedListenerActivationPermitIssuer({
+    now:()=>new Date(NOW),
+    idFactory:()=>PERMIT_ID,
+  });
+  const permit=issuer.issue(bind,preflight());
+  let calls=0;
+  const controller=new DistributedListenerActivationController(issuer,{
+    async bind(){calls++;},
+  });
+  const changed={...preflight(),leafSpkiSha256Pin:"sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="};
+  await assert.rejects(
+    ()=>controller.activate({
+      server:https.createServer(),
+      bindConfig:bind,
+      preflight:changed,
+      permit,
+    }),
+    expectCode("permit_invalid"),
+  );
+  assert.equal(calls,0);
 });
