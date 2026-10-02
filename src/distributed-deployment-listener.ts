@@ -185,8 +185,9 @@ export class DistributedDeploymentListenerError extends Error {
       | "permit_replayed"
       | "server_already_listening"
       | "bind_failed",
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "DistributedDeploymentListenerError";
   }
 }
@@ -641,15 +642,35 @@ function assertBindConfig(value: DistributedListenerBindingConfigV1): void {
     "bind_invalid",
     "listener bind config",
   );
+  let origin: URL;
+  try {
+    origin = new URL(value.controllerOrigin);
+  } catch {
+    throw new DistributedDeploymentListenerError(
+      "listener bind config is invalid",
+      "bind_invalid",
+    );
+  }
   if (
     value.schemaVersion !== 1
     || !UUID.test(value.profileId)
-    || typeof value.controllerOrigin !== "string"
+    || origin.protocol !== "https:"
+    || origin.origin !== value.controllerOrigin
+    || origin.pathname !== "/"
+    || origin.search !== ""
+    || origin.hash !== ""
+    || origin.username !== ""
+    || origin.password !== ""
     || isIP(value.bindAddress) === 0
+    || value.bindAddress === "0.0.0.0"
+    || value.bindAddress === "::"
     || !Number.isSafeInteger(value.port)
     || value.port < 1
     || value.port > 65_535
+    || value.port !== effectiveOriginPort(value.controllerOrigin)
     || (value.exposure !== "loopback" && value.exposure !== "private_network")
+    || (value.exposure === "loopback" && !isLoopback(value.bindAddress))
+    || (value.exposure === "private_network" && !isPrivateLocal(value.bindAddress))
     || value.authority !== "listener_configuration_only"
     || value.grantsTaskAuthority !== false
     || value.grantsFilesystemAuthority !== false
