@@ -330,6 +330,14 @@ test("TLS preflight fails closed on time, host/IP, pin, CA, malformed certificat
   );
   assert.throws(
     () => preflightDistributedSharedTlsIdentity(
+      profile({ controllerOrigin: "https://[::1]:8443" }),
+      identity(),
+      () => new Date(TEST_NOW),
+    ),
+    expectCode("tls_hostname_mismatch"),
+  );
+  assert.throws(
+    () => preflightDistributedSharedTlsIdentity(
       profile({ serverSpkiSha256Pins: [`sha256/${"A".repeat(43)}=`] }),
       identity(),
       () => new Date(TEST_NOW),
@@ -751,6 +759,52 @@ test("shared server collects exact bootstrap body, delegates to M12U and forward
   await second.done;
   assert.equal(second.response.statusCode, 409, "active challenge rejection precedes peer rate limit");
   assert.equal(harness.bootstrap.issueCalls, 1);
+});
+
+test("shared server preserves M12U wrong-method/version behavior without body collection", async () => {
+  for (const [method, httpVersion, expectedStatus] of [
+    ["GET", "1.1", 405],
+    ["POST", "2.0", 400],
+  ] as const) {
+    const harness = createServerHarness();
+    const listener = harness.capturedListener();
+    assert.ok(listener);
+    const body = challengeBody();
+    const { response, done } = fakeResponse();
+    listener(
+      fakeRequest({
+        method,
+        httpVersion,
+        url: "/v1/distributed/auth/challenge",
+        rawHeaders: challengeHeaders(body),
+        forbidBodyRead: true,
+      }),
+      response as unknown as ServerResponse,
+    );
+    await done;
+    assert.equal(response.statusCode, expectedStatus);
+    assert.equal(harness.bootstrap.issueCalls, 0);
+  }
+});
+
+test("shared server truncated bootstrap body fails before M12U", async () => {
+  const harness = createServerHarness();
+  const listener = harness.capturedListener();
+  assert.ok(listener);
+  const fullBody = challengeBody();
+  const truncated = fullBody.subarray(0, fullBody.length - 1);
+  const { response, done } = fakeResponse();
+  listener(
+    fakeRequest({
+      url: "/v1/distributed/auth/challenge",
+      rawHeaders: challengeHeaders(fullBody),
+      body: truncated,
+    }),
+    response as unknown as ServerResponse,
+  );
+  await done;
+  assert.equal(response.statusCode, 400);
+  assert.equal(harness.bootstrap.issueCalls, 0);
 });
 
 test("unknown shared path reaches neither M12T nor M12U", async () => {
