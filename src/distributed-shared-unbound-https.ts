@@ -652,11 +652,27 @@ export function createUnboundDistributedSharedHttpsServer(
     },
   };
 
+  let serverKeyPem: Buffer;
+  try {
+    const exported = identity.privateKey.export({
+      format: "pem",
+      type: "pkcs8",
+    });
+    serverKeyPem = Buffer.isBuffer(exported)
+      ? Buffer.from(exported)
+      : Buffer.from(exported, "utf8");
+  } catch {
+    throw new DistributedSharedUnboundHttpsError(
+      "preflighted TLS private key could not be exported for server construction",
+      "tls_identity_invalid",
+    );
+  }
+
   let server: https.Server;
   try {
     server = builder.create(
       {
-        key: [identity.privateKey],
+        key: serverKeyPem,
         cert: [...identity.certificates],
         minVersion: "TLSv1.2",
         ALPNProtocols: ["http/1.1"],
@@ -739,6 +755,8 @@ export function createUnboundDistributedSharedHttpsServer(
       "shared HTTPS server construction failed",
       "server_construction_failed",
     );
+  } finally {
+    serverKeyPem.fill(0);
   }
 
   server.maxHeadersCount = MAX_HEADERS_COUNT;
