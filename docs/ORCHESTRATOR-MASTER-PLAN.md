@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12U complete; latest code CI `#1055`; secure target pull, unbound controller pull server and networked M12Q bootstrap/client are implemented/proven socket-free, while shared route composition, TLS/key provisioning, listener binding, delivery reconciliation and distributed takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12U complete; M12V shared unbound HTTPS composition/TLS-identity preflight reviewed and defined but not implemented; TLS/key provisioning, listener binding, delivery reconciliation and distributed takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -288,6 +288,25 @@ Hosted M12U proof remained socket/listener-free. The controller envelope now pro
 
 Evidence: definition `c736a0a310422fbff75cf702febf4b16e857a1ae`; nonce hardening `7225a168f396881afdd575eaf73f4b532031d9e4` + proof `06535f923a14880c519ac0e8fbccd51c468aa4a0`; controller route `eaf9ba30e09193d4a1cbafab3262d778cacb497f`; route proof `028e77d9cab0b8c1085d0c0627ddd2a49b426c30`; target client `aae35db2f9980f0f7ba0dcbd9acef76b6eba2af2`; client proof `6c1acb9e9f7abc2c6693ec399b590e294aa6845f`; signer/CA hardening `4e93d5d512011f722fb924093c8bd48079e61d68` + proof `24e2ca0d359a2d8922ec124399ccfead618f4edc`; proof correction `7163d31e8f9288a1e1f9b885ec190fec64a8156c`; peer/rate-state hardening `41b1d59e5f4b676a5cf0e398331ed881f68b24ed` + proof `25a80ffa437c114270a904b9806dedc005243c78`; final CI `#1055` / `36985140555` passed typecheck + full suite.
 
+
+## 12V — Shared unbound HTTPS router + TLS identity preflight — REVIEWED / DEFINED
+
+Security review is complete and the exact composition/deployment-readiness contract is recorded in `docs/M12V-SHARED-UNBOUND-HTTPS-COMPOSITION-CONTRACT.md`. M12V is **not yet implemented**.
+
+M12V will compose exactly the completed M12T pull route and completed M12U challenge/session routes under one canonical M12P controller origin and one unbound HTTPS/HTTP/1.1 server. The route table is fixed to `/v1/distributed/execution/pull`, `/v1/distributed/auth/challenge`, and `/v1/distributed/auth/session`; unknown paths reach neither route and there is no fallback route chaining.
+
+The shared layer will not duplicate authorization. Pull requests go only to the existing M12T route, which remains the sole M12C/M12R pull authority. Bootstrap requests go only to the existing M12U route, which remains the sole network M12Q wrapper. M12V itself must contain zero direct M12C `authorize/issue` calls and zero direct M12Q challenge/completion calls.
+
+For M12U POST bodies, M12V adds only a transport/resource framing preflight and bounded collector before delegating: exact Content-Length, no Transfer-Encoding, 1024-byte challenge / 512-byte session limits, bounded concurrent collectors, and fail-closed aborted/early/oversized bodies. M12U still revalidates the complete exact header/canonical-JSON contract. Direct socket peer address remains the only peer identity signal; forwarded headers remain untrusted.
+
+Before constructing the unbound server, M12V requires a pure local TLS identity preflight against the same validated M12P profile. The trusted startup provider supplies only an already-loaded private KeyObject plus a leaf-first certificate chain. The preflight verifies certificate time bounds, DNS/IP match for the canonical origin, exact leaf-SPKI SHA-256 pin match, non-CA leaf status, and leaf/private-key consistency. It returns only non-secret deployment-readiness evidence. This local preflight does not claim full system-CA chain validation; that remains part of later client-observed physical TLS proof.
+
+The shared server remains strict HTTP/1.1 only, bounded, one request per socket, fails closed on Expect/upgrade/CONNECT/parser/TLS errors, and MUST return with `server.listening === false`. M12V production must contain no `.listen(` call and no default bind address/port.
+
+Hosted M12V implementation proof must remain socket/listener-free. No TLS certificate/private-key provisioning, machine-key provisioning, DNS/firewall/tunnel mutation, listener binding or real cross-machine proof is authorized by this review.
+
+Definition evidence: `bbece84ec9639a306fced77ccc92040d708f9754`.
+
 ---
 
 # Current capability snapshot
@@ -315,6 +334,7 @@ Evidence: definition `c736a0a310422fbff75cf702febf4b16e857a1ae`; nonce hardening
 | Secure target-pull HTTPS client | Complete — M12S; CI `#1015`; M12P-authenticated outbound-only client |
 | Controller HTTPS target-pull server | Complete — M12T; CI `#1025`; strict unbound server/route, no `listen()` path |
 | Networked machine-auth bootstrap | Complete — M12U; CI `#1055`; canonical M12Q challenge/session envelope + signer-only target client, socket-free proof |
+| Shared unbound HTTPS composition | Reviewed/defined — M12V; exact M12T+M12U route table + local M12P TLS identity preflight; implementation not started |
 | Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
 | Shared distributed HTTPS router/listener binding | Not yet reviewed; M12S/M12T/M12U remain unbound or client-only and physical binding is separately gated |
 | Controller-to-target network push | Disabled |
@@ -373,8 +393,8 @@ Evidence: definition `c736a0a310422fbff75cf702febf4b16e857a1ae`; nonce hardening
 12. **COMPLETE — M12S secure HTTPS target-pull client.** Final CI `#1015`; implementation is outbound-client-only and hosted proof opened no socket/listener.
 13. **COMPLETE — M12T controller HTTPS target-pull route / unbound server.** Final CI `#1025`; hosted proof opened no listener/socket and production has no `listen()` call.
 14. **COMPLETE — M12U networked M12Q bootstrap.** Final CI `#1055`; exact nonce hardening, controller challenge/session envelope and target signer client are proven socket-free.
-15. **STOP for review before defining shared unbound HTTPS route composition / deployment readiness.** M12T pull + M12U bootstrap must share one canonical origin/listener without widening either route contract.
-16. **DO NOT call `listen()`, provision TLS identity, provision/rotate Ed25519 keys or authentication bindings, add delivery reconciliation, reverse-proxy trust or physical network proof until separately reviewed/gated.**
+15. **REVIEWED / DEFINED — M12V shared unbound HTTPS composition + TLS identity preflight.** Implement only the reviewed socket-free composition next: exact three-route dispatcher, bounded M12U body collector, local M12P hostname/IP + SPKI + key-match preflight, and one unbound HTTPS server.
+16. **DO NOT call `listen()`, provision TLS identity, provision/rotate Ed25519 keys or authentication bindings, add delivery reconciliation, reverse-proxy trust or physical network proof in M12V.**
 17. **DO NOT add listener binding, certificate/private-key provisioning, delivery retry/ack/reconciliation, reverse-proxy trust or physical cross-machine proof without a separately reviewed/gated slice.**
 18. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
 19. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
@@ -400,9 +420,10 @@ Evidence: definition `c736a0a310422fbff75cf702febf4b16e857a1ae`; nonce hardening
 - 2026-10-02: M12S secure HTTPS target-pull client security review and implementation completed. Fixed outbound-only POST, explicit system-CA + hostname + leaf-SPKI pin validation, no redirects/proxy/retries/work selectors, strict bounded 200/204 responses, sanitized errors, explicit ambiguous outcome and socket-free hosted proof completed; final CI `#1015` green.
 - 2026-10-02: M12T controller HTTPS target-pull route/unbound-server security review and implementation completed. Exact M12S headers/no body, duplicate-preserving validation, exactly one M12R call with no separate M12C pre-auth, bodyless/sanitized errors, bounded strict HTTP/1.1/TLS server settings, fail-closed special events and an unbound server factory were proven socket-free; final CI `#1025` green.
 - 2026-10-02: M12U networked M12Q bootstrap security review and implementation completed. Exact 32-byte M12Q nonce validation, two fixed canonical JSON bootstrap routes, M12Q-only delegation, challenge idempotency/one-active challenge/rate + concurrency defenses, anti-enumeration, signer-only target private-key boundary, M12P TLS client validation and no completion retry were proven socket-free; final CI `#1055` green.
+- 2026-10-02: M12V shared unbound HTTPS composition/deployment-readiness security review completed and exact contract recorded. Review fixes one canonical M12P origin, exact M12T/M12U route isolation, bounded bootstrap body collection, one strict unbound HTTP/1.1 server, and local leaf hostname/IP + SPKI pin + private-key-match preflight; implementation remains pending.
 
 ---
 
 # Current next step
 
-**STOP for review.** M12U is complete. Review the shared unbound HTTPS routing/composition and deployment-readiness boundary that will place M12T pull + M12U bootstrap on one canonical controller origin before any TLS/key provisioning or real `listen()`/bind is authorized.
+**M12V REVIEW COMPLETE.** Implement the reviewed socket-free shared HTTPS composition contract in `docs/M12V-SHARED-UNBOUND-HTTPS-COMPOSITION-CONTRACT.md` next. Do not provision TLS/machine keys, call `listen()`, choose a bind address/port or perform real network proof.
