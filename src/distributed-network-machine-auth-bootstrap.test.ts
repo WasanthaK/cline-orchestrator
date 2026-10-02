@@ -642,3 +642,119 @@ test("invalid M12Q challenge or invalid M12C issue result fails closed", async (
     500,
   );
 });
+
+test("M12U rejects non-IP peers, malformed UTF-8 and oversized bodies before M12Q", async () => {
+  const bootstrap = new Bootstrap();
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(NOW),
+  });
+
+  const canonical = challengeBody();
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      canonical,
+      REQUEST_ID,
+      { peerAddress: "not-an-ip" },
+    )),
+    400,
+  );
+
+  const malformedUtf8 = Buffer.from([0xc3, 0x28]);
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      malformedUtf8,
+      REQUEST_ID,
+      { rawHeaders: headers(malformedUtf8) },
+    )),
+    400,
+  );
+
+  const oversized = Buffer.alloc(1025, 0x41);
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      oversized,
+      REQUEST_ID,
+      { rawHeaders: headers(oversized) },
+    )),
+    400,
+  );
+
+  assert.equal(bootstrap.issueCalls.length, 0);
+});
+
+test("registration-specific issue rate limit is enforced independently of peer limit", async () => {
+  const bootstrap = new Bootstrap(
+    new DistributedMachineAuthenticationBootstrapError(
+      "missing",
+      "registration_not_current",
+    ),
+  );
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(NOW),
+    peerIssueLimitPerMinute: 12,
+    registrationIssueLimitPerMinute: 1,
+  });
+
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+      REQUEST_ID,
+      { peerAddress: "10.0.0.20" },
+    )),
+    404,
+  );
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+      REQUEST_ID_2,
+      { peerAddress: "10.0.0.21" },
+    )),
+    429,
+  );
+  assert.equal(bootstrap.issueCalls.length, 1);
+});
+
+test("expired rate buckets are pruned and do not permanently retain request pressure", async () => {
+  const now = { value: new Date(NOW) };
+  const bootstrap = new Bootstrap(
+    new DistributedMachineAuthenticationBootstrapError(
+      "missing",
+      "registration_not_current",
+    ),
+  );
+  const route = new DistributedNetworkMachineAuthRoute({
+    controllerOrigin: ORIGIN,
+    bootstrap,
+    now: () => new Date(now.value),
+    peerIssueLimitPerMinute: 1,
+    registrationIssueLimitPerMinute: 1,
+  });
+
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+      REQUEST_ID,
+    )),
+    404,
+  );
+  now.value = new Date(NOW.getTime() + 60_001);
+  bodyless(
+    await route.handle(request(
+      "/v1/distributed/auth/challenge",
+      challengeBody(),
+      REQUEST_ID_2,
+    )),
+    404,
+  );
+  assert.equal(bootstrap.issueCalls.length, 2);
+});
