@@ -656,7 +656,8 @@ test("shared server is unbound, strict, uses the exact preflighted identity and 
   assert.equal(options?.joinDuplicateHeaders, false);
   assert.equal(options?.maxHeaderSize, 8192);
   assert.equal(options?.handshakeTimeout, 10_000);
-  assert.equal(options?.key, harness.tlsIdentity.privateKey);
+  assert.ok(Array.isArray(options?.key));
+  assert.equal(options?.key?.[0], harness.tlsIdentity.privateKey);
   assert.deepEqual(options?.cert, [TEST_CERT_PEM]);
 
   const listener = harness.capturedListener();
