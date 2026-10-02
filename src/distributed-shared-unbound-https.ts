@@ -656,7 +656,7 @@ export function createUnboundDistributedSharedHttpsServer(
   try {
     server = builder.create(
       {
-        key: identity.privateKey,
+        key: [identity.privateKey],
         cert: [...identity.certificates],
         minVersion: "TLSv1.2",
         ALPNProtocols: ["http/1.1"],
