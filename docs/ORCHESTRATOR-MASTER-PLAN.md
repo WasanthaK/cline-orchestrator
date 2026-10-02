@@ -252,6 +252,23 @@ Implementation details: the client uses a fixed selector-free `POST /v1/distribu
 
 Evidence: definition `493c35f91d0d4bc9bab7c0d2e8149c3361f6f1b2`; initial implementation `1e4c8b1953ef9ef6959677f9ea142cdd6d1cd07e`; exact input guard `9faeb81f7957ff50c890aa84e6fd6ce50825c26d`; proof `3981674f1830684ce68d7601b59f9e3a216993d9`; fixture-only corrections `2c1fd92ce3564ccb4c70eb9a7b130a173ae4c134` and `cba2301a7605f8374639697ce84168cfc57e862f`; bearer hardening `3ca06e4ffc6e2703a866f66994bda25ce00c36c4` + `484ea8cf547cbe768829b4dfaa9b13a95022bbfb`; final CI `#1015` / `36957941941` passed typecheck + full suite.
 
+
+## 12T — Controller HTTPS target-pull route / unbound server — REVIEWED / DEFINED
+
+Security review is complete and the exact controller-side contract is recorded in `docs/M12T-CONTROLLER-HTTPS-PULL-SERVER-CONTRACT.md`. M12T is **not yet implemented**.
+
+The route is exactly `POST /v1/distributed/execution/pull` over HTTPS/HTTP/1.1. It accepts only the exact M12S wire headers, no body and no work selectors. Duplicate-preserving header inspection is mandatory because Node may otherwise discard or combine duplicate header fields. The handler delegates exactly once to M12R `pullNext(token, requestId)`; it must not pre-authorize separately with M12C because M12R already performs M12C authorization and replay consumption.
+
+A valid M12R `null` result maps to zero-byte 204. A delivery is revalidated through the existing M12J bundle validator, serialized once as bounded UTF-8 JSON and returned as 200. Errors are bodyless and sanitized; M12C replay maps to 409, capability denial to 403, stale/invalid sessions to 401, candidate/fence state loss to 409, saturation to 503 and invariant failures to 500. No remote error body contains machine/work/task/evidence details.
+
+The reviewed server uses strict HTTP parsing, exact Host matching, `Content-Length: 0`, no Transfer-Encoding, one request per socket, HTTP/1.1-only ALPN, TLS >=1.2, bounded header/handshake/request/socket timeouts and bounded in-flight concurrency. Upgrade, CONNECT and Expect/100-continue paths fail closed.
+
+M12T implementation may consume already-provisioned controller-local certificate/private-key material through trusted startup-only composition, but certificate generation/provisioning/rotation is out of scope. The implementation MUST return an unbound `https.Server`; it must not call `listen()`, choose a default bind, open a socket, mutate DNS/firewall/NAT/tunnels, expose networked M12Q bootstrap, add claim reconciliation, invoke M12H/M12I or grant release authority.
+
+Hosted implementation proof must remain socket/listener-free. Actual bind/TLS physical proof remains a later separately authorized action.
+
+Definition evidence: `68083d6b33274eda2efad0804878dede04f63c64`.
+
 ---
 
 # Current capability snapshot
@@ -333,9 +350,10 @@ Evidence: definition `493c35f91d0d4bc9bab7c0d2e8149c3361f6f1b2`; initial impleme
 10. **COMPLETE — M12Q machine authentication bootstrap + bounded M12C session issuance.** Final CI `#985`.
 11. **COMPLETE — M12R controller-owned pending-work selection.** Final CI `#993`.
 12. **COMPLETE — M12S secure HTTPS target-pull client.** Final CI `#1015`; implementation is outbound-client-only and hosted proof opened no socket/listener.
-13. **STOP for review before defining the controller HTTPS route/listener slice.** Also keep networked M12Q bootstrap and delivery retry/ack/reconciliation separate unless explicitly reviewed.
-14. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
-15. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+13. **REVIEWED / DEFINED — M12T controller HTTPS target-pull route / unbound server contract.** Implement only the reviewed socket-free server/handler boundary next; do not call `listen()`.
+14. **DO NOT add listener binding, certificate/private-key provisioning, networked M12Q bootstrap, delivery retry/ack/reconciliation, reverse-proxy trust or physical cross-machine proof in M12T.** Those are later separately reviewed/gated slices.
+15. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
+16. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -356,9 +374,10 @@ Evidence: definition `493c35f91d0d4bc9bab7c0d2e8149c3361f6f1b2`; initial impleme
 - 2026-10-01: M12Q Ed25519 possession-proof bootstrap completed; valid proof delegates only to existing M12C issuance, with replay/stale/key-rotation/authority-widening proofs; final CI `#985` green.
 - 2026-10-01: M12R controller-owned pending-work selection completed; target pull inputs contain no work selectors; exact-machine FIFO claim, candidate/fence revalidation and M12J reuse proven; final CI `#993` green.
 - 2026-10-02: M12S secure HTTPS target-pull client security review and implementation completed. Fixed outbound-only POST, explicit system-CA + hostname + leaf-SPKI pin validation, no redirects/proxy/retries/work selectors, strict bounded 200/204 responses, sanitized errors, explicit ambiguous outcome and socket-free hosted proof completed; final CI `#1015` green.
+- 2026-10-02: M12T controller HTTPS target-pull route/unbound-server security review completed and exact contract recorded. Review requires exact M12S headers/no body, duplicate-preserving validation, exactly one M12R call (no separate M12C pre-auth), bodyless/sanitized errors, bounded strict HTTP/1.1/TLS server settings and an unbound server factory; implementation remains pending.
 
 ---
 
 # Current next step
 
-**STOP for review.** M12S is complete. Review the controller HTTPS route/listener boundary before adding any server listener, certificate/private-key provisioning, networked M12Q bootstrap, delivery acknowledgement/reconciliation, runtime auto-execution wiring or physical cross-machine proof.
+**M12T REVIEW COMPLETE.** Implement the reviewed unbound controller HTTPS pull-server contract in `docs/M12T-CONTROLLER-HTTPS-PULL-SERVER-CONTRACT.md` next. Do not call `listen()`, provision TLS identity, expose networked M12Q bootstrap, add delivery reconciliation, auto-start target runtime or perform real socket/network proof in the M12T implementation.
