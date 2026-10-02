@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isIP } from "node:net";
 import { TextDecoder } from "node:util";
 import {
   assertDistributedMachineAuthenticationChallenge,
@@ -475,7 +476,8 @@ function peerKey(value: unknown): string | null {
     typeof value !== "string"
     || value.length < 1
     || value.length > 255
-    || /[\u0000-\u001f\u007f]/.test(value)
+    || value !== value.trim()
+    || isIP(value) === 0
   ) {
     return null;
   }
@@ -544,6 +546,15 @@ export class DistributedNetworkMachineAuthRoute {
       );
     }
     return value;
+  }
+
+  private pruneRateMap(map: Map<string, number[]>, nowMs: number): void {
+    const cutoff = nowMs - RATE_WINDOW_MS;
+    for (const [key, values] of map) {
+      const kept = values.filter((value) => value > cutoff);
+      if (kept.length === 0) map.delete(key);
+      else map.set(key, kept);
+    }
   }
 
   private pruneAttempts(map: Map<string, number[]>, key: string, nowMs: number): number[] {
@@ -716,6 +727,9 @@ export class DistributedNetworkMachineAuthRoute {
     try {
       const nowMs = this.now().getTime();
       this.pruneChallenges(nowMs);
+      this.pruneRateMap(this.peerIssueAttempts, nowMs);
+      this.pruneRateMap(this.registrationIssueAttempts, nowMs);
+      this.pruneRateMap(this.peerCompletionAttempts, nowMs);
       return input.url === CHALLENGE_PATH
         ? await this.challenge(headers.requestId, input.body, peer, nowMs)
         : await this.session(input.body, peer, nowMs);
