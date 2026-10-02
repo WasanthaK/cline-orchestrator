@@ -393,6 +393,17 @@ test("invalid input and private-key-shaped extra fields fail before transport", 
       signer: { publicKeyFingerprint: keys.fingerprint, sign: async () => Buffer.alloc(64) },
       privateKey: "forbidden",
     },
+    {
+      profile: profile(),
+      registrationId: REGISTRATION_ID,
+      capabilities: ["accept_writer_candidates"],
+      sessionTtlMs: 60_000,
+      signer: {
+        publicKeyFingerprint: keys.fingerprint,
+        sign: async () => Buffer.alloc(64),
+        privateKey: "forbidden",
+      },
+    },
   ]) {
     const transport = new FakeTransport([]);
     const client = new DistributedNetworkMachineAuthClient({
@@ -528,4 +539,33 @@ test("non-200 or malformed JSON responses fail without exposing response body", 
     assert.equal(error.message.includes(secret), false);
   }
   assert.equal(transport.calls, 1);
+});
+
+test("system CA provider failures are sanitized before transport", async () => {
+  const keys = machineKeys();
+  const transport = new FakeTransport([]);
+  const client = new DistributedNetworkMachineAuthClient({
+    transport,
+    systemCaProvider: () => {
+      throw new Error("local CA provider secret");
+    },
+    requestIdFactory: requestIds(),
+  });
+
+  await assert.rejects(
+    () => client.bootstrapSession({
+      profile: profile(),
+      registrationId: REGISTRATION_ID,
+      capabilities: ["accept_writer_candidates"],
+      sessionTtlMs: 60_000,
+      signer: {
+        publicKeyFingerprint: keys.fingerprint,
+        async sign() {
+          return Buffer.alloc(64);
+        },
+      },
+    }),
+    expectCode("system_ca_unavailable"),
+  );
+  assert.equal(transport.calls, 0);
 });
