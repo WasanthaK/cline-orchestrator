@@ -233,6 +233,23 @@ Evidence: M12J authorized-builder reuse `4927e2c906378dc6c13a925b3abbdca9ff8f65f
 
 M12R does not authorize a real HTTPS adapter or public listener. Network I/O remains the next separately reviewed boundary.
 
+
+## 12S — Secure HTTPS target-pull client adapter — REVIEWED / DEFINED
+
+Security review is complete and the exact client-side contract is recorded in `docs/M12S-SECURE-TARGET-PULL-CLIENT-CONTRACT.md`. M12S is **not yet implemented**.
+
+The reviewed boundary is target→controller outbound HTTPS only. The client accepts only a validated M12P profile, an already-issued short-lived M12C bearer and a fresh request ID. It sends one fixed `POST /v1/distributed/execution/pull` request with no body and no task/workspace/dispatch/candidate/fence selector. M12R remains the sole controller-side work selector and M12J remains the sole delivery-bundle schema/validator.
+
+Server authentication is fail-closed: explicit OS/system trust roots, normal CA/TLS validation, hostname verification and an exact leaf-SPKI SHA-256 pin from M12P are all required. Redirects, environment-proxy routing, caller-supplied CA/client-cert/TLS options, arbitrary URLs/headers, compression, connection reuse and automatic retries are forbidden. A valid 204 means no work; a valid 200 must be bounded UTF-8 JSON that passes the existing M12J delivery validator.
+
+The review identified two deliberate later boundaries. First, M12Q bootstrap/session issuance still has no network route; M12S consumes an already-issued bearer only. Second, M12R claims work before delivery, so a lost response can create an ambiguous/lost-delivery condition. M12S therefore never retries automatically and reports `ambiguous_outcome`; durable claim/ack/reconciliation is a later separately reviewed reliability slice.
+
+The review also found that the package-wide `node >=22` declaration is too broad to guarantee the explicit OS/system-CA APIs required by M12S. Implementation must tighten/enforce a Node runtime floor that supports the reviewed trust-store behavior rather than silently falling back to an unspecified/default CA set.
+
+M12S implementation proof must remain socket-free in hosted CI through an injected/fake request transport. No listener, real DNS/TLS/HTTP connection, credential provisioning, firewall/DNS/tunnel mutation or physical cross-machine proof is authorized by this review.
+
+Definition evidence: `493c35f91d0d4bc9bab7c0d2e8149c3361f6f1b2`.
+
 ---
 
 # Current capability snapshot
@@ -313,9 +330,10 @@ M12R does not authorize a real HTTPS adapter or public listener. Network I/O rem
 9. **COMPLETE — M12P secure target-pull transport profile + controller server-identity prerequisite.** Final CI `#975`.
 10. **COMPLETE — M12Q machine authentication bootstrap + bounded M12C session issuance.** Final CI `#985`.
 11. **COMPLETE — M12R controller-owned pending-work selection.** Final CI `#993`.
-12. **STOP for review before defining a real HTTPS target-pull adapter slice.** M12R grants no authorization to perform DNS/TLS/HTTP I/O or open a listener.
-13. **DO NOT production-wire cross-machine delivery/execution** until a later explicitly reviewed secure transport slice preserves M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
-14. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+12. **REVIEWED / DEFINED — M12S secure HTTPS target-pull client contract.** Implement only the reviewed client-only boundary next; hosted proof must use injected/fake transport and must not open sockets/listeners.
+13. **DO NOT add the controller HTTPS route/listener, networked M12Q bootstrap, delivery retry/ack/reconciliation, or physical cross-machine proof in M12S.** Those are later separately reviewed/gated slices.
+14. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
+15. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
@@ -335,9 +353,10 @@ M12R does not authorize a real HTTPS adapter or public listener. Network I/O rem
 - 2026-10-01: Post-M12P security review identified machine-authentication bootstrap/session issuance and controller-owned pending-work selection as prerequisites before network I/O.
 - 2026-10-01: M12Q Ed25519 possession-proof bootstrap completed; valid proof delegates only to existing M12C issuance, with replay/stale/key-rotation/authority-widening proofs; final CI `#985` green.
 - 2026-10-01: M12R controller-owned pending-work selection completed; target pull inputs contain no work selectors; exact-machine FIFO claim, candidate/fence revalidation and M12J reuse proven; final CI `#993` green.
+- 2026-10-02: M12S secure HTTPS target-pull client security review completed and exact contract recorded. Review requires fixed outbound-only POST, explicit system-CA + hostname + leaf-SPKI pin validation, no redirects/proxy/retries/work selectors, strict bounded 200/204 responses, sanitized errors, and socket-free CI proof. Implementation remains pending.
 
 ---
 
 # Current next step
 
-**STOP for review.** M12R is complete. The next Milestone 12 slice is intentionally not yet defined. Review the secure target-pull HTTPS network adapter boundary before adding DNS/TLS/HTTP I/O, any listener, controller push, distributed takeover/recovery, private-key provisioning or release authority.
+**M12S REVIEW COMPLETE.** Implement the reviewed client-only contract in `docs/M12S-SECURE-TARGET-PULL-CLIENT-CONTRACT.md` next. Do not add a controller listener/route, networked M12Q bootstrap, automatic retry/claim recovery, runtime execution wiring or real socket/network proof in the M12S implementation.
