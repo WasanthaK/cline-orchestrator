@@ -185,3 +185,14 @@ test("M12W binding store requires exact absolute canonical file location and exi
     (e:any)=>e instanceof DistributedMachineAuthenticationBindingStoreError && e.code==="store_path_invalid",
   );
 });
+
+test("M12W binding store rejects duplicate registration IDs in durable state", async (t)=>{
+  const {dir,file}=await fixture();
+  t.after(()=>rm(dir,{recursive:true,force:true}));
+  const one=binding();
+  await writeFile(file,JSON.stringify({schemaVersion:1,bindings:[one,one]}),{mode:0o600});
+  await assert.rejects(
+    ()=>new FileDistributedMachineAuthenticationBindingStore(file).list(),
+    (e:any)=>e instanceof DistributedMachineAuthenticationBindingStoreError && e.code==="store_corrupt",
+  );
+});
