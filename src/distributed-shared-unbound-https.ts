@@ -346,7 +346,10 @@ export function preflightDistributedSharedTlsIdentity(
   }
 
   const origin = new URL(profile.controllerOrigin);
-  const host = origin.hostname;
+  const rawHost = origin.hostname;
+  const host = rawHost.startsWith("[") && rawHost.endsWith("]")
+    ? rawHost.slice(1, -1)
+    : rawHost;
   const matched = isIP(host) > 0
     ? leaf.checkIP(host)
     : leaf.checkHost(host);
