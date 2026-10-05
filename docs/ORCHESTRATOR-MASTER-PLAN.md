@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-A classification (`#1134`), M12Z-B proposal (`#1139` / `#1140` rerun), and M12Z-C trusted pre-execution gate (`76fe12fc`, CI `#1143`) complete; takeover/recovery execution remains separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-A classification (`#1134`), M12Z-B proposal (`#1139` / `#1140` rerun), M12Z-C pre-execution (`#1143`), and M12Z-D fresh-authority preparation (`453c22c3`, CI `#1147`) complete; takeover/recovery execution remains separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -402,6 +402,14 @@ The output is evidence only. M12Z-C cannot acquire a candidate, distributed fenc
 
 Evidence: `76fe12fcc21d9745b977c8d94ebe91ee53f59f22`; CI `#1143` passed typecheck + full suite.
 
+## 12Z-D — Fresh-authority reacquisition preparation — COMPLETE
+
+`src/distributed-recovery-reacquisition-preparation.ts` validates an already-new candidate assignment, current distributed fence and current local writer lease against the exact M12Z-C task/workspace evidence. Candidate/fence bindings must match exactly, the candidate must still be current, the fence must still be current, and the local lease identity must remain stable across validation.
+
+This slice does not create a candidate, fence or local writer lease and still does not create a recovery dispatch, invoke M12G/M12H/M12I, retry/requeue work, or start Cline. The result is preparation evidence only and grants no task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: `453c22c3d6451b94c6300bff4adaf770649b40fb`; CI `#1147` passed typecheck + full suite.
+
 ---
 
 # Current capability snapshot
@@ -498,14 +506,16 @@ Evidence: `76fe12fcc21d9745b977c8d94ebe91ee53f59f22`; CI `#1143` passed typechec
 21. **COMPLETE — M12Z-A recovery classification.** Authority-free classification only; CI `#1134`.
 22. **COMPLETE — M12Z-B non-authoritative recovery proposal.** Push CI `#1139`; PR CI `#1140` rerun green.
 23. **COMPLETE — M12Z-C trusted recovery pre-execution gate.** CI `#1143` green.
-24. **NEXT — M12Z-D fresh-authority reacquisition preparation.** From valid M12Z-C evidence, verify a newly selected machine/placement/candidate/fence/local-lease set is all fresh and cross-bound to the exact task/workspace, then emit bounded preparation evidence only. Do not create a recovery dispatch, consume M12G, invoke M12H/M12I, or start Cline.
-25. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
-26. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+24. **COMPLETE — M12Z-D fresh-authority reacquisition preparation.** CI `#1147` green.
+25. **NEXT — M12Z-E fresh recovery dispatch creation gate.** From valid M12Z-D preparation evidence plus the exact current candidate/fence objects, create a brand-new M12G dispatch only if all bindings still match and remain current. Do not consume admission, invoke M12H/M12I, or start Cline.
+26. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
+27. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
 # Recent progress
 
+- 2026-10-05: M12Z-D fresh-authority reacquisition preparation completed at `453c22c3`; CI `#1147` green. It validates a fresh candidate, current distributed fence, and stable current local writer lease against exact M12Z-C task/workspace evidence while remaining preparation-only.
 - 2026-10-05: M12Z-C trusted recovery pre-execution gate completed at `76fe12fc`; CI `#1143` green. It reuses target-local task/workspace/Safety validation and requires a fresh `created` task with no runtime/session/escalation history before emitting evidence-only recovery readiness.
 - 2026-10-05: M12Z-B non-authoritative recovery proposal completed through type-only correction `e632e4fd`; push CI `#1139` green and PR CI `#1140` green on rerun after the known unrelated M12N timing flake. Only `fresh_authority_review_required` can produce a proposal; proposals cannot start or reacquire work.
 - 2026-10-05: M12Z-A recovery classification completed at `305003cc`; CI `#1134` green. The new classifier is authority-free and never retries/requeues or reuses stale distributed evidence; it only classifies durable delivery/task state into ACK-only, ambiguity review, fresh-authority review, or terminal/no-takeover dispositions.
@@ -537,4 +547,4 @@ Evidence: `76fe12fcc21d9745b977c8d94ebe91ee53f59f22`; CI `#1143` passed typechec
 
 # Current next step
 
-**M12Z-D — fresh-authority reacquisition preparation.** The next trusted slice must require a newly selected current machine/placement, a fresh candidate assignment, a fresh current distributed fence and a fresh local writer lease, all cross-bound to the exact M12Z-C task/workspace evidence. It may only emit bounded preparation evidence. It must not reuse stale recovery evidence, create a recovery dispatch, consume M12G admission, enter M12H/M12I, or start Cline.
+**M12Z-E — fresh recovery dispatch creation gate.** The next trusted slice may create a brand-new M12G dispatch only from valid M12Z-D preparation evidence and the exact current candidate/fence objects that produced it, with fresh current-state validation immediately before creation. It must not consume M12G admission, enter M12H/M12I, start Cline, or reinterpret the new dispatch as authority.
