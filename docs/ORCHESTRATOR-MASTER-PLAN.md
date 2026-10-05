@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-A classification (`#1134`), M12Z-B proposal (`#1139` / `#1140` rerun), M12Z-C pre-execution (`#1143`), M12Z-D fresh-authority preparation (`#1147`), and M12Z-E fresh recovery dispatch creation (`3f7bb2f1`, CI `#1151`) complete; takeover/recovery runtime execution remains separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-A classification (`#1134`), M12Z-B proposal (`#1139` / `#1140` rerun), M12Z-C pre-execution (`#1143`), M12Z-D fresh-authority preparation (`#1147`), M12Z-E fresh recovery dispatch creation (`#1151`), and M12Z-F recovery admission bridge (`e413b0ec` + `403cca2c`, CI `#1157` rerun) complete; takeover/recovery runtime execution remains separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -418,6 +418,14 @@ The created dispatch is still only `execution_request_only` evidence. M12Z-E doe
 
 Evidence: `3f7bb2f1c5df006373352cb63e1f8cf6c7418da2`; CI `#1151` passed typecheck + full suite.
 
+## 12Z-F — Recovery admission bridge — COMPLETE
+
+`src/distributed-recovery-admission-bridge.ts` binds the brand-new M12Z-E dispatch back to the exact M12Z-D preparation evidence, candidate and distributed fence, then delegates admission to the existing M12G gateway. Durable replay consumption remains owned exclusively by M12G; the recovery bridge does not implement or bypass its own replay path.
+
+The result remains `admission_evidence_only`. M12Z-F does not enter M12H/M12I, start Cline, retry/requeue prior work, or grant task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `e413b0ecbf95305286666c8f8d30889055ccb2af`; test typing correction `403cca2c8db636cd33e53279a98b1c63fe03d764`; CI `#1157` attempt 2 passed typecheck + full suite after the known unrelated M12N timing flake.
+
 ---
 
 # Current capability snapshot
@@ -516,14 +524,16 @@ Evidence: `3f7bb2f1c5df006373352cb63e1f8cf6c7418da2`; CI `#1151` passed typechec
 23. **COMPLETE — M12Z-C trusted recovery pre-execution gate.** CI `#1143` green.
 24. **COMPLETE — M12Z-D fresh-authority reacquisition preparation.** CI `#1147` green.
 25. **COMPLETE — M12Z-E fresh recovery dispatch creation gate.** CI `#1151` green.
-26. **NEXT — M12Z-F recovery admission bridge.** Consume the brand-new recovery dispatch through the existing M12G durable admission gateway only after revalidating the exact fresh recovery bindings. Persist/return only admission evidence; do not enter M12H/M12I or start Cline.
-27. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
-28. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+26. **COMPLETE — M12Z-F recovery admission bridge.** CI `#1157` rerun green.
+27. **NEXT — M12Z-G recovery target-local handoff gate.** Re-enter the existing M12H trusted target-local authority boundary using the freshly admitted recovery dispatch/receipt and the exact current lease/fence set, but stop before M12I runtime start.
+28. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
+29. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
 # Recent progress
 
+- 2026-10-05: M12Z-F recovery admission bridge completed at `e413b0ec` with test typing correction `403cca2c`; CI `#1157` green on rerun after the known unrelated M12N timing flake. Recovery admission delegates to the existing durable M12G gateway and still stops before M12H/M12I.
 - 2026-10-05: M12Z-E fresh recovery dispatch creation completed at `3f7bb2f1`; CI `#1151` green. It creates only a brand-new authority-free M12G dispatch from the exact still-current M12Z-D candidate/fence/local-lease set and still stops before admission/runtime.
 - 2026-10-05: M12Z-D fresh-authority reacquisition preparation completed at `453c22c3`; CI `#1147` green. It validates a fresh candidate, current distributed fence, and stable current local writer lease against exact M12Z-C task/workspace evidence while remaining preparation-only.
 - 2026-10-05: M12Z-C trusted recovery pre-execution gate completed at `76fe12fc`; CI `#1143` green. It reuses target-local task/workspace/Safety validation and requires a fresh `created` task with no runtime/session/escalation history before emitting evidence-only recovery readiness.
@@ -557,4 +567,4 @@ Evidence: `3f7bb2f1c5df006373352cb63e1f8cf6c7418da2`; CI `#1151` passed typechec
 
 # Current next step
 
-**M12Z-F — recovery admission bridge.** The next trusted slice may consume the brand-new M12Z-E dispatch only through the existing M12G durable admission gateway, after checking that the dispatch, candidate and fence still match the exact recovery preparation evidence. The output must remain admission evidence only. It must not enter M12H/M12I or start Cline.
+**M12Z-G — recovery target-local handoff gate.** The next trusted slice may re-enter the existing M12H target-local authority boundary only with the freshly admitted recovery dispatch/receipt and the exact current candidate/fence/local-lease set. It must preserve M12H's fresh-task and current Safety/registry checks and stop before M12I runtime start.
