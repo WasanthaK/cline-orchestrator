@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete and M12X P0–P5 physical HTTPS/auth/no-work proof complete; latest code CI `#1099`; real distributed delivery acknowledgement/reconciliation, writer proof and takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete, M12X P0–P5 physical HTTPS/auth/no-work proof complete, and M12Y-A/B/C delivery acknowledgement + reconciliation substrate complete through CI `#1108`; restart reconciliation, real writer proof and takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -356,6 +356,18 @@ P5 used a fresh authenticated session with the production M12S client against th
 
 M12X deliberately stops here. Real distributed work delivery is still gated. Delivery acknowledgement/reconciliation, ambiguous-outcome handling and restart reconciliation must be reviewed and proven before any live writer delivery. Distributed takeover/recovery remains separately gated.
 
+## 12Y — Delivery acknowledgement / reconciliation — IN PROGRESS
+
+M12Y-A established the durable authority-free controller delivery state and acknowledgement contract. Delivery state is monotonic: `pending → claimed → delivered_unconfirmed → admission_acknowledged`. Ambiguous work delivery remains `delivered_unconfirmed`; no automatic retry or requeue is permitted. An acknowledgement means only that the target has already durably admitted the exact dispatch through M12G.
+
+M12Y-B wired acknowledgement creation to the target admission boundary. After successful M12H/M12G admission and before M12I runtime start, the target creates the exact admission acknowledgement and persists it to a target-local durable outbox. Runtime-start failure does not erase that acknowledgement, and acknowledgement persistence failure blocks runtime start. No network ACK transport or delivery retry was introduced in this slice.
+
+M12Y-C added authenticated ACK upload and controller reconciliation over the existing shared M12P HTTPS origin. The ACK route requires an M12C bearer with `report_status`, exact authenticated machine/registration revision binding, a bounded exact-schema acknowledgement body, and only permits the monotonic `delivered_unconfirmed → admission_acknowledged` transition. Identical duplicate acknowledgements are idempotent. Conflicting, wrong-machine or stale-session acknowledgements fail closed. ACK upload may be retried explicitly with a fresh request id because the acknowledgement is immutable/idempotent; work delivery itself remains non-retryable and non-requeueable.
+
+CI evidence: M12Y-A `#1105`; M12Y-B `#1106` / `#1107`; M12Y-C `#1108`.
+
+M12Y is not complete yet. Restart reconciliation must still prove that controller restart preserves `delivered_unconfirmed`, target restart preserves the durable ACK outbox, and reconciliation can converge to `admission_acknowledged` without re-delivering work or invoking writer execution.
+
 ---
 
 # Current capability snapshot
@@ -446,15 +458,17 @@ M12X deliberately stops here. Real distributed work delivery is still gated. Del
 15. **COMPLETE — M12V shared unbound HTTPS composition + TLS identity preflight.** Final CI `#1080`; hosted proof remained socket/listener-free and production contains no `listen()` path.
 16. **COMPLETE — M12W deployment credential/binding/listener substrate.** Final CI `#1099`; hosted proof used fake bind primitives only and performed no real credential/network mutation.
 17. **COMPLETE — M12X P0–P5 physical deployment proof.** Authorized Windows proof established trusted localhost TLS, Ed25519 machine authentication, exact loopback listener activation, client-observed TLS/SPKI enforcement, real M12U bootstrap and authenticated M12S/M12T no-work `204`; no real delivery/runtime/writer execution occurred.
-18. **NEXT — M12Y delivery acknowledgement / reconciliation review.** Define fail-closed durable delivery identity, ambiguous-outcome handling, target duplicate semantics and controller restart reconciliation before any live writer proof.
-19. **DO NOT add automatic retry after an ambiguous delivery outcome or run a real writer proof until M12Y is reviewed/proven.** M12G durable replay remains authoritative and acknowledgement/reconciliation must not grant execution authority.
-20. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
-21. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+18. **COMPLETE — M12Y-A/B/C delivery acknowledgement / reconciliation substrate.** Durable controller delivery state, target durable ACK outbox and authenticated ACK upload/reconciliation are implemented and green through CI `#1108`.
+19. **NEXT — M12Y-D restart reconciliation proof.** Prove controller restart preserves `delivered_unconfirmed`, target restart preserves pending ACK outbox evidence, and post-restart ACK reconciliation converges idempotently without work resend/requeue or runtime/writer invocation.
+20. **DO NOT run a real writer proof until M12Y-D is reviewed/proven.** M12G durable replay remains authoritative; ACK transport may be retried idempotently, but work delivery must not be retried automatically.
+21. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
+22. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
 # Recent progress
 
+- 2026-10-05: M12Y-A/B/C completed through CI `#1108`: durable controller delivery state, target-local durable admission-ACK outbox, authenticated `report_status` ACK upload on the shared HTTPS origin, exact machine/revision reconciliation, and idempotent ACK retry semantics; work delivery remains non-retryable/non-requeueable and no real writer execution occurred. Next gate is M12Y-D restart reconciliation.
 - 2026-10-05: M12X P0–P5 authorized Windows physical proof completed: trusted localhost TLS identity, Ed25519 machine registration/binding, exact `127.0.0.1:8443` listener, client TLS/hostname/SPKI enforcement, real M12U authentication and authenticated M12S/M12T no-work `204`; no work delivery/runtime/writer execution occurred. Next gate is M12Y acknowledgement/reconciliation.
 - 2026-09-28: M11 software complete through 11H; user directed work to M12; external M11 proof deferred.
 - 2026-09-28: Cline context/tool-protocol recovery CI `#809`; CR1 CI `#822`; CR2 CI `#829`; CR3 CI `#840` + authorized Windows physical proof.
@@ -480,4 +494,4 @@ M12X deliberately stops here. Real distributed work delivery is still gated. Del
 
 # Current next step
 
-**M12Y — delivery acknowledgement / reconciliation review.** M12X P0–P5 physical proof is complete and deliberately stopped at authenticated no-work `204`. Define and prove fail-closed delivery acknowledgement, ambiguous-outcome handling, duplicate/replay semantics and controller/target restart reconciliation before any real distributed writer delivery. No automatic retry after ambiguous delivery, no target runtime/writer proof, and no new listener/network mutation are included in the first M12Y software slice.
+**M12Y-D — restart reconciliation proof.** Prove that controller restart preserves `delivered_unconfirmed`, target restart preserves durable pending acknowledgement evidence, and a fresh authenticated ACK upload after restart reconciles the controller to `admission_acknowledged` idempotently. The proof must not re-deliver work, requeue a dispatch, invoke target runtime/writer execution, broaden authority, or introduce new listener/network exposure.
