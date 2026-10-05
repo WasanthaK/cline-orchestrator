@@ -80,7 +80,7 @@ const FENCE_TTL_MS = 60_000;
 const DISPATCH_TTL_MS = 30_000;
 
 function fail(message: string): never {
-  throw new Error(\`M12 distributed writer proof refused: \${message}\`);
+  throw new Error(`M12 distributed writer proof refused: ${message}`);
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
@@ -94,14 +94,14 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 function requiredAbsoluteDirectory(name: string): string {
   const value = process.env[name]?.trim();
   if (!value || !path.isAbsolute(value) || path.normalize(value) !== value) {
-    fail(\`\${name} must be an absolute canonical local path\`);
+    fail(`${name} must be an absolute canonical local path`);
   }
   return value;
 }
 
 function requiredValue(name: string): string {
   const value = process.env[name]?.trim();
-  if (!value) fail(\`\${name} is required\`);
+  if (!value) fail(`${name} is required`);
   return value;
 }
 
@@ -164,7 +164,7 @@ function profileFromCertificate(certificatePem: string): DistributedSecureTransp
   const certificate = new X509Certificate(certificatePem);
   const exported = certificate.publicKey.export({ format: "der", type: "spki" });
   const spki = Buffer.isBuffer(exported) ? exported : Buffer.from(exported);
-  const pin = \`sha256/\${createHash("sha256").update(spki).digest("base64")}\`;
+  const pin = `sha256/${createHash("sha256").update(spki).digest("base64")}`;
   return {
     schemaVersion: 1,
     profileId: crypto.randomUUID(),
@@ -241,10 +241,10 @@ async function main(): Promise<void> {
   const workspace = await registerProofWorkspace(registry, workspaceRoot);
   const safetyPlans = new SafetyPlanService(registry);
   const marker = Date.now().toString(36);
-  const proofComment = \`// m12-distributed-writer-proof-\${marker}\`;
+  const proofComment = `// m12-distributed-writer-proof-${marker}`;
   const goal = [
     "Inspect src/demo.ts.",
-    \`Add exactly one standalone comment line: \${proofComment}\`,
+    `Add exactly one standalone comment line: ${proofComment}`,
     "Do not modify any other file.",
     "Re-read src/demo.ts after the edit and report exactly what you changed.",
   ].join(" ");
@@ -293,9 +293,9 @@ async function main(): Promise<void> {
     format: "der",
     type: "spki",
   });
-  const signerFingerprint = \`sha256/\${createHash("sha256")
+  const signerFingerprint = `sha256/${createHash("sha256")
     .update(Buffer.isBuffer(signerPublicDer) ? signerPublicDer : Buffer.from(signerPublicDer))
-    .digest("base64")}\`;
+    .digest("base64")}`;
   if (signerFingerprint !== binding.publicKeyFingerprint) {
     fail("local Ed25519 signer does not match the enrolled M12X binding");
   }
@@ -530,7 +530,7 @@ async function main(): Promise<void> {
           hubMayHaveStarted = true;
           const result = await receiver.execute(bundle);
           if (result.status !== "completed") {
-            fail(\`distributed Cline run ended with \${result.status}: \${result.error ?? result.finishReason ?? "no detail"}\`);
+            fail(`distributed Cline run ended with ${result.status}: ${result.error ?? result.finishReason ?? "no detail"}`);
           }
 
           const ack = await ackOutbox.getByDeliveryId(bundle.deliveryId);
@@ -567,7 +567,7 @@ async function main(): Promise<void> {
 
     const finalTask = await store.load(task.id);
     if (finalTask.status !== "completed") {
-      fail(\`durable task ended with \${finalTask.status}\`);
+      fail(`durable task ended with ${finalTask.status}`);
     }
     const packet = createTaskCompletionPacket(
       finalTask,
@@ -621,7 +621,7 @@ async function main(): Promise<void> {
       passed: true,
       transport: {
         origin: CONTROLLER_ORIGIN,
-        bind: \`\${CONTROLLER_HOST}:\${CONTROLLER_PORT}\`,
+        bind: `${CONTROLLER_HOST}:${CONTROLLER_PORT}`,
         tlsAndSpkiVerifiedByClients: true,
         authenticatedMachineIdentity: true,
       },
@@ -670,7 +670,7 @@ async function main(): Promise<void> {
     await removeDisposableProofRoot(workspaceRoot);
     await removeDisposableProofRoot(isolation.root);
     proofPassed = true;
-    process.stdout.write(\`\n__ORCH_M12_DISTRIBUTED_WRITER_PROOF__\${JSON.stringify(proofResult)}\n\`);
+    process.stdout.write(`\n__ORCH_M12_DISTRIBUTED_WRITER_PROOF__${JSON.stringify(proofResult)}\n`);
   } catch (error) {
     proofError = error;
     throw error;
@@ -697,7 +697,7 @@ async function main(): Promise<void> {
 
 void main().catch((error) => {
   process.stderr.write(
-    \`[M12 distributed writer proof failed: \${error instanceof Error ? error.message : String(error)}]\n\`,
+    `[M12 distributed writer proof failed: ${error instanceof Error ? error.message : String(error)}]\n`,
   );
   process.exitCode = 1;
 });
