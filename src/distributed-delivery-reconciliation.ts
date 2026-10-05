@@ -3,6 +3,8 @@ import { lstat, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteUtf8 } from "./atomic-write.js";
 import type { DistributedExecutionAdmissionReceiptV1 } from "./distributed-execution-admission.js";
+import type { DistributedExecutionDeliveryBundleV1 } from "./distributed-execution-delivery.js";
+import type { DistributedTargetRuntimeHandoffEvidenceV1 } from "./distributed-target-runtime-handoff.js";
 
 const STORE_SCHEMA_VERSION = 1 as const;
 const MAX_RECORDS = 1024;
@@ -537,5 +539,309 @@ export class FileDistributedDeliveryStateStore {
       await this.writeSnapshot(snapshot);
       return structuredClone(updated);
     });
+  }
+}
+
+
+export const DISTRIBUTED_DELIVERY_ADMISSION_OUTBOX_CONTRACT = Object.freeze({
+  schemaVersion: 1 as const,
+  createdOnlyAfterM12GAdmission: true as const,
+  persistedBeforeM12IRuntimeStart: true as const,
+  targetLocalDurableOutbox: true as const,
+  networkTransmissionIncluded: false as const,
+  automaticRetryAllowed: false as const,
+  automaticRequeueAllowed: false as const,
+  grantsTaskAuthority: false as const,
+  grantsFilesystemAuthority: false as const,
+  grantsSafetyPlanAuthority: false as const,
+  grantsWriterLeaseAuthority: false as const,
+  grantsCredentialAuthority: false as const,
+  grantsReleaseAuthority: false as const,
+});
+
+interface DistributedDeliveryAdmissionOutboxSnapshotV1 {
+  schemaVersion: 1;
+  acknowledgements: DistributedDeliveryAdmissionAcknowledgementV1[];
+}
+
+const MAX_OUTBOX_ACKNOWLEDGEMENTS = 1024;
+const MAX_OUTBOX_BYTES = 2 * 1024 * 1024;
+
+export function createDistributedDeliveryAdmissionAcknowledgementFromHandoff(
+  bundle: DistributedExecutionDeliveryBundleV1,
+  handoff: DistributedTargetRuntimeHandoffEvidenceV1,
+  options: { now?: () => Date; idFactory?: () => string } = {},
+): DistributedDeliveryAdmissionAcknowledgementV1 {
+  if (
+    handoff.schemaVersion !== 1
+    || handoff.authority !== "local_runtime_handoff_evidence_only"
+    || handoff.dispatchId !== bundle.dispatch.dispatchId
+    || handoff.taskId !== bundle.dispatch.taskId
+    || handoff.workspaceId !== bundle.dispatch.workspaceId
+    || handoff.machineId !== bundle.dispatch.machineId
+    || handoff.fenceGeneration !== bundle.dispatch.fenceGeneration
+    || handoff.grantsTaskAuthority !== false
+    || handoff.grantsFilesystemAuthority !== false
+    || handoff.grantsSafetyPlanAuthority !== false
+    || handoff.grantsWriterLeaseAuthority !== false
+    || handoff.grantsCredentialAuthority !== false
+    || handoff.grantsReleaseAuthority !== false
+  ) {
+    throw new DistributedDeliveryReconciliationError(
+      "M12H handoff evidence does not prove admission for this delivery",
+      "binding_mismatch",
+    );
+  }
+  const admittedAt = iso(handoff.admittedAt, "admittedAt", "acknowledgement_invalid");
+  const acknowledgedAt = currentTime(options.now).toISOString();
+  if (Date.parse(acknowledgedAt) < Date.parse(admittedAt)) {
+    throw new DistributedDeliveryReconciliationError(
+      "acknowledgement cannot predate admission",
+      "acknowledgement_invalid",
+    );
+  }
+  const acknowledgement: DistributedDeliveryAdmissionAcknowledgementV1 = {
+    schemaVersion: 1,
+    acknowledgementId: uuid(
+      (options.idFactory ?? (() => crypto.randomUUID()))(),
+      "acknowledgementId",
+      "acknowledgement_invalid",
+    ),
+    deliveryId: uuid(bundle.deliveryId, "deliveryId", "acknowledgement_invalid"),
+    dispatchId: uuid(bundle.dispatch.dispatchId, "dispatchId", "acknowledgement_invalid"),
+    taskId: uuid(bundle.dispatch.taskId, "taskId", "acknowledgement_invalid"),
+    workspaceId: uuid(bundle.dispatch.workspaceId, "workspaceId", "acknowledgement_invalid"),
+    machineId: uuid(bundle.dispatch.machineId, "machineId", "acknowledgement_invalid"),
+    machineRegistrationId: uuid(
+      bundle.dispatch.machineRegistrationId,
+      "machineRegistrationId",
+      "acknowledgement_invalid",
+    ),
+    machineRegistrationRevision: revision(
+      bundle.dispatch.machineRegistrationRevision,
+      "machineRegistrationRevision",
+      "acknowledgement_invalid",
+    ),
+    admittedAt,
+    acknowledgedAt,
+    authority: "delivery_admission_evidence_only",
+    grantsTaskAuthority: false,
+    grantsFilesystemAuthority: false,
+    grantsSafetyPlanAuthority: false,
+    grantsWriterLeaseAuthority: false,
+    grantsCredentialAuthority: false,
+    grantsReleaseAuthority: false,
+  };
+  assertDistributedDeliveryAdmissionAcknowledgement(acknowledgement);
+  return acknowledgement;
+}
+
+function exactOutboxSnapshot(value: unknown): DistributedDeliveryAdmissionOutboxSnapshotV1 {
+  exactKeys(
+    value,
+    ["schemaVersion", "acknowledgements"],
+    [],
+    "delivery admission acknowledgement outbox",
+    "store_corrupt",
+  );
+  const root = value as Record<string, unknown>;
+  if (
+    root.schemaVersion !== 1
+    || !Array.isArray(root.acknowledgements)
+    || root.acknowledgements.length > MAX_OUTBOX_ACKNOWLEDGEMENTS
+  ) {
+    throw new DistributedDeliveryReconciliationError(
+      "delivery acknowledgement outbox schema is invalid",
+      "store_corrupt",
+    );
+  }
+  const seenDelivery = new Set<string>();
+  const seenDispatch = new Set<string>();
+  const acknowledgements: DistributedDeliveryAdmissionAcknowledgementV1[] = [];
+  for (const raw of root.acknowledgements) {
+    try {
+      assertDistributedDeliveryAdmissionAcknowledgement(raw);
+    } catch (error) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox contains invalid evidence",
+        "store_corrupt",
+        { cause: error },
+      );
+    }
+    const ack = structuredClone(raw);
+    if (seenDelivery.has(ack.deliveryId) || seenDispatch.has(ack.dispatchId)) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox contains duplicate delivery or dispatch identity",
+        "store_corrupt",
+      );
+    }
+    seenDelivery.add(ack.deliveryId);
+    seenDispatch.add(ack.dispatchId);
+    acknowledgements.push(ack);
+  }
+  acknowledgements.sort((a, b) => a.deliveryId.localeCompare(b.deliveryId));
+  return { schemaVersion: 1, acknowledgements };
+}
+
+export class FileDistributedDeliveryAdmissionAcknowledgementOutbox {
+  private mutationTail: Promise<void> = Promise.resolve();
+
+  constructor(private readonly filePath: string) {
+    if (
+      typeof filePath !== "string"
+      || !path.isAbsolute(filePath)
+      || path.normalize(filePath) !== filePath
+      || path.basename(filePath) !== "distributed-delivery-ack-outbox.json"
+    ) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox path must be an absolute canonical distributed-delivery-ack-outbox.json path",
+        "store_path_invalid",
+      );
+    }
+  }
+
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(operation, operation);
+    this.mutationTail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  private async assertParent(): Promise<void> {
+    let info;
+    try {
+      info = await stat(path.dirname(this.filePath));
+    } catch {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox parent is unavailable",
+        "store_path_invalid",
+      );
+    }
+    if (!info.isDirectory()) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox parent must be a directory",
+        "store_path_invalid",
+      );
+    }
+  }
+
+  private async readSnapshot(): Promise<DistributedDeliveryAdmissionOutboxSnapshotV1> {
+    await this.assertParent();
+    let info;
+    try {
+      info = await lstat(this.filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+        return { schemaVersion: 1, acknowledgements: [] };
+      }
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox cannot be inspected",
+        "store_corrupt",
+      );
+    }
+    if (info.isSymbolicLink() || !info.isFile() || info.size > MAX_OUTBOX_BYTES) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox must be a bounded regular non-symlink file",
+        "store_corrupt",
+      );
+    }
+    let raw: Buffer;
+    try {
+      raw = await readFile(this.filePath);
+    } catch {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox cannot be read",
+        "store_corrupt",
+      );
+    }
+    if (raw.length > MAX_OUTBOX_BYTES) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox exceeds byte limit",
+        "store_corrupt",
+      );
+    }
+    try {
+      return exactOutboxSnapshot(JSON.parse(raw.toString("utf8")) as unknown);
+    } catch (error) {
+      if (error instanceof DistributedDeliveryReconciliationError) throw error;
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox is not valid JSON",
+        "store_corrupt",
+      );
+    }
+  }
+
+  private async writeSnapshot(snapshot: DistributedDeliveryAdmissionOutboxSnapshotV1): Promise<void> {
+    const canonical = exactOutboxSnapshot(snapshot);
+    const body = `${JSON.stringify(canonical, null, 2)}\n`;
+    if (Buffer.byteLength(body, "utf8") > MAX_OUTBOX_BYTES) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox exceeds capacity",
+        "store_capacity_exceeded",
+      );
+    }
+    try {
+      await atomicWriteUtf8(this.filePath, body, { mode: 0o600 });
+    } catch (error) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement outbox atomic write failed",
+        "store_corrupt",
+        { cause: error },
+      );
+    }
+  }
+
+  async record(
+    acknowledgementInput: DistributedDeliveryAdmissionAcknowledgementV1,
+  ): Promise<DistributedDeliveryAdmissionAcknowledgementV1> {
+    assertDistributedDeliveryAdmissionAcknowledgement(acknowledgementInput);
+    const acknowledgement = structuredClone(acknowledgementInput);
+    return this.serialize(async () => {
+      const snapshot = await this.readSnapshot();
+      const byDelivery = snapshot.acknowledgements.find(
+        (item) => item.deliveryId === acknowledgement.deliveryId,
+      );
+      const byDispatch = snapshot.acknowledgements.find(
+        (item) => item.dispatchId === acknowledgement.dispatchId,
+      );
+      const existing = byDelivery ?? byDispatch;
+      if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(acknowledgement)) {
+          throw new DistributedDeliveryReconciliationError(
+            "conflicting acknowledgement already exists in durable outbox",
+            "state_conflict",
+          );
+        }
+        return structuredClone(existing);
+      }
+      if (snapshot.acknowledgements.length >= MAX_OUTBOX_ACKNOWLEDGEMENTS) {
+        throw new DistributedDeliveryReconciliationError(
+          "delivery acknowledgement outbox capacity exceeded",
+          "store_capacity_exceeded",
+        );
+      }
+      snapshot.acknowledgements.push(acknowledgement);
+      await this.writeSnapshot(snapshot);
+      return structuredClone(acknowledgement);
+    });
+  }
+
+  async getByDeliveryId(deliveryIdInput: string): Promise<DistributedDeliveryAdmissionAcknowledgementV1> {
+    const deliveryId = uuid(deliveryIdInput, "deliveryId", "state_not_found");
+    const snapshot = await this.readSnapshot();
+    const acknowledgement = snapshot.acknowledgements.find(
+      (item) => item.deliveryId === deliveryId,
+    );
+    if (!acknowledgement) {
+      throw new DistributedDeliveryReconciliationError(
+        "delivery acknowledgement was not found in durable outbox",
+        "state_not_found",
+      );
+    }
+    return structuredClone(acknowledgement);
+  }
+
+  async list(): Promise<DistributedDeliveryAdmissionAcknowledgementV1[]> {
+    const snapshot = await this.readSnapshot();
+    return snapshot.acknowledgements.map((item) => structuredClone(item));
   }
 }

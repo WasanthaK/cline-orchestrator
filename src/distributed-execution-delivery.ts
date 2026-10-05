@@ -14,6 +14,11 @@ import {
 } from "./distributed-fencing.js";
 import type { DistributedMachineAuthorizedRequestV1 } from "./distributed-machine-transport.js";
 import type { DistributedTargetRuntimeHandoffContext } from "./distributed-target-runtime-handoff.js";
+import {
+  assertDistributedDeliveryAdmissionAcknowledgement,
+  createDistributedDeliveryAdmissionAcknowledgementFromHandoff,
+  type DistributedDeliveryAdmissionAcknowledgementV1,
+} from "./distributed-delivery-reconciliation.js";
 import type { OrchestratorTask } from "./types.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -95,6 +100,7 @@ export class DistributedExecutionDeliveryError extends Error {
       | "evidence_mismatch"
       | "delivery_stale"
       | "handoff_failed"
+      | "admission_acknowledgement_failed"
       | "runtime_start_failed",
     options?: ErrorOptions,
   ) {
@@ -409,9 +415,16 @@ export class DistributedExecutionPullDeliveryController {
   }
 }
 
+export interface DistributedExecutionDeliveryAdmissionAcknowledgementSink {
+  record(
+    acknowledgement: DistributedDeliveryAdmissionAcknowledgementV1,
+  ): Promise<DistributedDeliveryAdmissionAcknowledgementV1>;
+}
+
 export interface DistributedTargetExecutionDeliveryOptions {
   targetIdentity: DistributedTargetIdentityV1;
   handoff: DistributedExecutionDeliveryHandoff;
+  admissionAcknowledgements: DistributedExecutionDeliveryAdmissionAcknowledgementSink;
   starter: DistributedExecutionDeliveryStarter;
 }
 
@@ -469,6 +482,25 @@ export class DistributedTargetExecutionDeliveryReceiver {
       throw new DistributedExecutionDeliveryError(
         "M12H handoff context does not match the delivered execution evidence",
         "handoff_failed",
+      );
+    }
+
+    let acknowledgement: DistributedDeliveryAdmissionAcknowledgementV1;
+    try {
+      acknowledgement = createDistributedDeliveryAdmissionAcknowledgementFromHandoff(
+        bundle,
+        context.evidence,
+      );
+      const persisted = await this.options.admissionAcknowledgements.record(acknowledgement);
+      assertDistributedDeliveryAdmissionAcknowledgement(persisted);
+      if (JSON.stringify(persisted) !== JSON.stringify(acknowledgement)) {
+        throw new Error("durable acknowledgement sink returned conflicting evidence");
+      }
+    } catch (error) {
+      throw new DistributedExecutionDeliveryError(
+        "target admission acknowledgement could not be durably recorded before runtime start",
+        "admission_acknowledgement_failed",
+        { cause: error },
       );
     }
 

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import type {
   DistributedMachineRegistrationV1,
@@ -16,6 +19,10 @@ import type { DistributedFenceClaimV1 } from "./distributed-fencing.js";
 import { DistributedMachineTransportGateway } from "./distributed-machine-transport.js";
 import type { DistributedTargetRuntimeHandoffContext } from "./distributed-target-runtime-handoff.js";
 import type { OrchestratorTask } from "./types.js";
+import {
+  FileDistributedDeliveryAdmissionAcknowledgementOutbox,
+  type DistributedDeliveryAdmissionAcknowledgementV1,
+} from "./distributed-delivery-reconciliation.js";
 
 const NOW = new Date("2026-09-29T09:00:00.000Z");
 const REGISTRATION_ID = "11111111-1111-4111-8111-111111111111";
@@ -182,6 +189,18 @@ function handoffContext(bundle: DistributedExecutionDeliveryBundleV1): Distribut
   };
 }
 
+
+function memoryAcknowledgementSink(
+  observed?: DistributedDeliveryAdmissionAcknowledgementV1[],
+) {
+  return {
+    async record(acknowledgement: DistributedDeliveryAdmissionAcknowledgementV1) {
+      observed?.push(structuredClone(acknowledgement));
+      return structuredClone(acknowledgement);
+    },
+  };
+}
+
 function causeCode(error: DistributedExecutionDeliveryError): string | undefined {
   return (error.cause as { code?: string } | undefined)?.code;
 }
@@ -267,6 +286,7 @@ test("target receiver enters M12H then M12I and does not create a parallel execu
         return context;
       },
     },
+    admissionAcknowledgements: memoryAcknowledgementSink(),
     starter: {
       async start(value) {
         starterCalls += 1;
@@ -281,6 +301,148 @@ test("target receiver enters M12H then M12I and does not create a parallel execu
   assert.equal(handoffCalls, 1);
   assert.equal(starterCalls, 1);
   assert.equal(prepared, context);
+});
+
+test("M12Y-B records admission acknowledgement after M12H and before M12I", async () => {
+  const { token, controller } = await controllerFixture();
+  const values = evidence();
+  const bundle = await controller.authorizePull(
+    token,
+    REQUEST_ID,
+    values.dispatch,
+    values.assignment,
+    values.fence,
+  );
+  const context = handoffContext(bundle);
+  const order: string[] = [];
+  const acknowledgements: DistributedDeliveryAdmissionAcknowledgementV1[] = [];
+  const receiver = new DistributedTargetExecutionDeliveryReceiver({
+    targetIdentity: {
+      machineId: MACHINE_ID,
+      machineRegistrationId: REGISTRATION_ID,
+      machineRegistrationRevision: 1,
+    },
+    handoff: {
+      async prepare() {
+        order.push("handoff");
+        return context;
+      },
+    },
+    admissionAcknowledgements: {
+      async record(acknowledgement) {
+        order.push("ack");
+        acknowledgements.push(structuredClone(acknowledgement));
+        return structuredClone(acknowledgement);
+      },
+    },
+    starter: {
+      async start() {
+        order.push("start");
+        return task("completed");
+      },
+    },
+  });
+
+  await receiver.execute(bundle);
+  assert.deepEqual(order, ["handoff", "ack", "start"]);
+  assert.equal(acknowledgements.length, 1);
+  const [ack] = acknowledgements;
+  assert.equal(ack!.deliveryId, bundle.deliveryId);
+  assert.equal(ack!.dispatchId, bundle.dispatch.dispatchId);
+  assert.equal(ack!.admittedAt, context.evidence.admittedAt);
+  assert.equal(ack!.authority, "delivery_admission_evidence_only");
+  assert.equal(ack!.grantsTaskAuthority, false);
+  assert.equal(ack!.grantsWriterLeaseAuthority, false);
+});
+
+test("M12Y-B runtime-start failure does not erase durable admission acknowledgement", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "m12y-b-outbox-"));
+  try {
+    const { token, controller } = await controllerFixture();
+    const values = evidence();
+    const bundle = await controller.authorizePull(
+      token,
+      REQUEST_ID,
+      values.dispatch,
+      values.assignment,
+      values.fence,
+    );
+    const context = handoffContext(bundle);
+    const outbox = new FileDistributedDeliveryAdmissionAcknowledgementOutbox(
+      path.join(dir, "distributed-delivery-ack-outbox.json"),
+    );
+    const receiver = new DistributedTargetExecutionDeliveryReceiver({
+      targetIdentity: {
+        machineId: MACHINE_ID,
+        machineRegistrationId: REGISTRATION_ID,
+        machineRegistrationRevision: 1,
+      },
+      handoff: { async prepare() { return context; } },
+      admissionAcknowledgements: outbox,
+      starter: {
+        async start() {
+          const error = new Error("runtime start rejected") as Error & { code: string };
+          error.code = "fence_not_current";
+          throw error;
+        },
+      },
+    });
+
+    await assert.rejects(
+      () => receiver.execute(bundle),
+      (error: any) => error instanceof DistributedExecutionDeliveryError
+        && error.code === "runtime_start_failed",
+    );
+
+    const restartedOutbox = new FileDistributedDeliveryAdmissionAcknowledgementOutbox(
+      path.join(dir, "distributed-delivery-ack-outbox.json"),
+    );
+    const persisted = await restartedOutbox.getByDeliveryId(bundle.deliveryId);
+    assert.equal(persisted.dispatchId, bundle.dispatch.dispatchId);
+    assert.equal(persisted.admittedAt, context.evidence.admittedAt);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("M12Y-B acknowledgement persistence failure blocks M12I start", async () => {
+  const { token, controller } = await controllerFixture();
+  const values = evidence();
+  const bundle = await controller.authorizePull(
+    token,
+    REQUEST_ID,
+    values.dispatch,
+    values.assignment,
+    values.fence,
+  );
+  const context = handoffContext(bundle);
+  let starterCalls = 0;
+  const receiver = new DistributedTargetExecutionDeliveryReceiver({
+    targetIdentity: {
+      machineId: MACHINE_ID,
+      machineRegistrationId: REGISTRATION_ID,
+      machineRegistrationRevision: 1,
+    },
+    handoff: { async prepare() { return context; } },
+    admissionAcknowledgements: {
+      async record() {
+        throw new Error("outbox unavailable");
+      },
+    },
+    starter: {
+      async start() {
+        starterCalls += 1;
+        return task();
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => receiver.execute(bundle),
+    (error: any) => error instanceof DistributedExecutionDeliveryError
+      && error.code === "admission_acknowledgement_failed",
+  );
+  assert.equal(starterCalls, 0);
 });
 
 test("target identity mismatch or widened delivery fails before M12H", async () => {
@@ -306,6 +468,7 @@ test("target identity mismatch or widened delivery fails before M12H", async () 
         return handoffContext(bundle);
       },
     },
+    admissionAcknowledgements: memoryAcknowledgementSink(),
     starter: { async start() { return task(); } },
   });
 
@@ -349,6 +512,7 @@ test("M12H admission failure is terminal for delivery and never falls through to
         throw error;
       },
     },
+    admissionAcknowledgements: memoryAcknowledgementSink(),
     starter: {
       async start() {
         starterCalls += 1;
@@ -384,6 +548,7 @@ test("M12I rejection remains terminal and is not converted into transport author
       machineRegistrationRevision: 1,
     },
     handoff: { async prepare() { return context; } },
+    admissionAcknowledgements: memoryAcknowledgementSink(),
     starter: {
       async start() {
         const error = new Error("fence changed") as Error & { code: string };
