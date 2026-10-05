@@ -23,10 +23,19 @@ import {
   assertDistributedSecureTransportProfile,
   type DistributedSecureTransportProfileV1,
 } from "./distributed-secure-transport-profile.js";
+import {
+  DISTRIBUTED_DELIVERY_ACK_PATH,
+  DistributedDeliveryAckRoute,
+  type DistributedDeliveryAckAuthorizer,
+  type DistributedDeliveryAckRequestV1,
+  type DistributedDeliveryAckResponseV1,
+  type DistributedDeliveryAckStateStore,
+} from "./distributed-delivery-ack-transport.js";
 
 const PULL_PATH = "/v1/distributed/execution/pull";
 const CHALLENGE_PATH = "/v1/distributed/auth/challenge";
 const SESSION_PATH = "/v1/distributed/auth/session";
+const ACK_PATH = DISTRIBUTED_DELIVERY_ACK_PATH;
 const MAX_HEADER_SIZE = 8 * 1024;
 const MAX_HEADERS_COUNT = 16;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -43,6 +52,7 @@ export const DISTRIBUTED_SHARED_UNBOUND_HTTPS_CONTRACT = Object.freeze({
     PULL_PATH,
     CHALLENGE_PATH,
     SESSION_PATH,
+    ACK_PATH,
   ] as const),
   protocol: "https_http_1_1" as const,
   singleCanonicalOrigin: true as const,
@@ -64,7 +74,7 @@ export const DISTRIBUTED_SHARED_UNBOUND_HTTPS_CONTRACT = Object.freeze({
   publicBindDefault: false as const,
   tlsIdentityProvisioningIncluded: false as const,
   machineKeyProvisioningIncluded: false as const,
-  deliveryAcknowledgementIncluded: false as const,
+  deliveryAcknowledgementIncluded: true as const,
   controllerPushEnabled: false as const,
   invokesTargetRuntime: false as const,
   grantsTaskAuthority: false as const,
@@ -109,7 +119,8 @@ export interface DistributedSharedHttpsRouterRequestV1 {
 
 export type DistributedSharedHttpsRouterResponseV1 =
   | DistributedControllerHttpsPullResponseV1
-  | DistributedNetworkMachineAuthResponseV1;
+  | DistributedNetworkMachineAuthResponseV1
+  | DistributedDeliveryAckResponseV1;
 
 export interface DistributedSharedHttpsPullRoute {
   handle(
@@ -123,15 +134,24 @@ export interface DistributedSharedHttpsAuthRoute {
   ): Promise<DistributedNetworkMachineAuthResponseV1>;
 }
 
+export interface DistributedSharedHttpsAckRoute {
+  handle(
+    input: DistributedDeliveryAckRequestV1,
+  ): Promise<DistributedDeliveryAckResponseV1>;
+}
+
 export interface DistributedSharedHttpsRouterDependencies {
   pullRoute: DistributedSharedHttpsPullRoute;
   authRoute: DistributedSharedHttpsAuthRoute;
+  ackRoute?: DistributedSharedHttpsAckRoute;
 }
 
 export interface DistributedSharedUnboundHttpsServerOptions {
   profile: DistributedSecureTransportProfileV1;
   selector: DistributedControllerHttpsPullSelector;
   bootstrap: DistributedNetworkMachineAuthBootstrap;
+  ackAuthorizer?: DistributedDeliveryAckAuthorizer;
+  ackStateStore?: DistributedDeliveryAckStateStore;
   tlsIdentityProvider: () => DistributedSharedTlsIdentity;
   now?: () => Date;
   pullMaxConcurrent?: number;
@@ -422,9 +442,10 @@ export class DistributedSharedHttpsRouter {
       || typeof dependencies.pullRoute.handle !== "function"
       || !dependencies.authRoute
       || typeof dependencies.authRoute.handle !== "function"
+      || (dependencies.ackRoute !== undefined && typeof dependencies.ackRoute.handle !== "function")
     ) {
       throw new DistributedSharedUnboundHttpsError(
-        "shared router requires M12T and M12U route handlers",
+        "shared router requires valid M12T/M12U handlers and optional M12Y ACK handler",
         "configuration_invalid",
       );
     }
@@ -439,6 +460,16 @@ export class DistributedSharedHttpsRouter {
         url: input.url,
         httpVersion: input.httpVersion,
         rawHeaders: input.rawHeaders,
+      });
+    }
+    if (input.url === ACK_PATH) {
+      if (!this.dependencies.ackRoute) return bodyless(404);
+      return this.dependencies.ackRoute.handle({
+        method: input.method,
+        url: input.url,
+        httpVersion: input.httpVersion,
+        rawHeaders: input.rawHeaders,
+        body: Buffer.isBuffer(input.body) ? input.body : Buffer.alloc(0),
       });
     }
     if (input.url === CHALLENGE_PATH || input.url === SESSION_PATH) {
@@ -456,7 +487,10 @@ export class DistributedSharedHttpsRouter {
 }
 
 function bootstrapBodyMaximum(path: string): number {
-  return path === CHALLENGE_PATH ? CHALLENGE_BODY_MAX : SESSION_BODY_MAX;
+  if (path === CHALLENGE_PATH) return CHALLENGE_BODY_MAX;
+  if (path === SESSION_PATH) return SESSION_BODY_MAX;
+  if (path === ACK_PATH) return 4096;
+  return 0;
 }
 
 function framingContentLength(
@@ -616,9 +650,23 @@ export function createUnboundDistributedSharedHttpsServer(
       ? {}
       : { peerCompletionLimitPerMinute: options.peerCompletionLimitPerMinute }),
   });
+  const ackRoute = options.ackAuthorizer && options.ackStateStore
+    ? new DistributedDeliveryAckRoute({
+        controllerOrigin: options.profile.controllerOrigin,
+        authorizer: options.ackAuthorizer,
+        stateStore: options.ackStateStore,
+      })
+    : undefined;
+  if ((options.ackAuthorizer === undefined) !== (options.ackStateStore === undefined)) {
+    throw new DistributedSharedUnboundHttpsError(
+      "ACK authorizer and state store must be configured together",
+      "configuration_invalid",
+    );
+  }
   const router = new DistributedSharedHttpsRouter({
     pullRoute,
     authRoute,
+    ...(ackRoute === undefined ? {} : { ackRoute }),
   });
   const collector = new DistributedBootstrapBodyCollector(
     options.maxConcurrentBodyCollectors ?? DEFAULT_BODY_COLLECTORS,
@@ -700,7 +748,7 @@ export function createUnboundDistributedSharedHttpsServer(
           return;
         }
 
-        if (path === CHALLENGE_PATH || path === SESSION_PATH) {
+        if (path === CHALLENGE_PATH || path === SESSION_PATH || path === ACK_PATH) {
           if (request.method !== "POST" || request.httpVersion !== "1.1") {
             void router.handle({
               method: request.method,
