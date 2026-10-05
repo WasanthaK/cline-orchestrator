@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete, M12X P0–P5 physical HTTPS/auth/no-work proof complete, and M12Y-A/B/C/D delivery acknowledgement + restart reconciliation complete through push CI `#1112` and PR CI `#1113` rerun; first real distributed writer proof and takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8` against commit `50fa220a`; distributed takeover/recovery remains separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -368,6 +368,16 @@ CI evidence: M12Y-A `#1105`; M12Y-B `#1106` / `#1107`; M12Y-C `#1108`.
 
 M12Y-D completed the restart reconciliation proof. Fresh controller/target process objects reconstructed from durable files preserve `delivered_unconfirmed` and the immutable target ACK outbox, then converge through a fresh authenticated ACK request to `admission_acknowledged` without re-delivering work, requeueing a dispatch, re-entering M12H, starting M12I runtime, or invoking writer execution. The initial PR run exposed an unrelated flaky project-memory read in an existing runtime-start test; the identical commit's push CI passed and the failed PR job rerun passed without code change.
 
+## First real distributed writer physical proof — COMPLETE
+
+Authorized Windows physical proof run `#8` on `DESKTOP-0BLIH36` passed against orchestrator commit `50fa220af5c18af1582118cd1f865c845ecbdb6b`. The proof used the existing localhost M12X TLS/Ed25519 identity, exact `127.0.0.1:8443` listener, llama.cpp OpenAI-compatible provider on `127.0.0.1:8080`, a disposable PostgreSQL 16 fencing backend, a disposable Git workspace and a Safety Plan allowing only `src/demo.ts`.
+
+The proof traversed the real chain: authenticated M12U bootstrap → M12C status/liveness heartbeat → controller-owned M12R selection → M12J delivery → PostgreSQL M12E/F fencing → scheduler-owned local writer lease → M12G admission → M12H target-local authority re-entry → target durable ACK before M12I → real Cline writer execution → completion evidence → authenticated ACK upload → controller reconciliation to `admission_acknowledged`.
+
+Trusted result marker: `passed:true`; one approved file changed; diff safety passed; independent `git diff --check` passed; protected files untouched; worker prose remained untrusted; no work retry/requeue occurred; no commit/push/merge/deploy/public-network exposure occurred; exact current distributed fence was revoked and the local writer lease was released by the scheduler. The disposable proof workspace/resources were cleaned up by the workflow.
+
+Hosted validation for the final harness fixes: push CI `#1130` and PR CI `#1131` green. Physical proof workflow: `M12 distributed writer physical proof` run `#8`, success.
+
 ---
 
 # Current capability snapshot
@@ -400,7 +410,7 @@ M12Y-D completed the restart reconciliation proof. Fresh controller/target proce
 | Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
 | Physical distributed HTTPS credential provisioning / listener activation | Complete — M12X P0–P5 authorized Windows proof: trusted localhost TLS identity, Ed25519 machine identity/registration/binding, exact `127.0.0.1:8443` listener, client TLS/hostname/SPKI verification, real M12U bootstrap and authenticated M12S/M12T no-work `204`; no delivery/runtime/writer execution occurred |
 | Controller-to-target network push | Disabled |
-| Real cross-machine production writer execution | Disabled; no real network transport is production-wired |
+| Real distributed writer physical execution | Proven once in a tightly bounded localhost physical proof; production cross-machine wiring remains disabled |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
 | Native teams/subagents | Disabled — M13 |
 | Push/merge/deploy authority | Disabled — M15 |
@@ -460,14 +470,16 @@ M12Y-D completed the restart reconciliation proof. Fresh controller/target proce
 17. **COMPLETE — M12X P0–P5 physical deployment proof.** Authorized Windows proof established trusted localhost TLS, Ed25519 machine authentication, exact loopback listener activation, client-observed TLS/SPKI enforcement, real M12U bootstrap and authenticated M12S/M12T no-work `204`; no real delivery/runtime/writer execution occurred.
 18. **COMPLETE — M12Y-A/B/C delivery acknowledgement / reconciliation substrate.** Durable controller delivery state, target durable ACK outbox and authenticated ACK upload/reconciliation are implemented and green through CI `#1108`.
 19. **COMPLETE — M12Y-D restart reconciliation proof.** Controller ambiguity state and target ACK evidence survive process reconstruction and reconcile idempotently after restart; push CI `#1112` and PR CI `#1113` rerun are green.
-20. **NEXT — STOP for review before the first real distributed writer proof.** Define the exact physical proof scope, project/workspace/task, Safety Plan authority, candidate/fence/lease prerequisites, observation points, abort conditions and rollback/evidence expectations before any target runtime or writer is allowed to execute.
-21. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
-22. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+20. **COMPLETE — First real distributed writer physical proof.** Windows run `#8` passed against `50fa220a`: real Cline writer execution, one-file Safety scope, PostgreSQL fencing, local writer lease, authenticated delivery/ACK reconciliation, independent diff evidence and exact-current fence cleanup all passed with no retry/requeue/commit/push/merge/deploy/public exposure.
+21. **NEXT — STOP for distributed takeover/recovery design review.** Define fresh-authority recovery semantics after target/controller/process loss. Old dispatch/candidate/fence/handoff/runtime evidence must remain stale or consumed; recovery must require fresh admission and fresh fencing and must not silently reuse generic local writer recovery.
+22. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
+23. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
 # Recent progress
 
+- 2026-10-05: First real distributed writer physical proof passed on Windows workflow run `#8` against orchestrator commit `50fa220a`. Real Cline changed exactly one approved disposable file; diff safety and independent Git checks passed; target ACK was durable before runtime, controller reconciled to `admission_acknowledged`, no work retry/requeue occurred, and exact-current fence + local writer lease cleanup passed. No commit/push/merge/deploy/public exposure was used. Final hosted validation: CI `#1130` / `#1131` green.
 - 2026-10-05: M12Y-D restart reconciliation completed at commit `e8046ed3`: durable controller `delivered_unconfirmed` state and target ACK outbox survive process reconstruction and reconcile to `admission_acknowledged` through fresh authenticated ACK evidence without work redelivery/requeue or runtime/writer execution. Push CI `#1112` passed; PR CI `#1113` initially hit an unrelated flaky project-memory JSON read, then passed on rerun without code changes.
 - 2026-10-05: M12Y-A/B/C completed through CI `#1108`: durable controller delivery state, target-local durable admission-ACK outbox, authenticated `report_status` ACK upload on the shared HTTPS origin, exact machine/revision reconciliation, and idempotent ACK retry semantics; work delivery remains non-retryable/non-requeueable and no real writer execution occurred. Next gate is M12Y-D restart reconciliation.
 - 2026-10-05: M12X P0–P5 authorized Windows physical proof completed: trusted localhost TLS identity, Ed25519 machine registration/binding, exact `127.0.0.1:8443` listener, client TLS/hostname/SPKI enforcement, real M12U authentication and authenticated M12S/M12T no-work `204`; no work delivery/runtime/writer execution occurred. Next gate is M12Y acknowledgement/reconciliation.
@@ -495,4 +507,4 @@ M12Y-D completed the restart reconciliation proof. Fresh controller/target proce
 
 # Current next step
 
-**STOP for review before the first real distributed writer proof.** M12Y is complete. The next slice must specify and review one tightly bounded physical writer proof end-to-end: exact project/workspace/task, current Safety Plan, machine registration/placement, candidate/fence/lease lifecycle, delivery + acknowledgement evidence, runtime completion/review/correction evidence, abort/fence-loss behavior, and cleanup. No writer execution, listener rebind, public/network exposure change, credential mutation, merge, deploy or destructive Git action is authorized by this plan update.
+**STOP for distributed takeover/recovery design review.** The first real distributed writer physical proof is complete. The next slice must define how a distributed task recovers after controller/target/process loss without resurrecting stale authority: fresh controller selection, fresh candidate, fresh distributed fence generation/current claim, fresh M12G admission, target-local M12H authority re-entry, and explicit ambiguity handling for any prior `delivered_unconfirmed` work. Generic local scheduled-writer recovery must not be reused as distributed takeover authority. No production cross-machine wiring, public/network exposure change, credential mutation, merge, deploy or destructive Git action is authorized by this plan update.
