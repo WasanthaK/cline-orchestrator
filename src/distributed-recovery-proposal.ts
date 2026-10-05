@@ -77,7 +77,10 @@ export function createDistributedRecoveryProposal(
 ): DistributedRecoveryProposalV1 {
   if (
     decision.disposition !== "fresh_authority_review_required"
-    || !["admitted_without_runtime_history", "no_delivery_yet"].includes(decision.reason)
+    || (
+      decision.reason !== "admitted_without_runtime_history"
+      && decision.reason !== "no_delivery_yet"
+    )
   ) {
     throw new DistributedRecoveryProposalError(
       "only a fresh-authority recovery decision may produce a recovery proposal",
