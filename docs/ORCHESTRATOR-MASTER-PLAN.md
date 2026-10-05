@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-A recovery classification complete at `305003cc`, CI `#1134`; takeover/recovery execution remains separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-A classification complete (`#1134`) and M12Z-B recovery proposal complete (`e632e4fd`, push `#1139`, PR `#1140` rerun); takeover/recovery execution remains separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -386,6 +386,14 @@ The classifier consumes only durable delivery state plus a target-local task sum
 
 Evidence: `305003cc91685e6ef96d90e7910f3ef17266194f`; CI `#1134` passed typecheck + full suite.
 
+## 12Z-B — Non-authoritative recovery proposal — COMPLETE
+
+`src/distributed-recovery-proposal.ts` permits proposal creation only from M12Z-A `fresh_authority_review_required` decisions. ACK-only, ambiguity-review and terminal/no-takeover classifications are rejected. The proposal binds the exact delivery/task/workspace snapshot and records that any future recovery requires fresh controller selection, fresh candidate assignment, fresh distributed fence, fresh local writer lease, fresh dispatch, fresh M12G admission and fresh M12H target-local authority re-entry.
+
+The proposal is evidence only: it cannot start work, acquire candidate/fence/lease authority, create a dispatch, invoke M12G/M12H/M12I, retry/requeue work or grant task/filesystem/Safety/credential/release authority.
+
+Evidence: implementation `2fa47a2161afb48c239b9b092250d85b330f74f9`; type-only narrowing correction `e632e4fd3efdb38f49d709622c556816bcf146a4`; push CI `#1139` green; PR CI `#1140` rerun green after the known unrelated M12N timing flake.
+
 ---
 
 # Current capability snapshot
@@ -480,14 +488,16 @@ Evidence: `305003cc91685e6ef96d90e7910f3ef17266194f`; CI `#1134` passed typechec
 19. **COMPLETE — M12Y-D restart reconciliation proof.** Controller ambiguity state and target ACK evidence survive process reconstruction and reconcile idempotently after restart; push CI `#1112` and PR CI `#1113` rerun are green.
 20. **COMPLETE — First real distributed writer physical proof.** Windows run `#8` passed against `50fa220a`: real Cline writer execution, one-file Safety scope, PostgreSQL fencing, local writer lease, authenticated delivery/ACK reconciliation, independent diff evidence and exact-current fence cleanup all passed with no retry/requeue/commit/push/merge/deploy/public exposure.
 21. **COMPLETE — M12Z-A recovery classification.** Authority-free classification only; CI `#1134`.
-22. **NEXT — M12Z-B non-authoritative recovery proposal contract.** Only `fresh_authority_review_required` may produce a bounded recovery proposal; ambiguity/ACK-only/terminal dispositions must remain blocked. Proposal creation must not start work, acquire candidate/fence/lease, create a dispatch, invoke M12G/M12H/M12I or grant authority.
-23. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
-24. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+22. **COMPLETE — M12Z-B non-authoritative recovery proposal.** Push CI `#1139`; PR CI `#1140` rerun green.
+23. **NEXT — M12Z-C trusted recovery pre-execution gate.** Validate a recovery proposal against the current target-local task/workspace/Safety binding and require a still-fresh `created` task with no runtime/session/escalation history. Produce only bounded pre-execution evidence; do not acquire candidate/fence/lease, create dispatch/admission, invoke M12H/M12I, or start Cline.
+24. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
+25. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
 # Recent progress
 
+- 2026-10-05: M12Z-B non-authoritative recovery proposal completed through type-only correction `e632e4fd`; push CI `#1139` green and PR CI `#1140` green on rerun after the known unrelated M12N timing flake. Only `fresh_authority_review_required` can produce a proposal; proposals cannot start or reacquire work.
 - 2026-10-05: M12Z-A recovery classification completed at `305003cc`; CI `#1134` green. The new classifier is authority-free and never retries/requeues or reuses stale distributed evidence; it only classifies durable delivery/task state into ACK-only, ambiguity review, fresh-authority review, or terminal/no-takeover dispositions.
 - 2026-10-05: First real distributed writer physical proof passed on Windows workflow run `#8` against orchestrator commit `50fa220a`. Real Cline changed exactly one approved disposable file; diff safety and independent Git checks passed; target ACK was durable before runtime, controller reconciled to `admission_acknowledged`, no work retry/requeue occurred, and exact-current fence + local writer lease cleanup passed. No commit/push/merge/deploy/public exposure was used. Final hosted validation: CI `#1130` / `#1131` green.
 - 2026-10-05: M12Y-D restart reconciliation completed at commit `e8046ed3`: durable controller `delivered_unconfirmed` state and target ACK outbox survive process reconstruction and reconcile to `admission_acknowledged` through fresh authenticated ACK evidence without work redelivery/requeue or runtime/writer execution. Push CI `#1112` passed; PR CI `#1113` initially hit an unrelated flaky project-memory JSON read, then passed on rerun without code changes.
@@ -517,4 +527,4 @@ Evidence: `305003cc91685e6ef96d90e7910f3ef17266194f`; CI `#1134` passed typechec
 
 # Current next step
 
-**M12Z-B — non-authoritative recovery proposal contract.** Only an M12Z-A decision of `fresh_authority_review_required` may produce a bounded proposal for later human/trusted-coordinator review. `ack_reconciliation_only`, `manual_ambiguity_review`, and `terminal_no_takeover` must be rejected. The proposal must bind the exact task/workspace/delivery snapshot and explicitly require fresh controller selection, candidate, distributed fence, local writer lease, dispatch, M12G admission and M12H authority re-entry. It must not itself start work or grant any execution/release authority.
+**M12Z-C — trusted recovery pre-execution gate.** A trusted coordinator must revalidate an M12Z-B proposal against current target-local task/workspace/Safety authority and accept only a still-fresh `created` task with no Cline session, no run history and no pending escalation. The output remains bounded evidence only. It must not acquire a candidate, distributed fence or local writer lease; create a dispatch; consume M12G admission; enter M12H/M12I; or start Cline.
