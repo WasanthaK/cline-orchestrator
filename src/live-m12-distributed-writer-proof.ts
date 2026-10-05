@@ -386,6 +386,17 @@ async function main(): Promise<void> {
   let proofPassed = false;
   let proofError: unknown;
   let fenceGuard: ReturnType<typeof createDistributedWriterFenceGuard> | undefined;
+  let livenessHeartbeatTimer: NodeJS.Timeout | undefined;
+  let livenessHeartbeatTail: Promise<void> = Promise.resolve();
+  let livenessHeartbeatError: unknown;
+
+  const stopLivenessHeartbeat = async (): Promise<void> => {
+    if (livenessHeartbeatTimer) {
+      clearInterval(livenessHeartbeatTimer);
+      livenessHeartbeatTimer = undefined;
+    }
+    await livenessHeartbeatTail.catch(() => undefined);
+  };
 
   try {
     issueResult = await authClient.bootstrapSession({
@@ -406,6 +417,26 @@ async function main(): Promise<void> {
       crypto.randomUUID(),
       { status: "ready", acceptingWriterCandidates: true },
     );
+
+    livenessHeartbeatTimer = setInterval(() => {
+      if (livenessHeartbeatError) return;
+      livenessHeartbeatTail = livenessHeartbeatTail
+        .then(async () => {
+          await transport.reportStatus(
+            issueResult!.token,
+            crypto.randomUUID(),
+            { status: "ready", acceptingWriterCandidates: true },
+          );
+        })
+        .catch((error) => {
+          livenessHeartbeatError = error;
+          if (livenessHeartbeatTimer) {
+            clearInterval(livenessHeartbeatTimer);
+            livenessHeartbeatTimer = undefined;
+          }
+        });
+    }, 10_000);
+    livenessHeartbeatTimer.unref?.();
 
     const ownerInstanceId = crypto.randomUUID();
     const lockStore = new WorkspaceLockStore(lockRoot);
@@ -535,6 +566,11 @@ async function main(): Promise<void> {
 
           hubMayHaveStarted = true;
           const result = await receiver.execute(bundle);
+          if (livenessHeartbeatError) {
+            throw new Error("authenticated M12C liveness heartbeat failed during distributed execution", {
+              cause: livenessHeartbeatError,
+            });
+          }
           if (result.status !== "completed") {
             fail(`distributed Cline run ended with ${result.status}: ${result.error ?? result.finishReason ?? "no detail"}`);
           }
@@ -618,6 +654,7 @@ async function main(): Promise<void> {
       await fenceAuthority.revoke(fenceGuard.currentClaim());
       fenceGuard = undefined;
     }
+    await stopLivenessHeartbeat();
     transport.revokeSession(issueResult.token);
 
     const proofResult = {
@@ -686,6 +723,7 @@ async function main(): Promise<void> {
           await fenceAuthority.revoke(fenceGuard.currentClaim()).catch(() => undefined);
           fenceGuard = undefined;
         }
+        await stopLivenessHeartbeat();
         if (issueResult?.token) {
           try { transport.revokeSession(issueResult.token); } catch { /* ignore cleanup race */ }
         }
