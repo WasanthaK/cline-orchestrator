@@ -29,6 +29,16 @@ import {
   DistributedTargetRuntimeHandoffError,
 } from "./distributed-target-runtime-handoff.js";
 import { DISTRIBUTED_RESTART_SAFETY_CONTRACT } from "./distributed-restart-safety.js";
+import {
+  FileDistributedDeliveryAdmissionAcknowledgementOutbox,
+  FileDistributedDeliveryStateStore,
+  createDistributedDeliveryStateRecord,
+  type DistributedDeliveryAdmissionAcknowledgementV1,
+} from "./distributed-delivery-reconciliation.js";
+import {
+  DistributedDeliveryAckRoute,
+  DISTRIBUTED_DELIVERY_ACK_PATH,
+} from "./distributed-delivery-ack-transport.js";
 import type {
   LeaseAwareWriterAuthorityV1,
 } from "./lease-aware-hub-safety-runtime.js";
@@ -198,6 +208,13 @@ test("M12O restart contract grants no recovery or takeover authority", () => {
   assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.processLocalHandoffReusableAfterRestart, false);
   assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.priorRuntimeHistoryEligibleForFreshAdmission, false);
   assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.distributedTakeoverEnabled, false);
+  assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.controllerDeliveredUnconfirmedPersistsAcrossRestart, true);
+  assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.targetAdmissionAckOutboxPersistsAcrossRestart, true);
+  assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.postRestartAckReconciliationAllowed, true);
+  assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.postRestartWorkRedeliveryAllowed, false);
+  assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.postRestartWorkRequeueAllowed, false);
+  assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.postRestartRuntimeInvocationAllowed, false);
+  assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.postRestartWriterExecutionAllowed, false);
   assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.grantsTaskAuthority, false);
   assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.grantsFilesystemAuthority, false);
   assert.equal(DISTRIBUTED_RESTART_SAFETY_CONTRACT.grantsSafetyPlanAuthority, false);
@@ -361,4 +378,177 @@ test("M12O prior runtime history cannot re-enter M12H after target process resta
       && error.code === "task_not_current",
   );
   assert.equal(admissionCalls, 0);
+});
+
+
+test("M12Y-D restart reconciliation preserves durable ambiguity and converges by ACK only", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "m12y-d-restart-"));
+  const controllerStatePath = path.join(directory, "distributed-delivery-state.json");
+  const targetOutboxPath = path.join(directory, "distributed-delivery-ack-outbox.json");
+  const deliveryId = crypto.randomUUID();
+  const dispatchId = crypto.randomUUID();
+  const acknowledgementId = crypto.randomUUID();
+  const admittedAt = new Date(baseNow.getTime() + 1_000).toISOString();
+  const acknowledgedAt = new Date(baseNow.getTime() + 2_000).toISOString();
+  let deliveryCalls = 0;
+  let admissionCalls = 0;
+  let runtimeCalls = 0;
+  let writerCalls = 0;
+
+  const acknowledgement: DistributedDeliveryAdmissionAcknowledgementV1 = {
+    schemaVersion: 1,
+    acknowledgementId,
+    deliveryId,
+    dispatchId,
+    taskId: ids.task,
+    workspaceId: ids.workspace,
+    machineId: ids.machine,
+    machineRegistrationId: ids.registration,
+    machineRegistrationRevision: 1,
+    admittedAt,
+    acknowledgedAt,
+    authority: "delivery_admission_evidence_only",
+    grantsTaskAuthority: false,
+    grantsFilesystemAuthority: false,
+    grantsSafetyPlanAuthority: false,
+    grantsWriterLeaseAuthority: false,
+    grantsCredentialAuthority: false,
+    grantsReleaseAuthority: false,
+  };
+
+  try {
+    const controllerBeforeRestart = new FileDistributedDeliveryStateStore(controllerStatePath);
+    await controllerBeforeRestart.create(createDistributedDeliveryStateRecord({
+      deliveryId,
+      dispatchId,
+      taskId: ids.task,
+      workspaceId: ids.workspace,
+      machineId: ids.machine,
+      machineRegistrationId: ids.registration,
+      machineRegistrationRevision: 1,
+    }, { now: () => new Date(baseNow) }));
+    await controllerBeforeRestart.advance(
+      deliveryId,
+      "pending",
+      "claimed",
+      { now: () => new Date(baseNow.getTime() + 250) },
+    );
+    await controllerBeforeRestart.advance(
+      deliveryId,
+      "claimed",
+      "delivered_unconfirmed",
+      { now: () => new Date(baseNow.getTime() + 500) },
+    );
+
+    const targetBeforeRestart = new FileDistributedDeliveryAdmissionAcknowledgementOutbox(
+      targetOutboxPath,
+    );
+    await targetBeforeRestart.record(acknowledgement);
+
+    // Simulate both processes restarting by discarding all process-local objects
+    // and constructing fresh store instances from durable files only.
+    const controllerAfterRestart = new FileDistributedDeliveryStateStore(controllerStatePath);
+    const targetAfterRestart = new FileDistributedDeliveryAdmissionAcknowledgementOutbox(
+      targetOutboxPath,
+    );
+
+    const durableControllerState = await controllerAfterRestart.get(deliveryId);
+    assert.equal(durableControllerState.state, "delivered_unconfirmed");
+
+    const durableAck = await targetAfterRestart.getByDeliveryId(deliveryId);
+    assert.deepEqual(durableAck, acknowledgement);
+
+    const route = new DistributedDeliveryAckRoute({
+      controllerOrigin: "https://controller.example.com:8443",
+      authorizer: {
+        async authorize(token, requestId, capability) {
+          assert.equal(token, "dmt_" + "x".repeat(48));
+          assert.match(requestId, /^[0-9a-f-]{36}$/i);
+          assert.equal(capability, "report_status");
+          return {
+            schemaVersion: 1,
+            requestId,
+            sessionId: crypto.randomUUID(),
+            registrationId: ids.registration,
+            machineId: ids.machine,
+            registrationRevision: 1,
+            capability: "report_status",
+            authority: "transport_identity_only",
+            grantsTaskAuthority: false,
+            grantsFilesystemAuthority: false,
+            grantsSafetyPlanAuthority: false,
+            grantsWriterLeaseAuthority: false,
+            grantsCredentialAuthority: false,
+            grantsReleaseAuthority: false,
+          };
+        },
+      },
+      stateStore: controllerAfterRestart,
+    });
+
+    const body = Buffer.from(JSON.stringify(durableAck), "utf8");
+    const requestId = crypto.randomUUID();
+    const headers = [
+      "Host", "controller.example.com:8443",
+      "Authorization", "Bearer dmt_" + "x".repeat(48),
+      "X-Cline-Request-Id", requestId,
+      "Accept", "application/json",
+      "Accept-Encoding", "identity",
+      "Cache-Control", "no-store",
+      "Connection", "close",
+      "Content-Type", "application/json; charset=utf-8",
+      "Content-Encoding", "identity",
+      "Content-Length", String(body.length),
+    ];
+
+    const reconciledResponse = await route.handle({
+      method: "POST",
+      url: DISTRIBUTED_DELIVERY_ACK_PATH,
+      httpVersion: "1.1",
+      rawHeaders: headers,
+      body,
+    });
+    assert.equal(reconciledResponse.statusCode, 204);
+
+    const reconciledState = await controllerAfterRestart.get(deliveryId);
+    assert.equal(reconciledState.state, "admission_acknowledged");
+    assert.deepEqual(reconciledState.acknowledgement, acknowledgement);
+
+    const duplicateRequestId = crypto.randomUUID();
+    const duplicateHeaders = [...headers];
+    duplicateHeaders[5] = duplicateRequestId;
+    const duplicateResponse = await route.handle({
+      method: "POST",
+      url: DISTRIBUTED_DELIVERY_ACK_PATH,
+      httpVersion: "1.1",
+      rawHeaders: duplicateHeaders,
+      body,
+    });
+    assert.equal(duplicateResponse.statusCode, 204);
+
+    const conflictingAck = {
+      ...acknowledgement,
+      acknowledgementId: crypto.randomUUID(),
+    };
+    const conflictingBody = Buffer.from(JSON.stringify(conflictingAck), "utf8");
+    const conflictingHeaders = [...headers];
+    conflictingHeaders[5] = crypto.randomUUID();
+    conflictingHeaders[19] = String(conflictingBody.length);
+    const conflict = await route.handle({
+      method: "POST",
+      url: DISTRIBUTED_DELIVERY_ACK_PATH,
+      httpVersion: "1.1",
+      rawHeaders: conflictingHeaders,
+      body: conflictingBody,
+    });
+    assert.equal(conflict.statusCode, 409);
+
+    assert.equal(deliveryCalls, 0);
+    assert.equal(admissionCalls, 0);
+    assert.equal(runtimeCalls, 0);
+    assert.equal(writerCalls, 0);
+    assert.equal((await targetAfterRestart.list()).length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
