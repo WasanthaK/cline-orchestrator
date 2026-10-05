@@ -155,7 +155,11 @@ test("M12Z-F contract delegates durable replay consumption only to M12G", () => 
 test("exact recovery dispatch delegates once to M12G and returns admission evidence only", async () => {
   let calls = 0;
   const bridge = new DistributedRecoveryAdmissionBridge({
-    async admit(actualDispatch, actualAssignment, actualFence) {
+    async admit(
+      actualDispatch: DistributedExecutionDispatchV1,
+      actualAssignment: DistributedWriterCandidateAssignmentV1,
+      actualFence: DistributedFenceClaimV1,
+    ) {
       calls += 1;
       assert.deepEqual(actualDispatch, dispatch);
       assert.deepEqual(actualAssignment, assignment);
