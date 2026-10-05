@@ -19,6 +19,11 @@ import {
   type DistributedFenceClaimV1,
 } from "./distributed-fencing.js";
 import type { DistributedMachineAuthorizedRequestV1 } from "./distributed-machine-transport.js";
+import {
+  createDistributedDeliveryStateRecord,
+  type DistributedDeliveryStateRecordV1,
+  type DistributedDeliveryStateV1,
+} from "./distributed-delivery-reconciliation.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_REFERENCE_QUEUE_ITEMS = 256;
@@ -37,6 +42,8 @@ export const DISTRIBUTED_CONTROLLER_PENDING_WORK_CONTRACT = Object.freeze({
   requiresCandidateCurrentness: true as const,
   requiresFenceCurrentness: true as const,
   reusesM12JAuthorizedDeliveryBuilder: true as const,
+  requiresDurableDeliveryStateBeforeReturn: true as const,
+  deliveryStateFailureRequeuesWork: false as const,
   noWorkIsNonAuthorizing: true as const,
   networkIoIncluded: false as const,
   listenerIncluded: false as const,
@@ -77,12 +84,23 @@ export interface DistributedControllerPendingWorkSource {
   claimNext(target: DistributedControllerPendingWorkTargetV1): Promise<DistributedControllerPendingWorkItemV1 | null>;
 }
 
+export interface DistributedControllerDeliveryStateStore {
+  create(record: DistributedDeliveryStateRecordV1): Promise<DistributedDeliveryStateRecordV1>;
+  advance(
+    deliveryId: string,
+    expectedState: Exclude<DistributedDeliveryStateV1, "admission_acknowledged">,
+    nextState: Exclude<DistributedDeliveryStateV1, "pending" | "admission_acknowledged">,
+    options?: { now?: () => Date },
+  ): Promise<DistributedDeliveryStateRecordV1>;
+}
+
 export interface DistributedControllerPendingWorkSelectorOptions {
   transport: DistributedExecutionDeliveryTransportAuthorizer;
   pendingWork: DistributedControllerPendingWorkSource;
   candidates: DistributedExecutionCandidateValidator;
   fences: DistributedExecutionFenceValidator;
   delivery: DistributedExecutionPullDeliveryController;
+  deliveryState: DistributedControllerDeliveryStateStore;
   now?: () => Date;
 }
 
@@ -101,6 +119,7 @@ export class DistributedControllerPendingWorkError extends Error {
       | "candidate_not_current"
       | "fence_not_current"
       | "delivery_failed"
+      | "delivery_state_failed"
       | "capacity_exceeded",
     options?: ErrorOptions,
   ) {
@@ -396,8 +415,9 @@ export class DistributedControllerPendingWorkSelector {
       );
     }
 
+    let delivery: DistributedExecutionDeliveryBundleV1;
     try {
-      return await this.options.delivery.deliverAuthorized(
+      delivery = await this.options.delivery.deliverAuthorized(
         authorized,
         item.dispatch,
         item.assignment,
@@ -410,5 +430,38 @@ export class DistributedControllerPendingWorkSelector {
         { cause: error },
       );
     }
+
+    try {
+      const state = createDistributedDeliveryStateRecord({
+        deliveryId: delivery.deliveryId,
+        dispatchId: delivery.dispatch.dispatchId,
+        taskId: delivery.dispatch.taskId,
+        workspaceId: delivery.dispatch.workspaceId,
+        machineId: delivery.dispatch.machineId,
+        machineRegistrationId: delivery.dispatch.machineRegistrationId,
+        machineRegistrationRevision: delivery.dispatch.machineRegistrationRevision,
+      }, { now: () => now });
+      await this.options.deliveryState.create(state);
+      await this.options.deliveryState.advance(
+        delivery.deliveryId,
+        "pending",
+        "claimed",
+        { now: () => now },
+      );
+      await this.options.deliveryState.advance(
+        delivery.deliveryId,
+        "claimed",
+        "delivered_unconfirmed",
+        { now: () => now },
+      );
+    } catch (error) {
+      throw new DistributedControllerPendingWorkError(
+        "controller delivery reconciliation state could not be durably established before response",
+        "delivery_state_failed",
+        { cause: error },
+      );
+    }
+
+    return structuredClone(delivery);
   }
 }

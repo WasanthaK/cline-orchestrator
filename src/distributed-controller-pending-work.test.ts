@@ -17,6 +17,10 @@ import {
   assertDistributedExecutionDeliveryBundle,
 } from "./distributed-execution-delivery.js";
 import type { DistributedFenceClaimV1 } from "./distributed-fencing.js";
+import type {
+  DistributedDeliveryStateRecordV1,
+  DistributedDeliveryStateV1,
+} from "./distributed-delivery-reconciliation.js";
 import { DistributedMachineTransportGateway } from "./distributed-machine-transport.js";
 
 const NOW = new Date("2026-10-01T10:00:00.000Z");
@@ -137,6 +141,37 @@ function evidence(
   return { assignment, fence, dispatch };
 }
 
+
+class MemoryDeliveryStateStore {
+  readonly records = new Map<string, DistributedDeliveryStateRecordV1>();
+  readonly transitions: Array<{ deliveryId: string; from: DistributedDeliveryStateV1; to: DistributedDeliveryStateV1 }> = [];
+  failCreate = false;
+
+  async create(record: DistributedDeliveryStateRecordV1): Promise<DistributedDeliveryStateRecordV1> {
+    if (this.failCreate) throw new Error("durable state unavailable");
+    if (this.records.has(record.deliveryId)) throw new Error("duplicate delivery");
+    this.records.set(record.deliveryId, structuredClone(record));
+    return structuredClone(record);
+  }
+
+  async advance(
+    deliveryId: string,
+    expectedState: Exclude<DistributedDeliveryStateV1, "admission_acknowledged">,
+    nextState: Exclude<DistributedDeliveryStateV1, "pending" | "admission_acknowledged">,
+  ): Promise<DistributedDeliveryStateRecordV1> {
+    const current = this.records.get(deliveryId);
+    if (!current || current.state !== expectedState) throw new Error("state conflict");
+    const updated = {
+      ...current,
+      state: nextState,
+      updatedAt: NOW.toISOString(),
+    } as DistributedDeliveryStateRecordV1;
+    this.records.set(deliveryId, updated);
+    this.transitions.push({ deliveryId, from: expectedState, to: nextState });
+    return structuredClone(updated);
+  }
+}
+
 async function fixture() {
   const registrations = new Map([
     [REGISTRATION_ID, registration()],
@@ -172,6 +207,7 @@ async function fixture() {
     transport,
     { now: () => new Date(NOW), idFactory: () => DELIVERY_ID },
   );
+  const deliveryState = new MemoryDeliveryStateStore();
   const selector = new DistributedControllerPendingWorkSelector({
     transport,
     pendingWork: queue,
@@ -186,6 +222,7 @@ async function fixture() {
       },
     },
     delivery,
+    deliveryState,
     now: () => new Date(NOW),
   });
   return {
@@ -194,6 +231,7 @@ async function fixture() {
     selector,
     candidateCalls,
     fenceCalls,
+    deliveryState,
     token: primary.token,
     otherToken: secondary.token,
   };
@@ -225,6 +263,8 @@ test("M12R contract keeps all work selection controller-owned and authority-free
     requiresCandidateCurrentness: true,
     requiresFenceCurrentness: true,
     reusesM12JAuthorizedDeliveryBuilder: true,
+    requiresDurableDeliveryStateBeforeReturn: true,
+    deliveryStateFailureRequeuesWork: false,
     noWorkIsNonAuthorizing: true,
     networkIoIncluded: false,
     listenerIncluded: false,
@@ -242,7 +282,7 @@ test("M12R contract keeps all work selection controller-owned and authority-free
 });
 
 test("authenticated target receives only controller-selected exact-machine work through M12J", async () => {
-  const { queue, selector, token, candidateCalls, fenceCalls } = await fixture();
+  const { queue, selector, token, candidateCalls, fenceCalls, deliveryState } = await fixture();
   const values = evidence("a");
   enqueue(queue, values, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1");
 
@@ -255,6 +295,11 @@ test("authenticated target receives only controller-selected exact-machine work 
   assert.deepEqual(candidateCalls, [values.assignment.assignmentId]);
   assert.deepEqual(fenceCalls, [values.fence.fenceId]);
   assert.equal(queue.size, 0);
+  assert.equal(deliveryState.records.get(result.deliveryId)?.state, "delivered_unconfirmed");
+  assert.deepEqual(deliveryState.transitions, [
+    { deliveryId: result.deliveryId, from: "pending", to: "claimed" },
+    { deliveryId: result.deliveryId, from: "claimed", to: "delivered_unconfirmed" },
+  ]);
   const serialized = JSON.stringify(result);
   assert.equal(serialized.includes("workspaceRoot"), false);
   assert.equal(serialized.includes("prompt"), false);
@@ -323,6 +368,7 @@ test("candidate loss after claim fails closed before fence or delivery", async (
       now: () => new Date(NOW),
       idFactory: () => DELIVERY_ID,
     }),
+    deliveryState: base.deliveryState,
     now: () => new Date(NOW),
   });
 
@@ -357,6 +403,7 @@ test("fence loss after a current candidate fails closed before M12J delivery", a
       now: () => new Date(NOW),
       idFactory: () => DELIVERY_ID,
     }),
+    deliveryState: base.deliveryState,
     now: () => new Date(NOW),
   });
 
@@ -402,4 +449,19 @@ test("pending work exact schema rejects authority widening and cross-bound evide
     (error: unknown) => error instanceof DistributedControllerPendingWorkError
       && error.code === "pending_work_invalid",
   );
+});
+
+test("delivery state persistence failure fails closed before bundle return and never requeues", async () => {
+  const base = await fixture();
+  const values = evidence("4");
+  enqueue(base.queue, values, "45454545-4545-4454-8454-454545454541");
+  base.deliveryState.failCreate = true;
+
+  await assert.rejects(
+    () => base.selector.pullNext(base.token, REQUEST_ID),
+    (error: unknown) => error instanceof DistributedControllerPendingWorkError
+      && error.code === "delivery_state_failed",
+  );
+  assert.equal(base.queue.size, 0, "claimed work must not be requeued after state persistence failure");
+  assert.equal(base.deliveryState.records.size, 0);
 });
