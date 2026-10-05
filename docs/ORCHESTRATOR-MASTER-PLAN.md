@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-10-01
+Last updated: 2026-10-05
 Branch: `phase-1/bootstrap`
 
 ## Canonical rules
@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W complete; latest code CI `#1099`; durable public M12Q binding storage, strict read-only TLS loading, revision-safe key rotation, explicit private/loopback bind config and one-shot listener activation permits are implemented/proven software-only, while physical credential provisioning/listener activation, delivery reconciliation and distributed takeover/recovery remain separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete and M12X P0–P5 physical HTTPS/auth/no-work proof complete; latest code CI `#1099`; real distributed delivery acknowledgement/reconciliation, writer proof and takeover/recovery remain separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -342,6 +342,20 @@ No TLS certificate/private-key issuance, target Ed25519 key generation/provision
 
 Evidence: definition `198932fbc34b1eafd7f7150e502aaec167bf73f4`; binding store `5040739a70ea97db08acbb47e37647617c4f5252`; deployment substrate `6f8542d3d96835049933c7bf7d30f547b24335c1`; bind revalidation hardening `0dc2d48dd3a66d3507989e427c45e4a5b2174a65`; binding proof `33b47a77f32d5f4bf9b9f6dab29896986196e486`; deployment proof `52ca7a88d1ecf23ad4647da017417033db779669`; final corruption/credential/permit edge proofs `d5df8ffdfe922132f0688d2a08c87b553104967d` + `c859b34a2fdac8cab445d801d2b2a8777f8b4f00`; final CI `#1099` / `37002297374` passed typecheck + full suite.
 
+## 12X — Physical deployment proof — COMPLETE
+
+Authorized physical proof was completed on the Windows development host using canonical origin `https://localhost:8443` and exact loopback bind `127.0.0.1:8443`. P0 confirmed the deployment facts and absence of prior M12 registration/binding state. P1 provisioned a dedicated localhost TLS leaf identity/trust and a machine-local Ed25519 signer, then created identity-only machine registration and authentication-metadata-only public-key binding. Private key material remained outside repository/model-facing/durable distributed task state.
+
+P2 invoked the production one-shot activation path and proved a real listener bound only to `127.0.0.1:8443`; the activation receipt remained `listener_state_evidence_only` with all authority grant flags false. No wildcard, LAN, Tailscale, firewall, DNS, NAT, tunnel or public exposure was introduced.
+
+P3 proved from a separate client process that Windows trust + hostname validation succeeded for `localhost`, the expected leaf SPKI pin succeeded, an intentionally wrong pin failed, and the endpoint remained loopback-only.
+
+P4 exercised the real M12U network bootstrap end-to-end: challenge issuance, local Ed25519 possession proof, bounded M12C session issuance and exact current machine/registration revision binding. The bearer token was process-local, not printed and not persisted; session authority remained `authenticated_machine_identity_only`.
+
+P5 used a fresh authenticated session with the production M12S client against the shared M12T route wired to the real M12R controller-owned selector and an empty controller pending-work queue. The client validated no-work `204`, sent no task/workspace/dispatch/candidate/fence selectors, received no delivery bundle and invoked no target runtime or writer execution. Repository state remained clean throughout.
+
+M12X deliberately stops here. Real distributed work delivery is still gated. Delivery acknowledgement/reconciliation, ambiguous-outcome handling and restart reconciliation must be reviewed and proven before any live writer delivery. Distributed takeover/recovery remains separately gated.
+
 ---
 
 # Current capability snapshot
@@ -372,7 +386,7 @@ Evidence: definition `198932fbc34b1eafd7f7150e502aaec167bf73f4`; binding store `
 | Shared unbound HTTPS composition | Complete — M12V; CI `#1080`; exact M12T+M12U route isolation, bounded bootstrap body collection, local M12P TLS identity preflight, one unbound server |
 | Deployment credential/binding/listener substrate | Complete — M12W; CI `#1099`; durable public M12Q binding store + revision-safe key rotation + read-only TLS loader + explicit private/loopback bind config + one-shot activation permit; hosted fake-bind proof only |
 | Distributed takeover/recovery | Disabled; requires a separately reviewed fresh-authority design |
-| Physical distributed HTTPS credential provisioning / listener activation | Not performed; M12W software substrate is ready but P0–P5 physical proof remains separately reviewed and explicitly authorized |
+| Physical distributed HTTPS credential provisioning / listener activation | Complete — M12X P0–P5 authorized Windows proof: trusted localhost TLS identity, Ed25519 machine identity/registration/binding, exact `127.0.0.1:8443` listener, client TLS/hostname/SPKI verification, real M12U bootstrap and authenticated M12S/M12T no-work `204`; no delivery/runtime/writer execution occurred |
 | Controller-to-target network push | Disabled |
 | Real cross-machine production writer execution | Disabled; no real network transport is production-wired |
 | Shared live-runtime concurrency | Disabled pending separate authorization/review |
@@ -431,9 +445,9 @@ Evidence: definition `198932fbc34b1eafd7f7150e502aaec167bf73f4`; binding store `
 14. **COMPLETE — M12U networked M12Q bootstrap.** Final CI `#1055`; exact nonce hardening, controller challenge/session envelope and target signer client are proven socket-free.
 15. **COMPLETE — M12V shared unbound HTTPS composition + TLS identity preflight.** Final CI `#1080`; hosted proof remained socket/listener-free and production contains no `listen()` path.
 16. **COMPLETE — M12W deployment credential/binding/listener substrate.** Final CI `#1099`; hosted proof used fake bind primitives only and performed no real credential/network mutation.
-17. **STOP for review before M12X physical deployment proof.** Reconfirm P0 inspect-only facts, exact controller/target machines, canonical origin, private bind IP/port, existing TLS material/trust, target signer storage and current registration/binding state before any mutation.
-18. **DO NOT provision TLS/Ed25519 credentials or invoke real `listen()` without explicit user authorization immediately before P1/P2.** Firewall/DNS/NAT/tunnel changes require separate explicit authorization if later needed.
-19. **DO NOT add delivery retry/ack/reconciliation, reverse-proxy trust or real writer proof without a separately reviewed/gated slice.** P5 must stop at M12S/M12T no-work `204` unless delivery reliability is reviewed first.
+17. **COMPLETE — M12X P0–P5 physical deployment proof.** Authorized Windows proof established trusted localhost TLS, Ed25519 machine authentication, exact loopback listener activation, client-observed TLS/SPKI enforcement, real M12U bootstrap and authenticated M12S/M12T no-work `204`; no real delivery/runtime/writer execution occurred.
+18. **NEXT — M12Y delivery acknowledgement / reconciliation review.** Define fail-closed durable delivery identity, ambiguous-outcome handling, target duplicate semantics and controller restart reconciliation before any live writer proof.
+19. **DO NOT add automatic retry after an ambiguous delivery outcome or run a real writer proof until M12Y is reviewed/proven.** M12G durable replay remains authoritative and acknowledgement/reconciliation must not grant execution authority.
 20. **DO NOT production-wire cross-machine delivery/execution** until later reviewed slices preserve M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O restart no-resurrection and M12F immediate write fencing.
 21. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
@@ -441,6 +455,7 @@ Evidence: definition `198932fbc34b1eafd7f7150e502aaec167bf73f4`; binding store `
 
 # Recent progress
 
+- 2026-10-05: M12X P0–P5 authorized Windows physical proof completed: trusted localhost TLS identity, Ed25519 machine registration/binding, exact `127.0.0.1:8443` listener, client TLS/hostname/SPKI enforcement, real M12U authentication and authenticated M12S/M12T no-work `204`; no work delivery/runtime/writer execution occurred. Next gate is M12Y acknowledgement/reconciliation.
 - 2026-09-28: M11 software complete through 11H; user directed work to M12; external M11 proof deferred.
 - 2026-09-28: Cline context/tool-protocol recovery CI `#809`; CR1 CI `#822`; CR2 CI `#829`; CR3 CI `#840` + authorized Windows physical proof.
 - 2026-09-29: M12A CI `#811`; M12B CI `#851`; M12C CI `#857`; M12D CI `#863`; M12E CI `#869`; M12F CI `#892`.
@@ -465,4 +480,4 @@ Evidence: definition `198932fbc34b1eafd7f7150e502aaec167bf73f4`; binding store `
 
 # Current next step
 
-**STOP for review.** M12W is complete. Review M12X P0 inspect-only deployment prerequisites and the exact P1–P5 physical proof inputs before any real TLS/Ed25519 provisioning or listener bind is authorized. P5 stops at a no-work `204`; do not run real distributed writer delivery until delivery acknowledgement/reconciliation is separately reviewed.
+**M12Y — delivery acknowledgement / reconciliation review.** M12X P0–P5 physical proof is complete and deliberately stopped at authenticated no-work `204`. Define and prove fail-closed delivery acknowledgement, ambiguous-outcome handling, duplicate/replay semantics and controller/target restart reconciliation before any real distributed writer delivery. No automatic retry after ambiguous delivery, no target runtime/writer proof, and no new listener/network mutation are included in the first M12Y software slice.
