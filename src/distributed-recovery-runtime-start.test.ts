@@ -7,6 +7,7 @@ import {
 } from "./distributed-recovery-runtime-start.js";
 import type { DistributedRecoveryReacquisitionPreparationEvidenceV1 } from "./distributed-recovery-reacquisition-preparation.js";
 import type { DistributedTargetRuntimeHandoffContext } from "./distributed-target-runtime-handoff.js";
+import type { RenewableDistributedWriterFenceGuard } from "./distributed-write-fence-guard.js";
 import type { OrchestratorTask } from "./types.js";
 
 const ids = {
@@ -115,6 +116,18 @@ function context(overrides: {
     grantsReleaseAuthority: false as const,
   };
 
+  const distributedFenceGuard: RenewableDistributedWriterFenceGuard = {
+    taskId: ids.task,
+    workspaceId: ids.workspace,
+    currentClaim: () => structuredClone(fenceClaim),
+    currentAssignment: () => structuredClone(assignment),
+    renewCandidate: async () => structuredClone(assignment),
+    renew: async () => structuredClone(fenceClaim),
+    validateCurrent: async () => {
+      if (overrides.fenceValidationError) throw overrides.fenceValidationError;
+    },
+  };
+
   return {
     evidence: {
       schemaVersion: 1,
@@ -154,17 +167,7 @@ function context(overrides: {
         },
       },
       authorityProvider: { async revalidateCurrent() { throw new Error("not called by wrapper"); } },
-      distributedFenceGuard: {
-        taskId: ids.task,
-        workspaceId: ids.workspace,
-        currentClaim: () => structuredClone(fenceClaim),
-        currentAssignment: () => structuredClone(assignment),
-        renewCandidate: async () => structuredClone(assignment),
-        renew: async () => structuredClone(fenceClaim),
-        validateCurrent: async () => {
-          if (overrides.fenceValidationError) throw overrides.fenceValidationError;
-        },
-      },
+      distributedFenceGuard,
     },
   };
 }
