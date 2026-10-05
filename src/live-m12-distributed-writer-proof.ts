@@ -646,8 +646,13 @@ async function main(): Promise<void> {
     const changed = (await git(workspaceRoot, "status", "--porcelain"))
       .split(/\r?\n/)
       .filter(Boolean);
-    if (changed.length !== 1 || !changed[0]!.endsWith("src/demo.ts")) {
-      fail("workspace contains changes outside the single approved proof file");
+    const userChanges = changed.filter((line) => {
+      const candidate = line.slice(3).replace(/\\/g, "/");
+      return candidate !== ".orchestrator"
+        && !candidate.startsWith(".orchestrator/");
+    });
+    if (userChanges.length !== 1 || !userChanges[0]!.endsWith("src/demo.ts")) {
+      fail("workspace contains user changes outside the single approved proof file");
     }
 
     if (fenceGuard) {
