@@ -40,7 +40,6 @@ import {
   DistributedExecutionAdmissionGateway,
   FileDistributedDispatchReplayStore,
 } from "./distributed-execution-admission.js";
-import { createDistributedWriterFenceGuard } from "./distributed-write-fence-guard.js";
 import { DistributedTargetRuntimeHandoffCoordinator } from "./distributed-target-runtime-handoff.js";
 import { DistributedTargetRuntimeStarter } from "./distributed-target-runtime-start.js";
 import {
@@ -385,7 +384,6 @@ async function main(): Promise<void> {
   let hubMayHaveStarted = false;
   let proofPassed = false;
   let proofError: unknown;
-  let fenceGuard: ReturnType<typeof createDistributedWriterFenceGuard> | undefined;
   let livenessHeartbeatTimer: NodeJS.Timeout | undefined;
   let livenessHeartbeatTail: Promise<void> = Promise.resolve();
   let livenessHeartbeatError: unknown;
@@ -396,6 +394,13 @@ async function main(): Promise<void> {
       livenessHeartbeatTimer = undefined;
     }
     await livenessHeartbeatTail.catch(() => undefined);
+  };
+
+  const revokeCurrentDistributedFence = async (): Promise<boolean> => {
+    const current = await fenceBackend.read(workspace.workspaceId);
+    if (!current?.activeFence) return false;
+    await fenceAuthority.revoke(current.activeFence);
+    return true;
   };
 
   try {
@@ -472,11 +477,6 @@ async function main(): Promise<void> {
             assignment: candidate,
             ttlMs: FENCE_TTL_MS,
           });
-          fenceGuard = createDistributedWriterFenceGuard(
-            fenceAuthority,
-            fence,
-            candidate,
-          );
           const dispatch = createDistributedExecutionDispatch({
             assignment: candidate,
             fence,
@@ -655,10 +655,7 @@ async function main(): Promise<void> {
       fail("workspace contains user changes outside the single approved proof file");
     }
 
-    if (fenceGuard) {
-      await fenceAuthority.revoke(fenceGuard.currentClaim());
-      fenceGuard = undefined;
-    }
+    const distributedFenceRevoked = await revokeCurrentDistributedFence();
     await stopLivenessHeartbeat();
     transport.revokeSession(issueResult.token);
 
@@ -703,7 +700,7 @@ async function main(): Promise<void> {
         publicNetworkExposureUsed: false,
       },
       cleanup: {
-        distributedFenceRevoked: true,
+        distributedFenceRevoked,
         localWriterLeaseReleasedByScheduler: true,
       },
     };
@@ -724,10 +721,7 @@ async function main(): Promise<void> {
   } finally {
     if (!proofPassed) {
       try {
-        if (fenceGuard) {
-          await fenceAuthority.revoke(fenceGuard.currentClaim()).catch(() => undefined);
-          fenceGuard = undefined;
-        }
+        await revokeCurrentDistributedFence().catch(() => undefined);
         await stopLivenessHeartbeat();
         if (issueResult?.token) {
           try { transport.revokeSession(issueResult.token); } catch { /* ignore cleanup race */ }
