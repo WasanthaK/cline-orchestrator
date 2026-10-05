@@ -368,11 +368,15 @@ export class DistributedTargetRuntimeHandoffCoordinator {
     }
   }
 
-  async prepare(
+  private validateHandoffInputs(
     dispatchInput: DistributedExecutionDispatchV1,
     assignmentInput: DistributedWriterCandidateAssignmentV1,
     fenceInput: DistributedFenceClaimV1,
-  ): Promise<DistributedTargetRuntimeHandoffContext> {
+  ): {
+    dispatch: DistributedExecutionDispatchV1;
+    assignment: DistributedWriterCandidateAssignmentV1;
+    fence: DistributedFenceClaimV1;
+  } {
     try {
       assertDistributedExecutionDispatch(dispatchInput);
       assertDistributedWriterCandidateAssignment(assignmentInput);
@@ -385,27 +389,29 @@ export class DistributedTargetRuntimeHandoffCoordinator {
       );
     }
 
-    const dispatch = structuredClone(dispatchInput);
-    const assignment = structuredClone(assignmentInput);
-    const fence = structuredClone(fenceInput);
+    return {
+      dispatch: structuredClone(dispatchInput),
+      assignment: structuredClone(assignmentInput),
+      fence: structuredClone(fenceInput),
+    };
+  }
 
+  private async assertPreHandoffAuthority(
+    dispatch: DistributedExecutionDispatchV1,
+  ): Promise<void> {
     const task = await this.loadTargetTask(dispatch);
     assertFreshTargetTask(task);
     await this.revalidateLocalAuthority(task, dispatch);
     await this.revalidateLease(dispatch.taskId, dispatch.workspaceId);
+  }
 
-    let receipt: DistributedExecutionAdmissionReceiptV1;
-    try {
-      receipt = await this.options.admission.admit(dispatch, assignment, fence);
-      assertReceiptMatches(receipt, dispatch);
-    } catch (error) {
-      if (error instanceof DistributedTargetRuntimeHandoffError) throw error;
-      throw new DistributedTargetRuntimeHandoffError(
-        "M12G target execution admission failed",
-        "admission_failed",
-        { cause: error },
-      );
-    }
+  private async finishAdmittedHandoff(
+    dispatch: DistributedExecutionDispatchV1,
+    assignment: DistributedWriterCandidateAssignmentV1,
+    fence: DistributedFenceClaimV1,
+    receipt: DistributedExecutionAdmissionReceiptV1,
+  ): Promise<DistributedTargetRuntimeHandoffContext> {
+    assertReceiptMatches(receipt, dispatch);
 
     const distributedFenceGuard = createDistributedWriterFenceGuard(
       this.options.fenceAuthority,
@@ -422,10 +428,9 @@ export class DistributedTargetRuntimeHandoffCoordinator {
       );
     }
 
-    // Reload local durable task state after the one-shot admission. This prevents a
-    // concurrent local start/status/session transition from being hidden by the
-    // pre-admission task snapshot. No runtime is started by M12H; every future
-    // write is still required to repeat these checks in the M12F write boundary.
+    // Reload local durable task state after admission evidence is available. This
+    // prevents a concurrent local start/status/session transition from being hidden
+    // by the pre-admission snapshot. No runtime is started by M12H.
     const currentTask = await this.loadTargetTask(dispatch);
     assertFreshTargetTask(currentTask);
     await this.revalidateLocalAuthority(currentTask, dispatch);
@@ -457,5 +462,61 @@ export class DistributedTargetRuntimeHandoffCoordinator {
         distributedFenceGuard,
       },
     };
+  }
+
+  /**
+   * Existing M12H path. Admission remains one-shot and owned by M12G.
+   */
+  async prepare(
+    dispatchInput: DistributedExecutionDispatchV1,
+    assignmentInput: DistributedWriterCandidateAssignmentV1,
+    fenceInput: DistributedFenceClaimV1,
+  ): Promise<DistributedTargetRuntimeHandoffContext> {
+    const { dispatch, assignment, fence } = this.validateHandoffInputs(
+      dispatchInput,
+      assignmentInput,
+      fenceInput,
+    );
+
+    await this.assertPreHandoffAuthority(dispatch);
+
+    let receipt: DistributedExecutionAdmissionReceiptV1;
+    try {
+      receipt = await this.options.admission.admit(dispatch, assignment, fence);
+      assertReceiptMatches(receipt, dispatch);
+    } catch (error) {
+      if (error instanceof DistributedTargetRuntimeHandoffError) throw error;
+      throw new DistributedTargetRuntimeHandoffError(
+        "M12G target execution admission failed",
+        "admission_failed",
+        { cause: error },
+      );
+    }
+
+    return await this.finishAdmittedHandoff(dispatch, assignment, fence, receipt);
+  }
+
+  /**
+   * Post-admission M12H entry point for recovery. The caller must supply the
+   * already-issued M12G receipt; this method never consumes replay state again.
+   * All target-local task/Safety/lease/fence checks still run before a handoff
+   * context is returned.
+   */
+  async prepareAdmitted(
+    dispatchInput: DistributedExecutionDispatchV1,
+    assignmentInput: DistributedWriterCandidateAssignmentV1,
+    fenceInput: DistributedFenceClaimV1,
+    receiptInput: DistributedExecutionAdmissionReceiptV1,
+  ): Promise<DistributedTargetRuntimeHandoffContext> {
+    const { dispatch, assignment, fence } = this.validateHandoffInputs(
+      dispatchInput,
+      assignmentInput,
+      fenceInput,
+    );
+    const receipt = structuredClone(receiptInput);
+    assertReceiptMatches(receipt, dispatch);
+
+    await this.assertPreHandoffAuthority(dispatch);
+    return await this.finishAdmittedHandoff(dispatch, assignment, fence, receipt);
   }
 }
