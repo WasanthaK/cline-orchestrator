@@ -160,7 +160,7 @@ async function revalidateAuthority(
   return leaseAwareWriterAuthorityFromTask(task, ownerInstanceId);
 }
 
-function profileFromCertificate(certificatePem: string): DistributedSecureTransportProfileV1 {
+function profileFromCertificate(certificatePem: string | Buffer): DistributedSecureTransportProfileV1 {
   const certificate = new X509Certificate(certificatePem);
   const exported = certificate.publicKey.export({ format: "der", type: "spki" });
   const spki = Buffer.isBuffer(exported) ? exported : Buffer.from(exported);
@@ -409,9 +409,15 @@ async function main(): Promise<void> {
 
     const ownerInstanceId = crypto.randomUUID();
     const lockStore = new WorkspaceLockStore(lockRoot);
-    const scheduler = new WriterConcurrencyScheduler({
+    const scheduler = new WriterConcurrencyScheduler(
       lockStore,
-      runner: {
+      {
+        schemaVersion: 1,
+        maxActiveWriters: 1,
+        maxStartsPerPass: 1,
+        maxActiveWritersPerWorkspace: 1,
+      },
+      {
         async revalidateApprovedTask(taskId) {
           const authority = await revalidateAuthority(
             registry,
@@ -547,21 +553,20 @@ async function main(): Promise<void> {
           }
         },
       },
-      budget: {
-        schemaVersion: 1,
-        maxActiveWriters: 1,
-        maxStartsPerPass: 1,
-        maxActiveWritersPerWorkspace: 1,
+      {
+        leaseMs: 60_000,
+        heartbeatMs: 20_000,
       },
-      ownerInstanceId,
-      leaseTtlMs: 60_000,
-      heartbeatIntervalMs: 20_000,
-    });
+    );
 
-    const summary = await scheduler.runPass([
-      { taskId: task.id, workspaceId: workspace.workspaceId },
-    ]);
-    if (summary.started !== 1 || summary.completed !== 1 || summary.failed !== 0) {
+    const summary = await scheduler.schedule([task.id]);
+    if (
+      summary.reservedTaskIds.length !== 1
+      || summary.reservedTaskIds[0] !== task.id
+      || summary.completedTaskIds.length !== 1
+      || summary.completedTaskIds[0] !== task.id
+      || summary.failures.length !== 0
+    ) {
       fail("writer scheduler did not complete exactly one disposable distributed writer");
     }
 
