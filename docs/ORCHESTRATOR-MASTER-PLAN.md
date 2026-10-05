@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8` against commit `50fa220a`; distributed takeover/recovery remains separately gated |
+| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-A recovery classification complete at `305003cc`, CI `#1134`; takeover/recovery execution remains separately gated |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -378,6 +378,14 @@ Trusted result marker: `passed:true`; one approved file changed; diff safety pas
 
 Hosted validation for the final harness fixes: push CI `#1130` and PR CI `#1131` green. Physical proof workflow: `M12 distributed writer physical proof` run `#8`, success.
 
+## 12Z-A — Distributed takeover/recovery classification — COMPLETE
+
+`src/distributed-takeover-recovery.ts` adds a classification-only recovery contract. It cannot start work, mutate delivery state, acquire a candidate/fence/lease, invoke M12G/M12H/M12I, retry work, requeue work or reuse stale dispatch/candidate/fence/handoff/runtime evidence.
+
+The classifier consumes only durable delivery state plus a target-local task summary and returns authority-free dispositions: ACK reconciliation only, manual ambiguity review, fresh-authority review required, or terminal/no takeover. Any eventual recovery is explicitly required to use fresh controller selection, fresh candidate assignment, fresh distributed fence, fresh local writer lease, fresh dispatch, fresh M12G admission and fresh M12H target-local authority re-entry.
+
+Evidence: `305003cc91685e6ef96d90e7910f3ef17266194f`; CI `#1134` passed typecheck + full suite.
+
 ---
 
 # Current capability snapshot
@@ -471,14 +479,16 @@ Hosted validation for the final harness fixes: push CI `#1130` and PR CI `#1131`
 18. **COMPLETE — M12Y-A/B/C delivery acknowledgement / reconciliation substrate.** Durable controller delivery state, target durable ACK outbox and authenticated ACK upload/reconciliation are implemented and green through CI `#1108`.
 19. **COMPLETE — M12Y-D restart reconciliation proof.** Controller ambiguity state and target ACK evidence survive process reconstruction and reconcile idempotently after restart; push CI `#1112` and PR CI `#1113` rerun are green.
 20. **COMPLETE — First real distributed writer physical proof.** Windows run `#8` passed against `50fa220a`: real Cline writer execution, one-file Safety scope, PostgreSQL fencing, local writer lease, authenticated delivery/ACK reconciliation, independent diff evidence and exact-current fence cleanup all passed with no retry/requeue/commit/push/merge/deploy/public exposure.
-21. **NEXT — STOP for distributed takeover/recovery design review.** Define fresh-authority recovery semantics after target/controller/process loss. Old dispatch/candidate/fence/handoff/runtime evidence must remain stale or consumed; recovery must require fresh admission and fresh fencing and must not silently reuse generic local writer recovery.
-22. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
-23. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
+21. **COMPLETE — M12Z-A recovery classification.** Authority-free classification only; CI `#1134`.
+22. **NEXT — M12Z-B non-authoritative recovery proposal contract.** Only `fresh_authority_review_required` may produce a bounded recovery proposal; ambiguity/ACK-only/terminal dispositions must remain blocked. Proposal creation must not start work, acquire candidate/fence/lease, create a dispatch, invoke M12G/M12H/M12I or grant authority.
+23. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
+24. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
 ---
 
 # Recent progress
 
+- 2026-10-05: M12Z-A recovery classification completed at `305003cc`; CI `#1134` green. The new classifier is authority-free and never retries/requeues or reuses stale distributed evidence; it only classifies durable delivery/task state into ACK-only, ambiguity review, fresh-authority review, or terminal/no-takeover dispositions.
 - 2026-10-05: First real distributed writer physical proof passed on Windows workflow run `#8` against orchestrator commit `50fa220a`. Real Cline changed exactly one approved disposable file; diff safety and independent Git checks passed; target ACK was durable before runtime, controller reconciled to `admission_acknowledged`, no work retry/requeue occurred, and exact-current fence + local writer lease cleanup passed. No commit/push/merge/deploy/public exposure was used. Final hosted validation: CI `#1130` / `#1131` green.
 - 2026-10-05: M12Y-D restart reconciliation completed at commit `e8046ed3`: durable controller `delivered_unconfirmed` state and target ACK outbox survive process reconstruction and reconcile to `admission_acknowledged` through fresh authenticated ACK evidence without work redelivery/requeue or runtime/writer execution. Push CI `#1112` passed; PR CI `#1113` initially hit an unrelated flaky project-memory JSON read, then passed on rerun without code changes.
 - 2026-10-05: M12Y-A/B/C completed through CI `#1108`: durable controller delivery state, target-local durable admission-ACK outbox, authenticated `report_status` ACK upload on the shared HTTPS origin, exact machine/revision reconciliation, and idempotent ACK retry semantics; work delivery remains non-retryable/non-requeueable and no real writer execution occurred. Next gate is M12Y-D restart reconciliation.
@@ -507,4 +517,4 @@ Hosted validation for the final harness fixes: push CI `#1130` and PR CI `#1131`
 
 # Current next step
 
-**STOP for distributed takeover/recovery design review.** The first real distributed writer physical proof is complete. The next slice must define how a distributed task recovers after controller/target/process loss without resurrecting stale authority: fresh controller selection, fresh candidate, fresh distributed fence generation/current claim, fresh M12G admission, target-local M12H authority re-entry, and explicit ambiguity handling for any prior `delivered_unconfirmed` work. Generic local scheduled-writer recovery must not be reused as distributed takeover authority. No production cross-machine wiring, public/network exposure change, credential mutation, merge, deploy or destructive Git action is authorized by this plan update.
+**M12Z-B — non-authoritative recovery proposal contract.** Only an M12Z-A decision of `fresh_authority_review_required` may produce a bounded proposal for later human/trusted-coordinator review. `ack_reconciliation_only`, `manual_ambiguity_review`, and `terminal_no_takeover` must be rejected. The proposal must bind the exact task/workspace/delivery snapshot and explicitly require fresh controller selection, candidate, distributed fence, local writer lease, dispatch, M12G admission and M12H authority re-entry. It must not itself start work or grant any execution/release authority.
