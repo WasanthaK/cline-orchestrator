@@ -33,6 +33,7 @@ const OTHER_SESSION_ID = "66666666-6666-4666-8666-666666666666";
 const REQUEST_ID = "77777777-7777-4777-8777-777777777777";
 const REQUEST_ID_2 = "88888888-8888-4888-8888-888888888888";
 const DELIVERY_ID = "99999999-9999-4999-8999-999999999999";
+const DELIVERY_ID_2 = "aaaaaaaa-9999-4999-8999-999999999999";
 const TOKEN = `dmt_${"x".repeat(48)}`;
 const OTHER_TOKEN = `dmt_${"y".repeat(48)}`;
 
@@ -203,9 +204,13 @@ async function fixture() {
   const queue = new ReferenceControllerPendingWorkQueue();
   const candidateCalls: string[] = [];
   const fenceCalls: string[] = [];
+  let deliveryCounter = 0;
   const delivery = new DistributedExecutionPullDeliveryController(
     transport,
-    { now: () => new Date(NOW), idFactory: () => DELIVERY_ID },
+    {
+      now: () => new Date(NOW),
+      idFactory: () => deliveryCounter++ === 0 ? DELIVERY_ID : DELIVERY_ID_2,
+    },
   );
   const deliveryState = new MemoryDeliveryStateStore();
   const selector = new DistributedControllerPendingWorkSelector({
