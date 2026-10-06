@@ -8,8 +8,8 @@ import {
   MultiAgentChildRepairAdmissionError,
   MultiAgentChildRepairAdmissionService,
   MULTI_AGENT_CHILD_REPAIR_ADMISSION_CONTRACT,
-  type MultiAgentParentExecutionBindingV1,
 } from "./multi-agent-child-repair-admission.js";
+import type { MultiAgentParentExecutionBindingV1 } from "./multi-agent-child-execution-preparation.js";
 import type { MultiAgentChildReviewDecisionV1 } from "./multi-agent-child-review-decision.js";
 import type { MultiAgentChildReviewHandoffV1 } from "./multi-agent-child-review-handoff.js";
 
