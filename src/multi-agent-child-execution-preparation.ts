@@ -347,8 +347,9 @@ export class FileMultiAgentChildExecutionPreparationStore {
   async load(childTaskId: string): Promise<MultiAgentChildExecutionPreparationV1> {
     let parsed: MultiAgentChildExecutionPreparationV1;
     try {
-      parsed = JSON.parse(await readFile(this.file(childTaskId), "utf8"))
-        as MultiAgentChildExecutionPreparationV1;
+      parsed = JSON.parse(
+        await readFile(this.file(childTaskId), "utf8"),
+      ) as MultiAgentChildExecutionPreparationV1;
     } catch (error) {
       throw new MultiAgentChildExecutionPreparationError(
         `child execution preparation cannot be read: ${error instanceof Error ? error.message : String(error)}`,
