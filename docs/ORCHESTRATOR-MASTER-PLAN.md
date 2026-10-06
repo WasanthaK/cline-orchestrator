@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope contract complete (`df0421d2` + typing correction `eeb878ed`, CI `#1178`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation / delegation-set validation complete (`7c87296a`, CI `#1182` / `#1183`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13B delegation-set validation / sibling isolation completed at `7c87296a`; push CI `#1182` and PR CI `#1183` green. Parallel sibling evidence is permitted only for conservatively disjoint write scopes; overlaps require explicit serialized coordination. The set remains evidence-only and creates no workers/runtime authority.
 - 2026-10-06: M13A bounded delegation envelope completed at `df0421d2` with type-only correction `eeb878ed`; CI `#1178` green. Delegation is evidence-only, exact-parent-scope selection only, non-recursive, and grants no execution/tool/release authority.
 - 2026-10-06: M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` using harness `ff2c1f7a` and temporary workflow `df58b787`. The old dispatch replay marker survived process restart, stale fence authority was invalidated, all recovery authority was reacquired fresh, and the final real Cline edit passed independent one-file Git/diff/protected-file checks. Milestone 12 acceptance is complete.
 - 2026-10-05: M12Z-H recovery runtime-start gate completed at `36b86971` with test-only typing correction `d41f5f39`; CI `#1168` green. Recovery can now reach M12I only after exact prepared lease/fence identity revalidation, with no automatic retry/requeue/stale-session resume semantics.
@@ -613,14 +614,23 @@ M13A creates no worker, starts no Cline/runtime, acquires no local lease or dist
 
 Evidence: implementation `df0421d2328b8ac289d05ce2ef2d2c1ee88cad29`; type-only correction `eeb878ed4c6cfd1b4b2584ebc1f6da2e833bf7e7`; CI `#1178` passed typecheck + full suite.
 
+## 13B — Delegation set validation / sibling isolation — COMPLETE
+
+`src/multi-agent-delegation-set.ts` validates one to eight M13A child envelopes as one authority-free delegation set. Every child must share the exact same parent supervisor/task/project/workspace/Safety/worker-profile binding, delegation IDs and normalized child objectives must be unique, and scope overlap is evaluated conservatively from the child path patterns.
+
+`parallel_disjoint` is accepted only when no child scopes may overlap. Any detected overlap requires explicit `serialized` coordination evidence. This slice does not schedule or create workers, start Cline/runtime, acquire leases/fences, create dispatch/admission state, permit subdelegation, or grant task/filesystem/Safety/credential/release authority.
+
+Evidence: `7c87296aa02496e099230df662da4910a6e3cf75`; push CI `#1182` and PR CI `#1183` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
-2. **NEXT — M13B delegation set validation / sibling isolation contract.** Validate a bounded set of child envelopes before any execution is possible: same parent binding, unique delegation IDs, no duplicate child objective identity, bounded child count, and either disjoint write scopes or explicit serialized coordination. Still do not create workers or start Cline.
+2. **COMPLETE — M13B delegation set validation / sibling isolation contract.** CI `#1182` / `#1183` green.
+3. **NEXT — M13C child-task materialization contract.** Convert one validated child delegation into a durable child task descriptor bound to the same parent task/Safety authority, but do not start a worker, acquire a lease/fence, create a dispatch, or invoke Cline.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13B — delegation set validation / sibling isolation contract.** The next trusted slice should validate multiple M13A child envelopes as one bounded delegation set before any execution exists: exact same parent task/Safety binding, bounded child count, unique child identities, and no overlapping write scope unless the set is explicitly marked for serialized coordination. It must remain validation/evidence only and must not create workers, leases, fences, dispatches, runtimes, or Cline sessions.
+**M13C — child-task materialization contract.** The next trusted slice should turn one validated M13A child envelope from an accepted M13B set into a durable child-task descriptor that remains bound to the exact parent task/project/workspace/Safety/worker profile and narrowed child scope. Materialization must remain non-executing: no worker start, no Cline/runtime, no local lease, distributed fence, dispatch, admission, recursive delegation, shell/network/MCP/plugin, or release authority.
