@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`43d43747`, CI `#1190` / `#1191`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child execution preparation complete (`6d8c4c17` + syntax fix `b4a176ce`, CI `#1194`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13E durable child execution preparation completed at `6d8c4c17` with syntax-only correction `b4a176ce`; PR #3 CI `#1194` green. The consumed M13D admission receipt is revalidated against current full parent execution binding and persisted once as non-executable child preparation outside `TaskStore`, preserving narrowed scope and trusted validation commands without worker/runtime authority.
 - 2026-10-06: M13D one-shot child execution admission merged via PR #1 at `43d43747`; push CI `#1190` and PR CI `#1191` green. The short-lived single-use permit revalidates current parent/Safety binding and delegation-set mode but remains non-executing and grants no worker/filesystem/release authority.
 - 2026-10-06: M13C child-task materialization completed at `60d3e0b2`; push CI `#1186` and PR CI `#1187` green. Validated child delegation is materialized only as a non-executable descriptor outside `TaskStore`, preserving exact parent/Safety binding and narrowed child scope while granting no worker/runtime authority.
 - 2026-10-06: M13B delegation-set validation / sibling isolation completed at `7c87296a`; push CI `#1182` and PR CI `#1183` green. Parallel sibling evidence is permitted only for conservatively disjoint write scopes; overlaps require explicit serialized coordination. The set remains evidence-only and creates no workers/runtime authority.
@@ -640,17 +641,28 @@ The permit remains `child_execution_admission_only`; issuing or consuming it doe
 
 Evidence: `43d4374706928a5b639511a957875c26ce7baa5f`; push CI `#1190` and PR CI `#1191` passed before merge into `main` at `e749117ff4d795e0de0dad74ac09190eb186a5f1`.
 
+## 13E — Durable child execution preparation — COMPLETE
+
+`src/multi-agent-child-execution-preparation.ts` persists exactly one durable preparation per child after a consumed M13D admission receipt is presented and the full current parent execution binding is revalidated. The durable record carries the exact parent project/workspace/registry/Safety/profile/worker binding, current policy version, trusted validation commands, and the child’s narrowed allowed/protected path scope.
+
+The preparation remains outside `TaskStore`, is explicitly non-executable, and requires a later fresh parent-binding check plus fresh writer authority before any execution path can exist. It creates no worker, starts no Cline/runtime, acquires no local writer lease or distributed fence, creates no distributed dispatch/admission state, permits no subdelegation, and grants no task/filesystem/Safety/credential/release authority.
+
+M13D also gained a distinct consumed-admission receipt so M13E never infers consumption from permit shape alone.
+
+Evidence: consumed-receipt support `6d65edb28837d541c07c7f574b8a690b57738fb5`; M13E implementation `6d8c4c17ec25267d63f9620af61bb52b28732a0e`; syntax-only correction `b4a176ce48c94b0749064a311ad4781bbfa440d9`; PR #3 CI `#1194` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
 2. **COMPLETE — M13B delegation set validation / sibling isolation contract.** CI `#1182` / `#1183` green.
 3. **COMPLETE — M13C child-task materialization contract.** CI `#1186` / `#1187` green.
 4. **COMPLETE — M13D child execution admission contract.** CI `#1190` / `#1191` green.
-5. **NEXT — M13E durable child execution preparation.** Define the trusted boundary that turns a consumed M13D permit into durable child execution state only if the parent/Safety binding is still current and the narrowed child scope can be represented without widening the parent envelope. Do not start a worker or Cline.
+5. **COMPLETE — M13E durable child execution preparation.** CI `#1194` green.
+6. **NEXT — M13F child execution activation gate.** Convert one durable M13E preparation into an executable child-task runtime input only after revalidating the current parent binding and acquiring a fresh local writer lease. Activation must still stop before Cline/runtime start and must preserve the child’s narrowed scope.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13E — durable child execution preparation.** The next trusted slice must determine and implement the smallest durable representation needed after a one-shot M13D permit is consumed. It must preserve the exact parent project/workspace/Safety/worker binding and narrowed child scope, and must fail closed if current task/registry/Safety semantics cannot represent that child without widening authority. It must not start a worker, Cline/runtime, acquire a writer lease/fence, or create distributed dispatch/admission state.
+**M13F — child execution activation gate.** The next trusted slice may transform one durable M13E preparation into a bounded executable child-runtime input only after fresh parent-binding revalidation and acquisition of a fresh local writer lease tied to the same parent workspace. It must preserve the child’s narrowed allowed paths and protected paths exactly, must not widen to the parent’s broader write scope, and must stop before Cline/runtime start. Distributed execution remains separately gated.
