@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | Planned |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope contract complete (`df0421d2` + typing correction `eeb878ed`, CI `#1178`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13A bounded delegation envelope completed at `df0421d2` with type-only correction `eeb878ed`; CI `#1178` green. Delegation is evidence-only, exact-parent-scope selection only, non-recursive, and grants no execution/tool/release authority.
 - 2026-10-06: M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` using harness `ff2c1f7a` and temporary workflow `df58b787`. The old dispatch replay marker survived process restart, stale fence authority was invalidated, all recovery authority was reacquired fresh, and the final real Cline edit passed independent one-file Git/diff/protected-file checks. Milestone 12 acceptance is complete.
 - 2026-10-05: M12Z-H recovery runtime-start gate completed at `36b86971` with test-only typing correction `d41f5f39`; CI `#1168` green. Recovery can now reach M12I only after exact prepared lease/fence identity revalidation, with no automatic retry/requeue/stale-session resume semantics.
 - 2026-10-05: M12Z-G recovery target-local handoff completed at `1da1eae3` after M12H post-admission entry refactor `91ad150d`; CI `#1163` green on rerun after the known unrelated M12N timing flake. Recovery can now re-enter M12H without double-consuming M12G replay state and still stops before M12I.
@@ -600,6 +601,26 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 ---
 
+# Milestone 13 — Safe Multi-Agent Delegation
+
+Acceptance target: allow the orchestrator/supervisor to decompose already-approved work into bounded child slices without allowing delegation itself to create execution authority, widen Safety scope, invent worker identity, grant tool/network/release capabilities, or permit unbounded recursive fan-out.
+
+## 13A — Bounded delegation authority envelope — COMPLETE
+
+`src/multi-agent-delegation-contract.ts` defines an authority-free child delegation envelope derived only from an already-approved `SupervisorTaskV1`. A child may select only exact path patterns already approved by the parent, retains the same project/workspace/Safety/worker binding, inherits protected paths, and remains `delegation_envelope_only`.
+
+M13A creates no worker, starts no Cline/runtime, acquires no local lease or distributed fence, creates no dispatch/admission, allows no subdelegation or agent teams, and grants no shell/network/MCP/plugin/task/filesystem/Safety/credential/release authority.
+
+Evidence: implementation `df0421d2328b8ac289d05ce2ef2d2c1ee88cad29`; type-only correction `eeb878ed4c6cfd1b4b2584ebc1f6da2e833bf7e7`; CI `#1178` passed typecheck + full suite.
+
+## M13 work queue
+
+1. **COMPLETE — M13A bounded delegation authority envelope.**
+2. **NEXT — M13B delegation set validation / sibling isolation contract.** Validate a bounded set of child envelopes before any execution is possible: same parent binding, unique delegation IDs, no duplicate child objective identity, bounded child count, and either disjoint write scopes or explicit serialized coordination. Still do not create workers or start Cline.
+3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
+
+---
+
 # Current next step
 
-**Milestone 13 — safe multi-agent delegation.** Milestone 12 distributed orchestration and recovery acceptance is complete. Begin with the first bounded M13 authority/delegation contract only; do not introduce broad autonomous fan-out, raw shell authority, release authority, or unbounded worker spawning.
+**M13B — delegation set validation / sibling isolation contract.** The next trusted slice should validate multiple M13A child envelopes as one bounded delegation set before any execution exists: exact same parent task/Safety binding, bounded child count, unique child identities, and no overlapping write scope unless the set is explicitly marked for serialized coordination. It must remain validation/evidence only and must not create workers, leases, fences, dispatches, runtimes, or Cline sessions.
