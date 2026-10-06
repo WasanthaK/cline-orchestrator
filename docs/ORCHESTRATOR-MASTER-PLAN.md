@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child completion/review handoff complete (`bffd4407`, CI `#1202`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`44836b42`, CI `#1204`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13I supervisor child-review decision completed at `44836b42`; PR #3 CI `#1204` green. The supervisor can now return advisory `pass`, bounded `repair`, or `escalate` guidance against one child review handoff, while repair wording that attempts scope/tool/validation/Safety/release widening fails closed and no child scheduling or execution authority is granted.
 - 2026-10-06: M13H child completion/review handoff completed at `bffd4407`; PR #3 CI `#1202` green. Completed child output is now bound to its delegation/preparation identity and narrowed scope while worker prose remains explicitly untrusted; supervisor review sees independent validation/diff/Git/checkpoint/recovery evidence only and gains no scheduling/correction/release authority.
 - 2026-10-06: M13G single-child runtime-start adapter completed through `80430db6`; PR #3 CI `#1200` green. One local child may now start only through the existing ClineRunner + lease-aware Hub safety path using a fresh scheduler-owned child lease and exact narrowed child Safety scope; native subagents/teams/shell/network/MCP/plugins remain disabled, existing child state cannot be resumed/replayed, and lease loss triggers fail-safe abort.
 - 2026-10-06: M13F child execution activation gate completed at `1889fdf8`; PR #3 CI `#1196` green. Activation consumes only an already-fresh scheduler-owned local writer lease, revalidates the full current parent binding, proves exact child/workspace lease identity, and emits a narrowed process-local runtime input with runtime start still unauthorized.
@@ -680,6 +681,14 @@ M13H remains `child_review_evidence_only`: it schedules no sibling, starts no ch
 
 Evidence: `bffd44072bf1dc3851bc3571bdb0e416fcb9c590`; PR #3 CI `#1202` passed typecheck + full suite.
 
+## 13I — Supervisor child-review decision — COMPLETE
+
+`src/multi-agent-child-review-decision.ts` lets a supervisor/reviewer consume one M13H child handoff and emit only `pass`, `repair`, or `escalate` guidance using the existing bounded supervisor reviewer result contract. The decision stays bound to the exact child/delegation/parent identity and remains `child_review_decision_advisory_only`.
+
+Repair guidance is checked for attempts to widen scope or introduce forbidden shell/network/MCP/plugin/subagent/agent-team/validation/Safety/worker/release authority. The slice cannot schedule, resume or start a child, cannot create a new delegation, cannot mutate trusted validation/Safety identity, and grants no task/filesystem/Safety/credential/release authority.
+
+Evidence: `44836b42396828a5688b24d89d50eb903609cce5`; PR #3 CI `#1204` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -690,11 +699,12 @@ Evidence: `bffd44072bf1dc3851bc3571bdb0e416fcb9c590`; PR #3 CI `#1202` passed ty
 6. **COMPLETE — M13F child execution activation gate.** CI `#1196` green.
 7. **COMPLETE — M13G child runtime-start adapter.** CI `#1200` green.
 8. **COMPLETE — M13H child completion/review handoff contract.** CI `#1202` green.
-9. **NEXT — M13I supervisor child-review decision contract.** Let the supervisor evaluate one M13H handoff and emit advisory pass/repair/escalate guidance only. Repair guidance must stay inside the exact child scope and cannot itself schedule, resume, or start a child.
+9. **COMPLETE — M13I supervisor child-review decision contract.** CI `#1204` green.
+10. **NEXT — M13J bounded child repair admission.** Convert an advisory M13I `repair` decision into a new one-shot repair admission only after revalidating the exact same child scope, current parent/Safety binding, prior child terminal state and repair-attempt budget. Do not auto-start or resume the child.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13I — supervisor child-review decision contract.** The next trusted slice should allow the supervisor/reviewer to consume one M13H handoff and return advisory `pass`, `repair`, or `escalate` guidance. A repair instruction must be bounded to the existing child objective/scope and disabled-capability policy; it must not itself schedule/resume/start a child, create a new delegation, widen scope, change validation/Safety/worker identity, or grant release authority.
+**M13J — bounded child repair admission.** The next trusted slice may turn one advisory M13I `repair` decision into a fresh, short-lived, single-use repair admission only if the exact child/delegation/parent/Safety binding is still current, the prior child run is terminal/reviewed, the repair instruction remains inside the existing child scope, and a bounded repair-attempt limit has not been exceeded. The admission itself must remain non-executing: no automatic resume/start, no new delegation, no scope/validation/Safety/worker/tool widening, no distributed execution, and no release authority.
