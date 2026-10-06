@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`#1220`); M13Q sibling execution-set admission complete (`#1222`); M13R sibling execution preparation set complete (`#1224`); M13S sibling execution admission batch complete (`1d8b5bb4`, CI `#1226`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`#1220`); M13Q sibling execution-set admission complete (`#1222`); M13R sibling execution preparation set complete (`#1224`); M13S sibling execution admission batch complete (`#1226`); M13T sibling durable-preparation batch complete (`4bc2f4f0`, CI `#1228`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13T sibling durable-preparation batch completed at `4bc2f4f0`; PR #3 CI `#1228` green. The orchestrator now consumes only M13S-issued sibling tickets into M13D receipts and reuses the existing M13E durable preparation service for those exact children; blocked/terminal siblings cannot produce preparation state and no writer lease/runtime is acquired.
 - 2026-10-06: M13S sibling execution admission batch completed at `1d8b5bb4`; PR #3 CI `#1226` green. Only M13R-prepared siblings can receive fresh short-lived one-shot M13D tickets; blocked/terminal siblings remain ineligible, and the batch still creates no durable preparation, writer lease, fence, or runtime.
 - 2026-10-06: M13R sibling execution preparation set completed at `fd060594`; PR #3 CI `#1224` green. The orchestrator now maps only M13Q-admitted sibling identities back to their exact M13C descriptors and emits non-executable per-child preparation requests; blocked/terminal siblings fail closed and cannot advance.
 - 2026-10-06: M13Q sibling execution-set admission completed at `210b671b`; PR #3 CI `#1222` green. The orchestrator can now determine which already-materialized siblings are eligible at a given point: all pending siblings only for an M13B-proven `parallel_disjoint` set, or exactly one next child for `serialized`; this remains non-executing and creates no workers or leases.
@@ -785,6 +786,14 @@ The batch refuses blocked or terminal siblings, rejects preparation requests tha
 
 Evidence: `1d8b5bb461abd9e80929eafc69c753e4b1448c70`; PR #3 CI `#1226` passed typecheck + full suite.
 
+## 13T — Sibling durable-preparation batch — COMPLETE
+
+`src/multi-agent-sibling-durable-preparation-batch.ts` consumes only M13S-issued child tickets through the existing M13D `consumeForPreparation` path and feeds the resulting receipts into the existing M13E `MultiAgentChildExecutionPreparationService`. No parallel execution mechanism is invented; each sibling remains an independently prepared child with the original delegation/parent/Safety/worker/scope binding.
+
+For `parallel_disjoint`, multiple ticketed siblings may be prepared independently. For `serialized`, more than one ticket is rejected before consumption. Blocked or terminal siblings cannot produce durable preparation state. The batch creates no writer lease, distributed fence, runtime, recursive delegation, distributed execution, or release authority.
+
+Evidence: `4bc2f4f02cdc31d7b8454459601d560e5e386bfd`; PR #3 CI `#1228` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -806,11 +815,12 @@ Evidence: `1d8b5bb461abd9e80929eafc69c753e4b1448c70`; PR #3 CI `#1226` passed ty
 17. **COMPLETE — M13Q sibling execution-set admission.** CI `#1222` green.
 18. **COMPLETE — M13R sibling execution preparation set.** CI `#1224` green.
 19. **COMPLETE — M13S sibling execution admission batch.** CI `#1226` green.
-20. **NEXT — M13T sibling durable-preparation batch.** Consume only M13S-issued child tickets and reuse the existing M13E durable preparation path for those exact siblings. Blocked/terminal siblings remain unable to produce a durable preparation. Stop before writer leases or runtime start.
+20. **COMPLETE — M13T sibling durable-preparation batch.** CI `#1228` green.
+21. **NEXT — M13U sibling activation batch.** Activate only the durable sibling preparations produced by M13T, each under its own fresh scheduler-owned local writer lease and exact parent/Safety revalidation. Preserve parallel/serialized eligibility and stop before runtime start.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13T — sibling durable-preparation batch.** The next trusted slice should consume only the fresh M13S one-shot tickets and feed the resulting receipts into the existing M13E durable child-preparation service for the exact admitted siblings. Parallel sets may prepare multiple disjoint children independently; serialized sets may prepare only the one admitted child. Blocked/terminal siblings must remain unable to produce durable preparation state. No writer lease/fence, runtime start, recursive delegation, distributed child execution, or release authority.
+**M13U — sibling activation batch.** The next trusted slice should activate only M13T durable child preparations, requiring a distinct fresh scheduler-owned local writer lease per child and revalidating the exact parent/Safety binding for each. `parallel_disjoint` may activate multiple already-proven disjoint siblings concurrently; `serialized` may activate exactly one. The slice must stop before Cline/runtime start and must not acquire distributed fences, recurse delegation, or grant release authority.
