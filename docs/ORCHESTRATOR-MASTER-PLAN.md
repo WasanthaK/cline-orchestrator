@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start adapter complete (`84c257d5` + lease-loss corrections through `80430db6`, CI `#1200`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child completion/review handoff complete (`bffd4407`, CI `#1202`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13H child completion/review handoff completed at `bffd4407`; PR #3 CI `#1202` green. Completed child output is now bound to its delegation/preparation identity and narrowed scope while worker prose remains explicitly untrusted; supervisor review sees independent validation/diff/Git/checkpoint/recovery evidence only and gains no scheduling/correction/release authority.
 - 2026-10-06: M13G single-child runtime-start adapter completed through `80430db6`; PR #3 CI `#1200` green. One local child may now start only through the existing ClineRunner + lease-aware Hub safety path using a fresh scheduler-owned child lease and exact narrowed child Safety scope; native subagents/teams/shell/network/MCP/plugins remain disabled, existing child state cannot be resumed/replayed, and lease loss triggers fail-safe abort.
 - 2026-10-06: M13F child execution activation gate completed at `1889fdf8`; PR #3 CI `#1196` green. Activation consumes only an already-fresh scheduler-owned local writer lease, revalidates the full current parent binding, proves exact child/workspace lease identity, and emits a narrowed process-local runtime input with runtime start still unauthorized.
 - 2026-10-06: M13E durable child execution preparation completed at `6d8c4c17` with syntax-only correction `b4a176ce`; PR #3 CI `#1194` green. The consumed M13D admission receipt is revalidated against current full parent execution binding and persisted once as non-executable child preparation outside `TaskStore`, preserving narrowed scope and trusted validation commands without worker/runtime authority.
@@ -669,6 +670,16 @@ Execution reuses the existing `ClineRunner` and `LeaseAwareHubRuntimeFactory`, s
 
 Evidence: implementation `84c257d5476ec989b607c0f0bb7dc68279e2fba2`; lease-loss abort correction `4157fe1c6f5cbb0781589b9082eb32dbcfa28ef5`; fail-safe coverage `80430db673a05c38564f1c75a31a544acdb8d581`; PR #3 CI `#1200` passed typecheck + full suite.
 
+## 13H — Child completion/review handoff — COMPLETE
+
+`src/multi-agent-child-review-handoff.ts` packages one review-ready M13G child completion packet together with the exact M13E preparation and M13B delegation-set identity. The handoff exposes the child objective, acceptance criteria, narrowed approved write scope, protected paths, status and sanitized worker report while preserving the worker report as `untrusted_worker_claims`.
+
+Independent orchestrator evidence is required: a checkpoint must exist, diff safety must be available and passing, and any available validation result must pass. Cross-bound task/project/workspace/delegation evidence fails closed. Aborted, rolled-back or in-progress child states cannot be presented as review-ready completion.
+
+M13H remains `child_review_evidence_only`: it schedules no sibling, starts no child/runtime, performs no automatic repair, permits no recursive delegation or distributed child execution, and grants no task/filesystem/Safety/credential/release authority.
+
+Evidence: `bffd44072bf1dc3851bc3571bdb0e416fcb9c590`; PR #3 CI `#1202` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -678,11 +689,12 @@ Evidence: implementation `84c257d5476ec989b607c0f0bb7dc68279e2fba2`; lease-loss 
 5. **COMPLETE — M13E durable child execution preparation.** CI `#1194` green.
 6. **COMPLETE — M13F child execution activation gate.** CI `#1196` green.
 7. **COMPLETE — M13G child runtime-start adapter.** CI `#1200` green.
-8. **NEXT — M13H child completion/review handoff contract.** Convert a completed single-child run into bounded supervisor review evidence that ties completion, validation/diff evidence, child scope, and parent delegation identity together. Do not schedule siblings, auto-correct, recursively delegate, or start another child from review output.
+8. **COMPLETE — M13H child completion/review handoff contract.** CI `#1202` green.
+9. **NEXT — M13I supervisor child-review decision contract.** Let the supervisor evaluate one M13H handoff and emit advisory pass/repair/escalate guidance only. Repair guidance must stay inside the exact child scope and cannot itself schedule, resume, or start a child.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13H — child completion/review handoff contract.** The next trusted slice should package one completed M13G child run into supervisor-facing review evidence that binds the child result to its delegation set, parent task, narrowed scope, trusted validation result, checkpoint/diff-safety evidence, and worker-output trust level. It must remain review/evidence only: no sibling scheduling, automatic correction, recursive delegation, distributed execution, or release authority.
+**M13I — supervisor child-review decision contract.** The next trusted slice should allow the supervisor/reviewer to consume one M13H handoff and return advisory `pass`, `repair`, or `escalate` guidance. A repair instruction must be bounded to the existing child objective/scope and disabled-capability policy; it must not itself schedule/resume/start a child, create a new delegation, widen scope, change validation/Safety/worker identity, or grant release authority.
