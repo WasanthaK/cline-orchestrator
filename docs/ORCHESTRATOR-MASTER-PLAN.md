@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation / delegation-set validation complete (`7c87296a`, CI `#1182` / `#1183`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`60d3e0b2`, CI `#1186` / `#1187`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13C child-task materialization completed at `60d3e0b2`; push CI `#1186` and PR CI `#1187` green. Validated child delegation is materialized only as a non-executable descriptor outside `TaskStore`, preserving exact parent/Safety binding and narrowed child scope while granting no worker/runtime authority.
 - 2026-10-06: M13B delegation-set validation / sibling isolation completed at `7c87296a`; push CI `#1182` and PR CI `#1183` green. Parallel sibling evidence is permitted only for conservatively disjoint write scopes; overlaps require explicit serialized coordination. The set remains evidence-only and creates no workers/runtime authority.
 - 2026-10-06: M13A bounded delegation envelope completed at `df0421d2` with type-only correction `eeb878ed`; CI `#1178` green. Delegation is evidence-only, exact-parent-scope selection only, non-recursive, and grants no execution/tool/release authority.
 - 2026-10-06: M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` using harness `ff2c1f7a` and temporary workflow `df58b787`. The old dispatch replay marker survived process restart, stale fence authority was invalidated, all recovery authority was reacquired fresh, and the final real Cline edit passed independent one-file Git/diff/protected-file checks. Milestone 12 acceptance is complete.
@@ -622,15 +623,24 @@ Evidence: implementation `df0421d2328b8ac289d05ce2ef2d2c1ee88cad29`; type-only c
 
 Evidence: `7c87296aa02496e099230df662da4910a6e3cf75`; push CI `#1182` and PR CI `#1183` passed typecheck + full suite.
 
+## 13C — Child-task materialization contract — COMPLETE
+
+`src/multi-agent-child-task.ts` converts one validated M13A delegation that is present in an accepted M13B set into a bounded `MultiAgentChildTaskDescriptorV1`. The descriptor copies only the exact parent task/project/workspace/Safety/worker-profile binding and the child’s narrowed objective, acceptance criteria, allowed paths and protected paths.
+
+The descriptor is deliberately not an `OrchestratorTask` and is not persisted through `TaskStore`; existing schedulers therefore cannot accidentally treat materialization as executable work. It remains `child_task_materialization_only`, requires later independent execution admission and fresh writer/fence authority, forbids subdelegation, and grants no task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: `60d3e0b2ce57c14a653816a67143bed64a0c40ba`; push CI `#1186` and PR CI `#1187` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
 2. **COMPLETE — M13B delegation set validation / sibling isolation contract.** CI `#1182` / `#1183` green.
-3. **NEXT — M13C child-task materialization contract.** Convert one validated child delegation into a durable child task descriptor bound to the same parent task/Safety authority, but do not start a worker, acquire a lease/fence, create a dispatch, or invoke Cline.
+3. **COMPLETE — M13C child-task materialization contract.** CI `#1186` / `#1187` green.
+4. **NEXT — M13D child execution admission contract.** Convert a materialized child descriptor into a one-shot execution admission permit only after revalidating the current parent task/Safety binding and sibling coordination mode. The permit must remain non-executing and must not start Cline, acquire a writer lease/fence, or create distributed dispatch state.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13C — child-task materialization contract.** The next trusted slice should turn one validated M13A child envelope from an accepted M13B set into a durable child-task descriptor that remains bound to the exact parent task/project/workspace/Safety/worker profile and narrowed child scope. Materialization must remain non-executing: no worker start, no Cline/runtime, no local lease, distributed fence, dispatch, admission, recursive delegation, shell/network/MCP/plugin, or release authority.
+**M13D — child execution admission contract.** The next trusted slice should issue a bounded one-shot execution-admission permit from one M13C child descriptor only after revalidating the exact current parent task/project/workspace/Safety/worker binding and the M13B sibling coordination mode. The permit must still grant no execution authority by itself: no worker start, Cline/runtime, local lease, distributed fence, distributed dispatch/admission, recursive delegation, shell/network/MCP/plugin, or release authority.
