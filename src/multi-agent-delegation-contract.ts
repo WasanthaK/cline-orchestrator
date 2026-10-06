@@ -253,7 +253,7 @@ export function createMultiAgentDelegationEnvelope(
     );
   }
 
-  return Object.freeze({
+  const envelope: MultiAgentDelegationEnvelopeV1 = {
     schemaVersion: 1,
     delegationId,
     createdAt: createdAt.toISOString(),
@@ -288,5 +288,6 @@ export function createMultiAgentDelegationEnvelope(
     grantsWriterLeaseAuthority: false,
     grantsCredentialAuthority: false,
     grantsReleaseAuthority: false,
-  });
+  };
+  return Object.freeze(envelope);
 }
