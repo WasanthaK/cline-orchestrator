@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`de1afc0d`, CI `#1220`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`#1220`); M13Q sibling execution-set admission complete (`210b671b`, CI `#1222`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13Q sibling execution-set admission completed at `210b671b`; PR #3 CI `#1222` green. The orchestrator can now determine which already-materialized siblings are eligible at a given point: all pending siblings only for an M13B-proven `parallel_disjoint` set, or exactly one next child for `serialized`; this remains non-executing and creates no workers or leases.
 - 2026-10-06: M13P repair-child completion/review handoff completed at `de1afc0d`; PR #3 CI `#1220` green. Completed repair-child output is now bound to the exact repair attempt, fresh repair-child identity, prior child, original delegation/parent binding and narrowed scope while worker prose remains untrusted and independent validation/diff/checkpoint evidence remains authoritative.
 - 2026-10-06: M13O repair-child runtime-start adapter completed at `10f3aea0`; PR #3 CI `#1218` green. A repair child now starts only as a fresh TaskStore identity with zeroed session/run/recovery counters, bounded repair instruction, exact narrowed write scope and lease-aware runtime safety; prior-child task/session/checkpoint/lease identity reuse remains prohibited.
 - 2026-10-06: M13N repair-child activation gate completed at `a5db8d2d`; PR #3 CI `#1216` green. Activation now requires a fresh scheduler-owned lease for the new repair-child task ID, revalidates the exact inherited parent/Safety binding, emits only process-local runtime input with `runtimeStartAuthorized: false`, and rejects prior-child lease/runtime/session/checkpoint reuse.
@@ -756,6 +757,16 @@ M13P remains review-only: it does not issue another repair admission, schedule/s
 
 Evidence: `de1afc0d95eafd1fe21ea03b26efc5246baa76b3`; PR #3 CI `#1220` passed typecheck + full suite.
 
+## 13Q — Sibling execution-set admission — COMPLETE
+
+`src/multi-agent-sibling-execution-set-admission.ts` consumes one already-validated M13B delegation set, the exact M13C materialized children for every delegation, and explicit current child-state evidence. It returns only which child identities are eligible now.
+
+For `parallel_disjoint`, all pending siblings may be admitted only when the M13B set carries no overlap evidence. For `serialized`, at most one next pending child is admitted and no second child is admitted while one sibling is already running. Cross-bound/missing/duplicate child or state evidence fails closed.
+
+M13Q remains `sibling_execution_set_admission_only`: no child execution admission token, worker start, local writer lease, distributed fence, runtime, recursive delegation, distributed child execution, or release authority is created.
+
+Evidence: `210b671b6e2aa02a5ee2f0db598a88ff1e99f4d8`; PR #3 CI `#1222` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -774,11 +785,12 @@ Evidence: `de1afc0d95eafd1fe21ea03b26efc5246baa76b3`; PR #3 CI `#1220` passed ty
 14. **COMPLETE — M13N repair-child activation gate.** CI `#1216` green.
 15. **COMPLETE — M13O repair-child runtime-start adapter.** CI `#1218` green.
 16. **COMPLETE — M13P repair-child completion/review handoff.** CI `#1220` green.
-17. **NEXT — M13Q sibling execution-set admission.** From one validated M13B delegation set, admit only the currently eligible children according to coordination mode: parallel only for proven-disjoint scopes, serialized one-at-a-time for overlapping scopes. Admission must remain non-executing and must not start workers or acquire leases.
+17. **COMPLETE — M13Q sibling execution-set admission.** CI `#1222` green.
+18. **NEXT — M13R sibling execution preparation set.** Convert the child identities admitted by M13Q into bounded per-child execution-preparation requests using only already-materialized M13C descriptors, while preserving coordination mode and preventing any non-admitted sibling from advancing. Do not issue leases or start workers yet.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13Q — sibling execution-set admission.** The next trusted slice should take an already validated M13B delegation set and determine which child identities are eligible for execution without starting any worker. `parallel_disjoint` may admit multiple siblings only when the existing set evidence proves disjoint scopes; `serialized` may admit exactly one next child at a time. It must remain admission/evidence only: no worker start, lease/fence acquisition, runtime, automatic repair, recursive delegation, distributed child execution, or release authority.
+**M13R — sibling execution preparation set.** The next trusted slice should map one M13Q admission result back onto the exact M13C materialized child descriptors and emit only per-child preparation requests for the admitted identities. The set must preserve the original coordination mode and exact parent/Safety/worker/scope bindings, and any blocked sibling must remain unable to advance. No child admission token, writer lease/fence, runtime start, recursive delegation, distributed execution, or release authority yet.
