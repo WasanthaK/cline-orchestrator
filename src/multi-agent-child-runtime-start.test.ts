@@ -167,6 +167,7 @@ test("fresh activation persists narrowed child then invokes existing runner once
           captured=task;
           return {...task,status:"completed",finishReason:"completed"} as OrchestratorTask;
         },
+        async abort(){ return captured as any; },
         async close(){},
       }),
       now:()=>new Date("2026-10-06T08:01:00.000Z"),
@@ -204,7 +205,11 @@ test("existing child state prevents replay/resume",async()=>{
         checkedAt:new Date().toISOString(),ok:true,supported:true,providerId:worker.providerId,
         modelId:worker.modelId,code:"ok",message:"ok",
       }),
-      runnerFactory:()=>({async start(task){runnerCalls+=1;return task;},async close(){}}),
+      runnerFactory:()=>({
+        async start(task){runnerCalls+=1;return task;},
+        async abort(_taskId,_reason){return undefined as any;},
+        async close(){},
+      }),
     });
     await assert.rejects(
       ()=>starter.start(ctx),
@@ -240,11 +245,61 @@ test("parent drift and workspace revision drift fail before runtime",async()=>{
           checkedAt:new Date().toISOString(),ok:true,supported:true,providerId:worker.providerId,
           modelId:worker.modelId,code:"ok",message:"ok",
         }),
-        runnerFactory:()=>({async start(task){runnerCalls+=1;return task;},async close(){}}),
+        runnerFactory:()=>({
+          async start(task){runnerCalls+=1;return task;},
+          async abort(_taskId,_reason){return undefined as any;},
+          async close(){},
+        }),
       });
       await assert.rejects(()=>starter.start(ctx));
       assert.equal(runnerCalls,0);
     }
+  }finally{
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
+
+test("lease loss during child runtime triggers fail-safe abort",async()=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),"m13g-"));
+  try{
+    const ctx=activation(root);
+    const controller = new AbortController();
+    const baseClaim = ctx.lease.currentClaim();
+    ctx.lease = {
+      ...ctx.lease,
+      signal: controller.signal,
+      currentClaim: () => structuredClone(baseClaim),
+      validateCurrent: async () => undefined,
+    };
+    let abortCalls=0;
+    let releaseStart: (()=>void)|undefined;
+    const blocker=new Promise<void>((resolve)=>{releaseStart=resolve;});
+    const starter=new MultiAgentChildRuntimeStarter({
+      parentBinding:{async revalidateCurrent(){return current(ctx.runtimeInput);}},
+      workspaces:{async resolveCurrent(){return {workspaceId,workspaceRegistryRevision:2,canonicalRoot:root};}},
+      resolveWorkerProfile:()=>worker,
+      baseRuntimeFactory:{} as ClineRuntimeFactory,
+      providerPreflight:async()=>({
+        checkedAt:new Date().toISOString(),ok:true,supported:true,providerId:worker.providerId,
+        modelId:worker.modelId,code:"ok",message:"ok",
+      }),
+      runnerFactory:()=>({
+        async start(task){
+          controller.abort(new Error("lease lost"));
+          await blocker;
+          return task;
+        },
+        async abort(){
+          abortCalls+=1;
+          releaseStart?.();
+          return undefined as any;
+        },
+        async close(){},
+      }),
+    });
+    await starter.start(ctx);
+    assert.equal(abortCalls,1);
   }finally{
     await rm(root,{recursive:true,force:true});
   }
