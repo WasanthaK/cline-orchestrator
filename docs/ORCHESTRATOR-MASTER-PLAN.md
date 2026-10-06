@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`60d3e0b2`, CI `#1186` / `#1187`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`43d43747`, CI `#1190` / `#1191`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13D one-shot child execution admission merged via PR #1 at `43d43747`; push CI `#1190` and PR CI `#1191` green. The short-lived single-use permit revalidates current parent/Safety binding and delegation-set mode but remains non-executing and grants no worker/filesystem/release authority.
 - 2026-10-06: M13C child-task materialization completed at `60d3e0b2`; push CI `#1186` and PR CI `#1187` green. Validated child delegation is materialized only as a non-executable descriptor outside `TaskStore`, preserving exact parent/Safety binding and narrowed child scope while granting no worker/runtime authority.
 - 2026-10-06: M13B delegation-set validation / sibling isolation completed at `7c87296a`; push CI `#1182` and PR CI `#1183` green. Parallel sibling evidence is permitted only for conservatively disjoint write scopes; overlaps require explicit serialized coordination. The set remains evidence-only and creates no workers/runtime authority.
 - 2026-10-06: M13A bounded delegation envelope completed at `df0421d2` with type-only correction `eeb878ed`; CI `#1178` green. Delegation is evidence-only, exact-parent-scope selection only, non-recursive, and grants no execution/tool/release authority.
@@ -631,16 +632,25 @@ The descriptor is deliberately not an `OrchestratorTask` and is not persisted th
 
 Evidence: `60d3e0b2ce57c14a653816a67143bed64a0c40ba`; push CI `#1186` and PR CI `#1187` passed typecheck + full suite.
 
+## 13D — One-shot child execution admission — COMPLETE
+
+`src/multi-agent-child-execution-admission.ts` issues a short-lived, single-use admission token for exactly one M13C child descriptor only after revalidating the current parent task/Safety binding and exact M13B delegation-set membership/coordination mode. Terminal parents or pending human escalation fail closed.
+
+The permit remains `child_execution_admission_only`; issuing or consuming it does not create/start a worker, invoke Cline/runtime, acquire a local writer lease or distributed fence, create distributed dispatch/admission state, enable recursive delegation, or grant task/filesystem/Safety/credential/release authority.
+
+Evidence: `43d4374706928a5b639511a957875c26ce7baa5f`; push CI `#1190` and PR CI `#1191` passed before merge into `main` at `e749117ff4d795e0de0dad74ac09190eb186a5f1`.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
 2. **COMPLETE — M13B delegation set validation / sibling isolation contract.** CI `#1182` / `#1183` green.
 3. **COMPLETE — M13C child-task materialization contract.** CI `#1186` / `#1187` green.
-4. **NEXT — M13D child execution admission contract.** Convert a materialized child descriptor into a one-shot execution admission permit only after revalidating the current parent task/Safety binding and sibling coordination mode. The permit must remain non-executing and must not start Cline, acquire a writer lease/fence, or create distributed dispatch state.
+4. **COMPLETE — M13D child execution admission contract.** CI `#1190` / `#1191` green.
+5. **NEXT — M13E durable child execution preparation.** Define the trusted boundary that turns a consumed M13D permit into durable child execution state only if the parent/Safety binding is still current and the narrowed child scope can be represented without widening the parent envelope. Do not start a worker or Cline.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13D — child execution admission contract.** The next trusted slice should issue a bounded one-shot execution-admission permit from one M13C child descriptor only after revalidating the exact current parent task/project/workspace/Safety/worker binding and the M13B sibling coordination mode. The permit must still grant no execution authority by itself: no worker start, Cline/runtime, local lease, distributed fence, distributed dispatch/admission, recursive delegation, shell/network/MCP/plugin, or release authority.
+**M13E — durable child execution preparation.** The next trusted slice must determine and implement the smallest durable representation needed after a one-shot M13D permit is consumed. It must preserve the exact parent project/workspace/Safety/worker binding and narrowed child scope, and must fail closed if current task/registry/Safety semantics cannot represent that child without widening authority. It must not start a worker, Cline/runtime, acquire a writer lease/fence, or create distributed dispatch/admission state.
