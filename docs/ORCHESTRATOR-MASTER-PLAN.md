@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child execution preparation complete (`6d8c4c17` + syntax fix `b4a176ce`, CI `#1194`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child execution activation gate complete (`1889fdf8`, CI `#1196`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13F child execution activation gate completed at `1889fdf8`; PR #3 CI `#1196` green. Activation consumes only an already-fresh scheduler-owned local writer lease, revalidates the full current parent binding, proves exact child/workspace lease identity, and emits a narrowed process-local runtime input with runtime start still unauthorized.
 - 2026-10-06: M13E durable child execution preparation completed at `6d8c4c17` with syntax-only correction `b4a176ce`; PR #3 CI `#1194` green. The consumed M13D admission receipt is revalidated against current full parent execution binding and persisted once as non-executable child preparation outside `TaskStore`, preserving narrowed scope and trusted validation commands without worker/runtime authority.
 - 2026-10-06: M13D one-shot child execution admission merged via PR #1 at `43d43747`; push CI `#1190` and PR CI `#1191` green. The short-lived single-use permit revalidates current parent/Safety binding and delegation-set mode but remains non-executing and grants no worker/filesystem/release authority.
 - 2026-10-06: M13C child-task materialization completed at `60d3e0b2`; push CI `#1186` and PR CI `#1187` green. Validated child delegation is materialized only as a non-executable descriptor outside `TaskStore`, preserving exact parent/Safety binding and narrowed child scope while granting no worker/runtime authority.
@@ -651,6 +652,14 @@ M13D also gained a distinct consumed-admission receipt so M13E never infers cons
 
 Evidence: consumed-receipt support `6d65edb28837d541c07c7f574b8a690b57738fb5`; M13E implementation `6d8c4c17ec25267d63f9620af61bb52b28732a0e`; syntax-only correction `b4a176ce48c94b0749064a311ad4781bbfa440d9`; PR #3 CI `#1194` passed typecheck + full suite.
 
+## 13F — Child execution activation gate — COMPLETE
+
+`src/multi-agent-child-execution-activation.ts` accepts one durable M13E preparation only inside an already-acquired scheduler-owned local writer lease. It revalidates the complete current parent project/workspace/registry/Safety policy/profile/worker/validation binding, then requires the live lease task ID to equal the child task ID and the lease workspace/owner/fence identity to remain unchanged across current-state validation.
+
+The output is a process-local narrowed child runtime input plus activation evidence. `runtimeStartAuthorized` remains false; the slice does not acquire the lease itself, start Cline/runtime, acquire a distributed fence, create distributed dispatch/admission state, permit subdelegation, or grant task/filesystem/Safety/credential/release authority.
+
+Evidence: `1889fdf89f2753decae4afa84ab99ce9709845f2`; PR #3 CI `#1196` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -658,11 +667,12 @@ Evidence: consumed-receipt support `6d65edb28837d541c07c7f574b8a690b57738fb5`; M
 3. **COMPLETE — M13C child-task materialization contract.** CI `#1186` / `#1187` green.
 4. **COMPLETE — M13D child execution admission contract.** CI `#1190` / `#1191` green.
 5. **COMPLETE — M13E durable child execution preparation.** CI `#1194` green.
-6. **NEXT — M13F child execution activation gate.** Convert one durable M13E preparation into an executable child-task runtime input only after revalidating the current parent binding and acquiring a fresh local writer lease. Activation must still stop before Cline/runtime start and must preserve the child’s narrowed scope.
+6. **COMPLETE — M13F child execution activation gate.** CI `#1196` green.
+7. **NEXT — M13G child runtime-start adapter.** Start one local child worker only from a valid M13F activation context, with the exact narrowed child Safety binding revalidated again immediately before runtime start. Do not enable native Cline subagents/agent teams, recursive delegation, distributed child execution, or sibling fan-out yet.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13F — child execution activation gate.** The next trusted slice may transform one durable M13E preparation into a bounded executable child-runtime input only after fresh parent-binding revalidation and acquisition of a fresh local writer lease tied to the same parent workspace. It must preserve the child’s narrowed allowed paths and protected paths exactly, must not widen to the parent’s broader write scope, and must stop before Cline/runtime start. Distributed execution remains separately gated.
+**M13G — child runtime-start adapter.** The next trusted slice may start exactly one local child worker only from a valid M13F activation context and only after a final current-parent/Safety/lease revalidation. The child runtime must use the narrowed child allowed/protected path envelope, external trusted validation remains orchestrator-owned, and native Cline subagents/agent teams/plugins/MCP/network/shell remain disabled. No recursive delegation, sibling fan-out, distributed child execution, or release authority yet.
