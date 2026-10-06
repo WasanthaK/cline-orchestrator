@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`a5db8d2d`, CI `#1216`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`10f3aea0`, CI `#1218`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13O repair-child runtime-start adapter completed at `10f3aea0`; PR #3 CI `#1218` green. A repair child now starts only as a fresh TaskStore identity with zeroed session/run/recovery counters, bounded repair instruction, exact narrowed write scope and lease-aware runtime safety; prior-child task/session/checkpoint/lease identity reuse remains prohibited.
 - 2026-10-06: M13N repair-child activation gate completed at `a5db8d2d`; PR #3 CI `#1216` green. Activation now requires a fresh scheduler-owned lease for the new repair-child task ID, revalidates the exact inherited parent/Safety binding, emits only process-local runtime input with `runtimeStartAuthorized: false`, and rejects prior-child lease/runtime/session/checkpoint reuse.
 - 2026-10-06: M13M repair-child durable preparation completed at `5e242a39`; PR #3 CI `#1214` green. A consumed M13L admission can now persist one new non-executable repair-child preparation after fresh parent/Safety revalidation and proof the prior child remains terminal, while carrying no prior-child runtime/checkpoint/session state.
 - 2026-10-06: M13L repair-child execution admission completed at `9320d5ea` with test-import correction `4b22362b`; PR #3 CI `#1212` green. A fresh repair child can now receive only a short-lived single-use non-executing permit after full inherited parent/Safety revalidation and proof that the prior child remains terminal; prior child/session/lease reuse stays prohibited.
@@ -736,6 +737,14 @@ The prior child task ID is explicitly rejected as writer authority. Lease identi
 
 Evidence: `a5db8d2d36c311621f2e9cbd45fcc62cb810159a`; PR #3 CI `#1216` passed typecheck + full suite.
 
+## 13O — Repair-child runtime-start adapter — COMPLETE
+
+`src/multi-agent-repair-child-runtime-start.ts` starts exactly one local repair child only from a valid M13N activation context. It performs one final parent/Safety/workspace/lease revalidation, resolves and preflights the existing worker profile, refuses any pre-existing repair-child TaskStore state, then creates a fresh repair-child task whose session/run/recovery/retry counters all begin from zero.
+
+The repair-child goal includes the bounded repair instruction and attempt number while preserving the original child objective, acceptance criteria, trusted validation commands and exact narrowed approved/protected path envelope. Execution reuses the existing `ClineRunner` + lease-aware Hub safety boundary. Prior-child task/session/checkpoint/runtime/lease identity is never reused; native subagents/teams, model shell/network/MCP/plugins, distributed repair execution and release authority remain disabled. Lease loss aborts fail-safe.
+
+Evidence: `10f3aea0b54ee1c350ca6ebfda5baa55bedb9dc9`; PR #3 CI `#1218` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -752,11 +761,12 @@ Evidence: `a5db8d2d36c311621f2e9cbd45fcc62cb810159a`; PR #3 CI `#1216` passed ty
 12. **COMPLETE — M13L repair-child execution admission.** CI `#1212` green.
 13. **COMPLETE — M13M repair-child durable preparation.** CI `#1214` green.
 14. **COMPLETE — M13N repair-child activation gate.** CI `#1216` green.
-15. **NEXT — M13O repair-child runtime-start adapter.** Start exactly one local repair child only from valid M13N activation evidence, using the existing narrowed lease-aware runtime path and a fresh repair-child TaskStore identity. Do not reuse prior-child task/session/checkpoint state, enable native subagents/teams, or distribute the repair child.
+15. **COMPLETE — M13O repair-child runtime-start adapter.** CI `#1218` green.
+16. **NEXT — M13P repair-child completion/review handoff.** Package one completed M13O repair-child run into supervisor review evidence bound to the repair attempt, prior child, original delegation, narrowed scope, and independent validation/diff/checkpoint evidence. Do not auto-issue another repair admission or schedule anything from the handoff.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13O — repair-child runtime-start adapter.** The next trusted slice may start exactly one local repair child only from valid M13N activation evidence, after one final parent/Safety/workspace/lease revalidation. It must create a fresh repair-child TaskStore record, include the bounded repair instruction in the child goal/context, preserve the exact narrowed write scope and validation commands, and reuse none of the prior child task/session/checkpoint/runtime state. Native subagents/teams, distributed repair execution and release authority remain disabled.
+**M13P — repair-child completion/review handoff.** The next trusted slice should package one completed M13O repair-child run into bounded supervisor-facing evidence tied to the exact repair attempt, fresh repair-child identity, prior child identity, original delegation/parent binding and narrowed scope. It must require independent validation/diff/checkpoint evidence and preserve worker prose as untrusted. The handoff must remain review-only and must not schedule another repair, start a child, widen scope, distribute execution, or grant release authority.
