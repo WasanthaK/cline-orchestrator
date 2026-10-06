@@ -1,0 +1,219 @@
+import crypto from "node:crypto";
+import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { checkpointLimitsFromEnvironment } from "./checkpoint-config.js";
+import { diffSafetyPolicyFromEnvironment } from "./diff-safety-config.js";
+import { evaluateDiffSafety } from "./diff-safety.js";
+import { createGitRollbackCheckpoint, finalizeGitRollbackCheckpoint } from "./git-checkpoint.js";
+import { captureGitSnapshot } from "./git-state.js";
+import { ProjectMemoryStore } from "./project-memory.js";
+import type { GitSnapshot, OrchestratorTask, TaskEvent, TaskEventType, TaskStatus } from "./types.js";
+
+function isTerminalStatus(status: TaskStatus): boolean {
+  return status === "completed" || status === "validation_failed" || status === "failed" || status === "aborted" || status === "rolled_back";
+}
+
+function gitSnapshotMessage(phase: "before" | "after", snapshot: GitSnapshot): string {
+  if (!snapshot.available) return `Git ${phase} snapshot unavailable`;
+  const branch = snapshot.branch ?? "(detached)";
+  const head = snapshot.head?.slice(0, 8) ?? "unknown";
+  return `Git ${phase}: ${branch}@${head}; dirty=${snapshot.dirty ? "yes" : "no"}; changed=${snapshot.changedFiles ?? 0}`;
+}
+
+function diffSafetyFailureMessage(task: OrchestratorTask): string {
+  const failures = task.lastDiffSafety?.failures ?? [];
+  if (failures.length === 0) return "Diff safety policy failed";
+  return `Diff safety policy failed: ${failures.map((item) => item.message).join("; ")}`;
+}
+
+const WINDOWS_ATOMIC_RENAME_RETRY_DELAYS_MS = [10, 25, 50, 100, 200] as const;
+const WINDOWS_ATOMIC_RENAME_RETRY_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+
+type AtomicWriteOptions = {
+  platform?: NodeJS.Platform;
+  renameFile?: typeof rename;
+  sleep?: (delayMs: number) => Promise<void>;
+};
+
+function defaultSleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+export async function atomicWriteUtf8(
+  targetPath: string,
+  content: string,
+  options: AtomicWriteOptions = {},
+): Promise<void> {
+  const tempPath = `${targetPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  const platform = options.platform ?? process.platform;
+  const renameFile = options.renameFile ?? rename;
+  const sleep = options.sleep ?? defaultSleep;
+
+  try {
+    await writeFile(tempPath, content, { encoding: "utf8", flag: "wx" });
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await renameFile(tempPath, targetPath);
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException)?.code;
+        const delayMs = WINDOWS_ATOMIC_RENAME_RETRY_DELAYS_MS[attempt];
+        if (
+          platform !== "win32"
+          || !code
+          || !WINDOWS_ATOMIC_RENAME_RETRY_CODES.has(code)
+          || delayMs === undefined
+        ) {
+          throw error;
+        }
+        await sleep(delayMs);
+      }
+    }
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+export class TaskNotFoundError extends Error {
+  constructor(public readonly taskId: string, public readonly workspace: string) {
+    super(`Task '${taskId}' was not found in ${path.join(workspace, ".orchestrator", "tasks")}`);
+    this.name = "TaskNotFoundError";
+  }
+}
+
+export class TaskStore {
+  private readonly projectMemory: ProjectMemoryStore;
+
+  constructor(private readonly rootDir: string) {
+    this.projectMemory = new ProjectMemoryStore(rootDir);
+  }
+
+  private tasksDir() { return path.join(this.rootDir, ".orchestrator", "tasks"); }
+  private eventsDir() { return path.join(this.rootDir, ".orchestrator", "events"); }
+  private taskPath(id: string) { return path.join(this.tasksDir(), `${id}.json`); }
+  private eventPath(id: string) { return path.join(this.eventsDir(), `${id}.jsonl`); }
+
+  private async previousTask(id: string): Promise<OrchestratorTask | undefined> {
+    try { return JSON.parse(await readFile(this.taskPath(id), "utf8")) as OrchestratorTask; }
+    catch (error) { if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return undefined; throw error; }
+  }
+
+  private async inferEvents(previous: OrchestratorTask | undefined, task: OrchestratorTask) {
+    if (!previous) return;
+    const stallIncreased = (task.stallCount ?? 0) > (previous.stallCount ?? 0);
+    const retryIncreased = (task.retryCount ?? 0) > (previous.retryCount ?? 0);
+    const recoveryIncreased = (task.recoveryCount ?? 0) > (previous.recoveryCount ?? 0);
+    const generationIncreased = (task.sessionGeneration ?? 0) > (previous.sessionGeneration ?? 0);
+    const validationChanged = task.lastValidation !== undefined && task.lastValidation.completedAt !== previous.lastValidation?.completedAt;
+    const diffSafetyChanged = task.lastDiffSafety !== undefined && task.lastDiffSafety.checkedAt !== previous.lastDiffSafety?.checkedAt;
+    const checkpointChanged = task.lastRunCheckpoint !== undefined && task.lastRunCheckpoint.createdAt !== previous.lastRunCheckpoint?.createdAt;
+    const beforeSnapshot = task.lastRunGit?.before;
+    const afterSnapshot = task.lastRunGit?.after;
+    const beforeChanged = beforeSnapshot !== undefined && beforeSnapshot.capturedAt !== previous.lastRunGit?.before?.capturedAt;
+    const afterChanged = afterSnapshot !== undefined && afterSnapshot.capturedAt !== previous.lastRunGit?.after?.capturedAt;
+
+    if (checkpointChanged && task.lastRunCheckpoint) {
+      const checkpoint = task.lastRunCheckpoint;
+      await this.appendEvent(task.id, checkpoint.available ? "checkpoint_created" : "checkpoint_unavailable", {
+        status: task.status,
+        message: checkpoint.available ? `Rollback checkpoint created for run ${checkpoint.runCount}` : `Rollback checkpoint unavailable: ${checkpoint.error ?? "unknown error"}`,
+        data: { runCount: checkpoint.runCount, available: checkpoint.available, head: checkpoint.head, branch: checkpoint.branch, untrackedFiles: checkpoint.untrackedFiles, untrackedBytes: checkpoint.untrackedBytes, error: checkpoint.error },
+      });
+    }
+    if (beforeChanged && beforeSnapshot) await this.appendEvent(task.id, "git_snapshot", { status: task.status, message: gitSnapshotMessage("before", beforeSnapshot), data: { phase: "before", snapshot: beforeSnapshot } });
+    if (stallIncreased) await this.appendEvent(task.id, "stalled", { status: task.status, message: `Watchdog detected ${task.lastStallSilenceMs ?? "unknown"}ms without Cline activity`, data: { stallCount: task.stallCount ?? 0, silenceMs: task.lastStallSilenceMs, sessionId: task.clineSessionId } });
+    if (retryIncreased) await this.appendEvent(task.id, "retrying", { status: task.status, message: `Retrying task after ${task.lastRetryReason ?? "interruption"}`, data: { retryCount: task.retryCount ?? 0, reason: task.lastRetryReason } });
+
+    if (generationIncreased) {
+      if (recoveryIncreased) await this.appendEvent(task.id, "session_recovered", { status: task.status, message: `Recovered Cline session generation ${task.sessionGeneration ?? 0}`, data: { generation: task.sessionGeneration, recoveryCount: task.recoveryCount, reason: task.lastRecoveryReason, previousSessionId: task.lastRecoveredFromSessionId, sessionId: task.clineSessionId } });
+      else await this.appendEvent(task.id, "session_started", { status: task.status, message: `Started Cline session generation ${task.sessionGeneration ?? 0}`, data: { generation: task.sessionGeneration, sessionId: task.clineSessionId } });
+    }
+
+    if (afterChanged && afterSnapshot) await this.appendEvent(task.id, "git_snapshot", { status: task.status, message: gitSnapshotMessage("after", afterSnapshot), data: { phase: "after", snapshot: afterSnapshot } });
+    if (task.status !== previous.status && task.status === "validating") await this.appendEvent(task.id, "validation_started", { status: task.status, message: `Running ${task.validationCommands?.length ?? 0} validation command(s)`, data: { validationRunCount: task.validationRunCount ?? 0, commands: task.validationCommands ?? [] } });
+
+    if (validationChanged && task.lastValidation) {
+      if (task.lastValidation.passed) await this.appendEvent(task.id, "validation_passed", { status: task.status, message: `Validation passed (${task.lastValidation.commandsRun}/${task.lastValidation.commandsRequested} commands)`, data: { validation: task.lastValidation } });
+      else await this.appendEvent(task.id, "validation_failed", { status: task.status, message: `Validation failed after ${task.lastValidation.commandsRun}/${task.lastValidation.commandsRequested} commands`, data: { validation: task.lastValidation } });
+    }
+
+    if (diffSafetyChanged && task.lastDiffSafety) {
+      await this.appendEvent(task.id, "diff_safety_started", { status: task.status, message: "Evaluating final workspace diff against the pre-run checkpoint", data: { checkpointCreatedAt: task.lastDiffSafety.checkpointCreatedAt } });
+      for (const warning of task.lastDiffSafety.warnings) await this.appendEvent(task.id, "diff_safety_warning", { status: task.status, message: warning.message, data: { warning } });
+      await this.appendEvent(task.id, task.lastDiffSafety.passed ? "diff_safety_passed" : "diff_safety_failed", { status: task.status, message: task.lastDiffSafety.finalDiffSummary, data: { result: task.lastDiffSafety } });
+    }
+
+    if (task.status !== previous.status) {
+      if (task.status === "repairing") await this.appendEvent(task.id, "validation_repairing", { status: task.status, message: `Starting validation repair ${task.validationRepairCount ?? 0}`, data: { validationRepairCount: task.validationRepairCount ?? 0, validationRunCount: task.validationRunCount ?? 0 } });
+      else if (task.status === "running" && !retryIncreased && previous.status !== "repairing") await this.appendEvent(task.id, "run_started", { status: task.status, message: `Run ${task.runCount ?? 1} started`, data: { runCount: task.runCount ?? 1 } });
+      else if (task.status === "completed") await this.appendEvent(task.id, "completed", { status: task.status, message: "Task completed", data: { finishReason: task.finishReason } });
+      else if (task.status === "failed") await this.appendEvent(task.id, "failed", { status: task.status, message: task.error ?? "Task failed", data: { finishReason: task.finishReason } });
+      else if (task.status === "aborted") await this.appendEvent(task.id, "aborted", { status: task.status, message: task.abortReason ?? task.error ?? "Task aborted", data: { finishReason: task.finishReason, abortRequestedAt: task.abortRequestedAt } });
+    }
+  }
+
+  async save(task: OrchestratorTask): Promise<void> {
+    await this.projectMemory.ensure();
+    await mkdir(this.tasksDir(), { recursive: true });
+    const previous = await this.previousTask(task.id);
+
+    if (task.status === "completed") {
+      if ((task.validationCommands?.length ?? 0) > 0 && !task.lastValidation?.passed) {
+        task.status = "validating";
+        if (previous?.status !== "validating") task.validationRunCount = (task.validationRunCount ?? 0) + 1;
+      } else if (!task.lastDiffSafety?.passed) {
+        const policy = diffSafetyPolicyFromEnvironment();
+        task.lastDiffSafety = await evaluateDiffSafety(this.rootDir, task.lastRunCheckpoint, policy, task.expectedChangedPaths ?? policy.expectedChangedPaths);
+        if (!task.lastDiffSafety.passed) {
+          task.status = "failed";
+          task.finishReason = "diff_safety_failed";
+          task.error = diffSafetyFailureMessage(task);
+        }
+      }
+    }
+
+    if (previous) {
+      const runStarted = task.status === "running" && previous.status !== "running" && previous.status !== "repairing" && (task.runCount ?? 0) > (previous.runCount ?? 0);
+      if (runStarted) {
+        const limits = checkpointLimitsFromEnvironment();
+        task.lastRunCheckpoint = await createGitRollbackCheckpoint(this.rootDir, task.id, task.runCount ?? 1, limits);
+        task.lastRunGit = { before: await captureGitSnapshot(this.rootDir) };
+        task.lastDiffSafety = undefined;
+      }
+      const terminalTransition = isTerminalStatus(task.status) && !isTerminalStatus(previous.status);
+      if (terminalTransition && task.lastRunGit?.before && !task.lastRunGit.after) task.lastRunGit = { ...task.lastRunGit, after: await captureGitSnapshot(this.rootDir) };
+      if (terminalTransition && task.lastRunCheckpoint && !task.lastRunCheckpoint.restoredAt) task.lastRunCheckpoint = await finalizeGitRollbackCheckpoint(this.rootDir, task.lastRunCheckpoint, checkpointLimitsFromEnvironment());
+    }
+
+    task.updatedAt = new Date().toISOString();
+    await atomicWriteUtf8(this.taskPath(task.id), JSON.stringify(task, null, 2) + "\n");
+    await this.inferEvents(previous, task);
+    await this.projectMemory.recordTask(task);
+  }
+
+  async appendEvent(taskId: string, type: TaskEventType, options: { status?: TaskStatus; message?: string; data?: Record<string, unknown> } = {}): Promise<TaskEvent> {
+    await mkdir(this.eventsDir(), { recursive: true });
+    const event: TaskEvent = { id: crypto.randomUUID(), taskId, type, timestamp: new Date().toISOString(), ...options };
+    await appendFile(this.eventPath(taskId), JSON.stringify(event) + "\n", "utf8");
+    return event;
+  }
+
+  async events(taskId: string): Promise<TaskEvent[]> {
+    try { const raw = await readFile(this.eventPath(taskId), "utf8"); return raw.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as TaskEvent); }
+    catch (error) { if ((error as NodeJS.ErrnoException)?.code === "ENOENT") { await this.load(taskId); return []; } throw error; }
+  }
+
+  async load(id: string): Promise<OrchestratorTask> {
+    try { return JSON.parse(await readFile(this.taskPath(id), "utf8")) as OrchestratorTask; }
+    catch (error) { if ((error as NodeJS.ErrnoException)?.code === "ENOENT") throw new TaskNotFoundError(id, this.rootDir); throw error; }
+  }
+
+  async list(): Promise<OrchestratorTask[]> {
+    let filenames: string[];
+    try { filenames = await readdir(this.tasksDir()); }
+    catch (error) { if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return []; throw error; }
+    const tasks = await Promise.all(filenames.filter((name) => name.endsWith(".json")).map(async (name) => JSON.parse(await readFile(path.join(this.tasksDir(), name), "utf8")) as OrchestratorTask));
+    return tasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+}
