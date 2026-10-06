@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`#1220`); M13Q sibling execution-set admission complete (`#1222`); M13R sibling execution preparation set complete (`#1224`); M13S sibling execution admission batch complete (`#1226`); M13T sibling durable-preparation batch complete (`4bc2f4f0`, CI `#1228`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`#1220`); M13Q sibling execution-set admission complete (`#1222`); M13R sibling execution preparation set complete (`#1224`); M13S sibling execution admission batch complete (`#1226`); M13T sibling durable-preparation batch complete (`#1228`); M13U sibling writer-lease compatibility gate complete (`6818a057`, CI `#1231`) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: M13U sibling writer-lease compatibility gate completed at `6818a057`; PR #3 CI `#1231` green. The gate preserves the existing `maxActiveWritersPerWorkspace = 1` invariant: one M13T-prepared sibling is selected for the next lease-backed activation while any additional `parallel_disjoint` sibling is explicitly deferred; no lease or runtime is created.
 - 2026-10-06: Before M13U implementation, scheduler review confirmed `maxActiveWritersPerWorkspace = 1` and exclusive workspace-writer locking. Since all M13B siblings share one workspace, true same-workspace concurrent Cline writers are not yet safe; `parallel_disjoint` therefore remains logical/scope-level eligibility only until a separately reviewed path-scoped locking design exists.
 - 2026-10-06: M13T sibling durable-preparation batch completed at `4bc2f4f0`; PR #3 CI `#1228` green. The orchestrator now consumes only M13S-issued sibling tickets into M13D receipts and reuses the existing M13E durable preparation service for those exact children; blocked/terminal siblings cannot produce preparation state and no writer lease/runtime is acquired.
 - 2026-10-06: M13S sibling execution admission batch completed at `1d8b5bb4`; PR #3 CI `#1226` green. Only M13R-prepared siblings can receive fresh short-lived one-shot M13D tickets; blocked/terminal siblings remain ineligible, and the batch still creates no durable preparation, writer lease, fence, or runtime.
@@ -795,6 +796,14 @@ For `parallel_disjoint`, multiple ticketed siblings may be prepared independentl
 
 Evidence: `4bc2f4f02cdc31d7b8454459601d560e5e386bfd`; PR #3 CI `#1228` passed typecheck + full suite.
 
+## 13U — Sibling writer-lease compatibility gate — COMPLETE
+
+`src/multi-agent-sibling-writer-compatibility.ts` reconciles one M13T sibling durable-preparation batch with the already-established exclusive workspace writer invariant. Because every M13B sibling shares one workspace and `maxActiveWritersPerWorkspace` is fixed at `1`, the gate selects at most one prepared sibling as the next lease-backed activation candidate and marks any additional prepared sibling as deferred.
+
+This does not weaken M13B `parallel_disjoint` scope isolation; it clarifies that disjoint logical eligibility does not override the current workspace-wide writer lock. True same-workspace parallel writers remain deferred to a separately reviewed path-scoped locking design. M13U acquires no lease, starts no worker/runtime, creates no distributed state, and grants no task/filesystem/Safety/credential/release authority.
+
+Evidence: `6818a057e7a05a28f8ad22f3ddf887b4fd985b89`; PR #3 CI `#1231` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -817,11 +826,12 @@ Evidence: `4bc2f4f02cdc31d7b8454459601d560e5e386bfd`; PR #3 CI `#1228` passed ty
 18. **COMPLETE — M13R sibling execution preparation set.** CI `#1224` green.
 19. **COMPLETE — M13S sibling execution admission batch.** CI `#1226` green.
 20. **COMPLETE — M13T sibling durable-preparation batch.** CI `#1228` green.
-21. **NEXT — M13U sibling writer-lease compatibility gate.** Reconcile M13T sibling preparations with the existing exclusive-workspace writer invariant (`maxActiveWritersPerWorkspace = 1`). Even `parallel_disjoint` siblings share one workspace, so only one sibling may advance to lease-backed activation at a time. Emit bounded activation-candidate evidence only; do not acquire a lease or start runtime.
+21. **COMPLETE — M13U sibling writer-lease compatibility gate.** CI `#1231` green.
+22. **NEXT — M13V selected-sibling activation bridge.** Bind the single M13U-selected child back to its exact M13T preparation and activate it only inside a fresh scheduler-owned local writer lease via the existing M13F coordinator. Deferred siblings remain unable to activate. Stop before runtime start.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13U — sibling writer-lease compatibility gate.** The existing writer scheduler and workspace-lock contract enforce one active writer per workspace. Because every M13B sibling shares the same workspace, the next trusted slice must select at most one M13T-prepared sibling for lease-backed activation at a time, even when the delegation set is `parallel_disjoint`. `parallel_disjoint` remains scope-isolation evidence but does not override exclusive workspace writer coordination. M13U must emit candidate evidence only and must not acquire a lease, start Cline/runtime, create distributed state, recurse delegation, or grant release authority.
+**M13V — selected-sibling activation bridge.** The next trusted slice should accept only the single M13U-selected child, bind it back to the exact M13T durable preparation, and invoke the existing M13F activation coordinator only when a fresh scheduler-owned local writer lease for that child/workspace is already present. Deferred siblings must remain unable to activate. Stop before Cline/runtime start; no distributed state, recursive delegation, or release authority.
