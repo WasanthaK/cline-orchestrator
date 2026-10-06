@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-06: Before M13U implementation, scheduler review confirmed `maxActiveWritersPerWorkspace = 1` and exclusive workspace-writer locking. Since all M13B siblings share one workspace, true same-workspace concurrent Cline writers are not yet safe; `parallel_disjoint` therefore remains logical/scope-level eligibility only until a separately reviewed path-scoped locking design exists.
 - 2026-10-06: M13T sibling durable-preparation batch completed at `4bc2f4f0`; PR #3 CI `#1228` green. The orchestrator now consumes only M13S-issued sibling tickets into M13D receipts and reuses the existing M13E durable preparation service for those exact children; blocked/terminal siblings cannot produce preparation state and no writer lease/runtime is acquired.
 - 2026-10-06: M13S sibling execution admission batch completed at `1d8b5bb4`; PR #3 CI `#1226` green. Only M13R-prepared siblings can receive fresh short-lived one-shot M13D tickets; blocked/terminal siblings remain ineligible, and the batch still creates no durable preparation, writer lease, fence, or runtime.
 - 2026-10-06: M13R sibling execution preparation set completed at `fd060594`; PR #3 CI `#1224` green. The orchestrator now maps only M13Q-admitted sibling identities back to their exact M13C descriptors and emits non-executable per-child preparation requests; blocked/terminal siblings fail closed and cannot advance.
@@ -816,11 +817,11 @@ Evidence: `4bc2f4f02cdc31d7b8454459601d560e5e386bfd`; PR #3 CI `#1228` passed ty
 18. **COMPLETE — M13R sibling execution preparation set.** CI `#1224` green.
 19. **COMPLETE — M13S sibling execution admission batch.** CI `#1226` green.
 20. **COMPLETE — M13T sibling durable-preparation batch.** CI `#1228` green.
-21. **NEXT — M13U sibling activation batch.** Activate only the durable sibling preparations produced by M13T, each under its own fresh scheduler-owned local writer lease and exact parent/Safety revalidation. Preserve parallel/serialized eligibility and stop before runtime start.
+21. **NEXT — M13U sibling writer-lease compatibility gate.** Reconcile M13T sibling preparations with the existing exclusive-workspace writer invariant (`maxActiveWritersPerWorkspace = 1`). Even `parallel_disjoint` siblings share one workspace, so only one sibling may advance to lease-backed activation at a time. Emit bounded activation-candidate evidence only; do not acquire a lease or start runtime.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13U — sibling activation batch.** The next trusted slice should activate only M13T durable child preparations, requiring a distinct fresh scheduler-owned local writer lease per child and revalidating the exact parent/Safety binding for each. `parallel_disjoint` may activate multiple already-proven disjoint siblings concurrently; `serialized` may activate exactly one. The slice must stop before Cline/runtime start and must not acquire distributed fences, recurse delegation, or grant release authority.
+**M13U — sibling writer-lease compatibility gate.** The existing writer scheduler and workspace-lock contract enforce one active writer per workspace. Because every M13B sibling shares the same workspace, the next trusted slice must select at most one M13T-prepared sibling for lease-backed activation at a time, even when the delegation set is `parallel_disjoint`. `parallel_disjoint` remains scope-isolation evidence but does not override exclusive workspace writer coordination. M13U must emit candidate evidence only and must not acquire a lease, start Cline/runtime, create distributed state, recurse delegation, or grant release authority.
