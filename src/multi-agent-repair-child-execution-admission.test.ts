@@ -4,9 +4,9 @@ import {
   MULTI_AGENT_REPAIR_CHILD_EXECUTION_ADMISSION_CONTRACT,
   MultiAgentRepairChildExecutionAdmissionError,
   MultiAgentRepairChildExecutionAdmissionService,
-  type MultiAgentParentExecutionBindingV1,
   type MultiAgentPriorChildStateV1,
 } from "./multi-agent-repair-child-execution-admission.js";
+import type { MultiAgentParentExecutionBindingV1 } from "./multi-agent-child-execution-preparation.js";
 import type { MultiAgentRepairChildDescriptorV1 } from "./multi-agent-repair-child.js";
 
 const child: MultiAgentRepairChildDescriptorV1 = {
