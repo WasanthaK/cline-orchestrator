@@ -44,7 +44,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 9 | Controlled live multi-workspace workers | Complete — isolated physical proofs + CI `#668` |
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
-| 12 | Distributed / multi-machine orchestration | In progress — 12A–12W software complete; M12X P0–P5 physical HTTPS/auth/no-work proof complete; M12Y-A/B/C/D acknowledgement + restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-A classification (`#1134`), M12Z-B proposal (`#1139` / `#1140` rerun), M12Z-C pre-execution (`#1143`), M12Z-D fresh-authority preparation (`#1147`), M12Z-E fresh recovery dispatch (`#1151`), M12Z-F recovery admission (`#1157` rerun), M12Z-G target-local handoff (`#1163` rerun), and M12Z-H recovery runtime-start gate (`36b86971` + `d41f5f39`, CI `#1168`) complete; physical recovery proof/closure remains separately gated |
+| 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Planned |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
@@ -444,6 +444,18 @@ M12I remains the sole runtime-start path and retains its existing fresh-task, ta
 
 Evidence: implementation `36b86971c014c0d3e594ec47df8fb09cded95886`; test-only renewable-fence typing correction `d41f5f39d416fee5cf3b58147fed4ebcb2e72933`; CI `#1168` passed typecheck + full suite.
 
+## 12Z-I — Two-process fresh-authority recovery physical proof — COMPLETE
+
+A dedicated two-process Windows proof in `src/live-m12-recovery-proof.ts` exercised the recovery path across a real process boundary using the existing self-hosted runner and disposable workspace.
+
+Stage 1 created a fresh approved task, current candidate/fence, brand-new dispatch, durable `admission_acknowledged` delivery state and durable M12G replay marker, then exited before M12H/M12I runtime history was created.
+
+Stage 2 recreated controller/runtime objects in a new Node process, proved the old dispatch replay marker survived, classified the admitted/no-runtime-history state as `fresh_authority_review_required`, explicitly invalidated the old distributed fence, created a fresh recovery proposal, reacquired a new candidate, newer fence generation, fresh scheduler-owned local writer lease, fresh dispatch and fresh M12G admission, re-entered M12H through the post-admission boundary, and started the real Cline writer only through M12I.
+
+The proof independently verified exactly one allowed file change, `git diff --check`, protected-file byte integrity, no stale-session resume, no automatic retry/requeue, no commit/push/merge/deploy, and no listener/public-network exposure.
+
+Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` push and `#1173` PR green; temporary Windows proof workflow commit `df58b78791743403ce308a69ea19e487dd7ef7e0`; self-hosted Windows physical proof run `#9` passed.
+
 ---
 
 # Current capability snapshot
@@ -545,7 +557,7 @@ Evidence: implementation `36b86971c014c0d3e594ec47df8fb09cded95886`; test-only r
 26. **COMPLETE — M12Z-F recovery admission bridge.** CI `#1157` rerun green.
 27. **COMPLETE — M12Z-G recovery target-local handoff gate.** CI `#1163` rerun green.
 28. **COMPLETE — M12Z-H recovery runtime-start gate.** CI `#1168` green.
-29. **NEXT — M12Z-I recovery physical proof + closure criteria.** Prove the full fresh-authority recovery chain against a disposable workspace, including restart/failure ambiguity handling, fresh proposal/reacquisition/dispatch/admission/handoff/runtime start, no stale reuse, and independent Git/diff evidence. Physical/system actions remain separately gated by fresh authorization.
+29. **COMPLETE — M12Z-I recovery physical proof + closure criteria.** Windows physical proof run `#9` passed.
 30. **DO NOT production-wire cross-machine delivery/execution** until the takeover/recovery slice is reviewed and proven while preserving M12P server authentication, M12C/M12Q target authentication, M12R controller-owned selection, M12G replay, M12H local re-entry, M12I start guards, M12N lifecycle, M12O no-resurrection and M12F immediate write fencing.
 31. **DO NOT perform public bind, port-forwarding, tunnel creation, DNS/firewall mutation, credential provisioning or external-network changes** without explicit user authorization immediately before the action.
 
@@ -553,6 +565,7 @@ Evidence: implementation `36b86971c014c0d3e594ec47df8fb09cded95886`; test-only r
 
 # Recent progress
 
+- 2026-10-06: M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` using harness `ff2c1f7a` and temporary workflow `df58b787`. The old dispatch replay marker survived process restart, stale fence authority was invalidated, all recovery authority was reacquired fresh, and the final real Cline edit passed independent one-file Git/diff/protected-file checks. Milestone 12 acceptance is complete.
 - 2026-10-05: M12Z-H recovery runtime-start gate completed at `36b86971` with test-only typing correction `d41f5f39`; CI `#1168` green. Recovery can now reach M12I only after exact prepared lease/fence identity revalidation, with no automatic retry/requeue/stale-session resume semantics.
 - 2026-10-05: M12Z-G recovery target-local handoff completed at `1da1eae3` after M12H post-admission entry refactor `91ad150d`; CI `#1163` green on rerun after the known unrelated M12N timing flake. Recovery can now re-enter M12H without double-consuming M12G replay state and still stops before M12I.
 - 2026-10-05: M12Z-F recovery admission bridge completed at `e413b0ec` with test typing correction `403cca2c`; CI `#1157` green on rerun after the known unrelated M12N timing flake. Recovery admission delegates to the existing durable M12G gateway and still stops before M12H/M12I.
@@ -589,4 +602,4 @@ Evidence: implementation `36b86971c014c0d3e594ec47df8fb09cded95886`; test-only r
 
 # Current next step
 
-**M12Z-I — recovery physical proof + closure criteria.** The software recovery chain now reaches M12I. The next step is a deliberately gated physical proof against a disposable workspace showing that failure/restart ambiguity cannot reuse stale dispatch/candidate/fence/lease/session authority, that recovery reacquires every required authority fresh, and that the resumed execution produces independently verified bounded Git/diff evidence. Any process kill/restart, listener/system mutation, runner registration or external-network action requires fresh explicit authorization immediately before that action.
+**Milestone 13 — safe multi-agent delegation.** Milestone 12 distributed orchestration and recovery acceptance is complete. Begin with the first bounded M13 authority/delegation contract only; do not introduce broad autonomous fan-out, raw shell authority, release authority, or unbounded worker spawning.
