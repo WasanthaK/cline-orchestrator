@@ -72,7 +72,7 @@ export interface MultiAgentChildRuntimeStartOptions {
     workspaceRoot: string,
     worker: WorkerConfig,
     runtimeFactory: ClineRuntimeFactory,
-  ) => Pick<ClineRunner, "start" | "close">;
+  ) => Pick<ClineRunner, "start" | "close" | "abort">;
   now?: () => Date;
 }
 
@@ -420,15 +420,34 @@ export class MultiAgentChildRuntimeStarter {
           runtimeFactory: leaseAwareFactory,
         });
 
+    let abortPromise: Promise<void> | undefined;
     const abortForLeaseLoss = () => {
-      void Promise.resolve(
-        runner.start,
-      );
+      if (abortPromise) return;
+      abortPromise = (async () => {
+        try {
+          await runner.abort(
+            input.childTaskId,
+            "M13G child local writer lease was lost; execution aborted fail-safe",
+          );
+        } catch {
+          // If the child already became terminal, the lease-aware write boundary
+          // still prevents any stale write from proceeding.
+        }
+      })();
     };
     context.lease.signal.addEventListener("abort", abortForLeaseLoss, { once: true });
     try {
       await assertLeaseCurrent(context);
+      if (context.lease.signal.aborted) {
+        abortForLeaseLoss();
+        await abortPromise;
+        throw new MultiAgentChildRuntimeStartError(
+          "child local writer lease was lost before runtime start",
+          "lease_not_current",
+        );
+      }
       const result = await runner.start(childTask);
+      if (abortPromise) await abortPromise;
       return result;
     } catch (error) {
       throw new MultiAgentChildRuntimeStartError(
@@ -438,6 +457,7 @@ export class MultiAgentChildRuntimeStarter {
       );
     } finally {
       context.lease.signal.removeEventListener("abort", abortForLeaseLoss);
+      if (abortPromise) await abortPromise;
       await runner.close("M13G child runtime complete");
     }
   }
