@@ -324,7 +324,7 @@ function assertEventAdmissible(
         "transition_not_admissible",
       );
     }
-    if (!["waiting", "repairing", "running", "validating"].includes(current.status)) {
+    if (!["completed", "waiting", "repairing", "running", "validating"].includes(current.status)) {
       throw new AutonomousEngineeringLoopTransitionAdmissionError(
         "current task state cannot support repair start admission",
         "transition_not_admissible",
