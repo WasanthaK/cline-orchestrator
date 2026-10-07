@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`#1220`); M13Q sibling execution-set admission complete (`#1222`); M13R sibling execution preparation set complete (`#1224`); M13S sibling execution admission batch complete (`#1226`); M13T sibling durable-preparation batch complete (`#1228`); M13U sibling writer-lease compatibility gate complete (`#1231`); M13V selected-sibling activation bridge complete (`#1233`); M13W selected-sibling runtime bridge complete (`24acda72` + type fix `dd8f484c`, CI `#1236`) |
+| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`#1220`); M13Q sibling execution-set admission complete (`#1222`); M13R sibling execution preparation set complete (`#1224`); M13S sibling execution admission batch complete (`#1226`); M13T sibling durable-preparation batch complete (`#1228`); M13U sibling writer-lease compatibility gate complete (`#1231`); M13V selected-sibling activation bridge complete (`#1233`); M13W selected-sibling runtime bridge complete (`#1236`); M13X deferred-sibling progression gate complete (`4b8844bb`, CI `#1238` attempt 2; attempt 1 only known M12N timing flake) |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -565,6 +565,7 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-07: M13X deferred-sibling progression gate completed at `4b8844bb`; PR #3 CI `#1238` attempt 2 green. Attempt 1 failed only the known unrelated M12N timing assertion. A deferred sibling can now become the next M13U candidate only after the previously selected sibling is terminal and the shared workspace has no active writer lease.
 - 2026-10-07: M13W selected-sibling runtime bridge completed at `24acda72` with test type correction `dd8f484c`; PR #3 CI `#1236` green. Only the current M13U/M13V-selected sibling can enter the existing M13G runtime starter; deferred siblings fail before runtime invocation and no second workspace writer is created.
 - 2026-10-07: M13V selected-sibling activation bridge completed at `0d78917d`; PR #3 CI `#1233` green. Only the single M13U-selected sibling can enter the existing M13F activation coordinator under the exact fresh scheduler-owned lease; deferred siblings fail closed and runtime start remains disabled at this boundary.
 - 2026-10-06: M13U sibling writer-lease compatibility gate completed at `6818a057`; PR #3 CI `#1231` green. The gate preserves the existing `maxActiveWritersPerWorkspace = 1` invariant: one M13T-prepared sibling is selected for the next lease-backed activation while any additional `parallel_disjoint` sibling is explicitly deferred; no lease or runtime is created.
@@ -822,6 +823,14 @@ Deferred, blocked or terminal sibling identities fail before M13G invocation. Th
 
 Evidence: implementation `24acda72807b3ba6eabf059da755c4ffd95a0356`; test-type correction `dd8f484c43af197f777edaccb23f47dde58dd9c3`; PR #3 CI `#1236` passed typecheck + full suite.
 
+## 13X — Deferred-sibling progression gate — COMPLETE
+
+`src/multi-agent-deferred-sibling-progression.ts` permits a previously deferred prepared sibling to become the next activation candidate only after two independent conditions are proven: the previously selected sibling has a terminal completion packet, and the shared workspace lock shows no active writer.
+
+The gate removes only the completed selected child from the prepared set, records it terminal, and reuses the existing M13U writer-compatibility selector over the remaining preparations. It acquires no lease, starts no worker/runtime, and introduces no new authority.
+
+Evidence: `4b8844bbf596d35c9675ba893cef000a792cd5e8`; PR #3 CI `#1238` attempt 2 passed typecheck + full suite. Attempt 1 failed only the known unrelated M12N lease-renewal timing assertion.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -847,11 +856,12 @@ Evidence: implementation `24acda72807b3ba6eabf059da755c4ffd95a0356`; test-type c
 21. **COMPLETE — M13U sibling writer-lease compatibility gate.** CI `#1231` green.
 22. **COMPLETE — M13V selected-sibling activation bridge.** CI `#1233` green.
 23. **COMPLETE — M13W selected-sibling runtime bridge.** CI `#1236` green.
-24. **NEXT — M13X deferred-sibling progression gate.** After the selected sibling is terminal and its workspace writer lease is no longer active, re-evaluate the remaining prepared siblings and select the next eligible child without creating a second writer. Stop before activation/runtime start.
+24. **COMPLETE — M13X deferred-sibling progression gate.** CI `#1238` attempt 2 green; attempt 1 failed only the known unrelated M12N timing flake.
+25. **NEXT — M13Y milestone acceptance harness.** Prove the complete bounded delegation acceptance target end-to-end in-process: validated sibling set, one-at-a-time same-workspace writer progression, independent completion/review evidence, and one bounded repair cycle with no authority widening. This should be evidence-only; do not add new runtime authority.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
 # Current next step
 
-**M13X — deferred-sibling progression gate.** The next trusted slice should allow one deferred sibling to become the next activation candidate only after the previously selected sibling is terminal and there is no active writer lease for the shared workspace. It must preserve original M13T preparation identity and coordination mode, re-run the existing M13U selection logic over the remaining prepared siblings, and stop before M13V activation or M13G runtime start.
+**M13Y — Milestone 13 acceptance harness.** The next trusted slice should prove the existing M13A–M13X contracts compose into the Milestone 13 acceptance target without adding authority: bounded child decomposition, sibling isolation, one-at-a-time same-workspace writer execution, independent review evidence, and one bounded repair cycle. The harness should be deterministic/in-process, evidence-only, and should not introduce new worker, lease, filesystem, distributed, credential, or release authority.
