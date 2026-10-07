@@ -978,8 +978,8 @@ Evidence: scheduled runner repair path `b83dc2f04147150f6c09b4405d89374b7126e5ff
 10. **COMPLETE — M14J post-runtime completion evidence bridge.** CI `#1265` green.
 11. **COMPLETE — M14K autonomous reviewer decision bridge.** CI `#1267` green.
 12. **COMPLETE — M14L completion/review progression composition.** CI `#1269` green.
-13. **NEXT — M14M bounded repair-cycle launch composition.** If M14L ends in `repair_ready`, compose M14B/M14C/M14D/M14E/M14F/M14G/M14I for exactly one bounded repair iteration. Require the exact M14K `review_repair` decision, the current durable loop revision, fresh task/Safety binding, one-shot execution admission and the supplied live scheduler-owned writer lease. Do not acquire or widen lease authority in the composition layer.
-14. **FOLLOW — M14N initial-cycle launch composition.** Compose the corresponding initial `ready → implementation_in_progress → M14D–M14H` path so both first execution and repair execution can be driven through one higher-level autonomous-loop controller without bypassing their distinct runtime invariants.
+13. **COMPLETE — M14M bounded repair-cycle launch composition.** CI `#1274` green.
+14. **NEXT — M14N initial-cycle launch composition.** Compose the corresponding initial `ready → implementation_in_progress → M14D–M14H` path so both first execution and repair execution can be driven through one higher-level autonomous-loop controller without bypassing their distinct runtime invariants.
 15. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14M/M14N.
 16. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
 
@@ -987,4 +987,4 @@ Evidence: scheduled runner repair path `b83dc2f04147150f6c09b4405d89374b7126e5ff
 
 # Current next step
 
-**M14M — bounded repair-cycle launch composition.** Starting only from an exact `repair_ready` durable loop plus the exact trusted M14K `review_repair` evidence, admit/apply `repair_started`, carry that provenance through M14D–M14F, activate it through M14G against the same live scheduler lease, and invoke only M14I. The composition layer acquires no authority itself.
+**M14N — initial-cycle launch composition.** Starting only from an exact `ready` durable loop and the approved supervisor task, admit/apply `implementation_started`, carry that exact binding through M14D–M14F, activate through M14G against the supplied live scheduler lease, and invoke only M14H. No repair provenance is accepted in this path.
