@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake); M14F durable execution preparation complete (`e2de6d62`, CI `#1253` rerun green after unrelated M12I ProjectMemory read race) |
+| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake); M14F durable execution preparation complete (`e2de6d62`, CI `#1253` rerun green after unrelated M12I ProjectMemory read race); M14G execution activation gate complete (`b5944221`, CI `#1256`) |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -936,6 +936,14 @@ M14F does not mutate TaskStore or loop state, start/continue Cline/runtime, acqu
 
 Evidence: implementation `edaadb25c485ad02cb1e0c40d2604d427e72abd9`; proofs `e2de6d628b6fbed527f533143c6278eddcc7d578`; CI `#1253` passed on rerun after an unrelated pre-existing M12I ProjectMemory read race.
 
+## 14G — Execution activation gate — COMPLETE
+
+`src/autonomous-engineering-execution-activation.ts` activates only an exact M14F durable preparation whose M14A loop remains on the same `implementation_in_progress` revision and whose current task/project/workspace/registry/Safety/worker/path binding still matches. Activation also requires a live scheduler-owned local writer lease bound to the exact task/workspace/owner; the lease is validated again and any identity change during validation fails closed.
+
+The activation result contains only process-local runtime input and activation evidence with `runtimeStartAuthorized: false`. The gate does not acquire the writer lease, mutate TaskStore/loop state, start/continue Cline, create distributed work, perform Git delivery, use credentials, or grant task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `626eb660581df0dacbe49f5c564ec442023ddb18`; corrected identity-change proof `b5944221e4d76760ac422badbcc335ab6ee168a7`; CI `#1256` passed typecheck + full suite.
+
 ## M14 work queue
 
 1. **COMPLETE — M14A autonomous-loop contract + durable state model.** CI `#1242` green.
@@ -944,12 +952,13 @@ Evidence: implementation `edaadb25c485ad02cb1e0c40d2604d427e72abd9`; proofs `e2d
 4. **COMPLETE — M14D execution-intent bridge.** CI `#1249` green.
 5. **COMPLETE — M14E execution admission permit.** CI `#1251` rerun green.
 6. **COMPLETE — M14F durable execution preparation.** CI `#1253` rerun green.
-7. **NEXT — M14G execution activation gate.** Activate only one current M14F preparation after revalidating the exact durable loop revision/current task-Safety binding and requiring a live scheduler-owned local writer lease bound to the same task/workspace. Activation remains process-local and `runtimeStartAuthorized: false`; no Cline/runtime start, distributed dispatch or release authority.
-8. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
-9. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
+7. **COMPLETE — M14G execution activation gate.** CI `#1256` green.
+8. **NEXT — M14H trusted local runtime start.** Consume one exact M14G activation context and start/continue only the already-approved local orchestrator task through existing trusted task/runtime APIs. Revalidate the activation binding and live writer lease immediately before handoff; initial implementation and bounded repair must map to existing start/continue semantics without widening objective, scope, validation or release authority.
+9. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14H.
+10. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
 
 ---
 
 # Current next step
 
-**M14G — execution activation gate.** Require the exact M14F durable preparation, current loop revision, fresh task/Safety binding and a live scheduler-owned writer lease for the same task/workspace, then emit only process-local runtime input with `runtimeStartAuthorized: false`. Runtime start remains a later slice.
+**M14H — trusted local runtime start.** Bridge one exact M14G activation into the existing local task runtime only after fresh lease validation and binding checks. Initial implementation may start only the already-approved task; bounded repair may continue only the same task with the exact trusted repair instruction. No new authority path, distributed execution or release action is permitted.
