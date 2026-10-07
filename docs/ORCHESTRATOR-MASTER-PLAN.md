@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`) |
+| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake) |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -918,18 +918,27 @@ M14D does not mutate TaskStore or loop state, start/continue Cline/runtime, acqu
 
 Evidence: implementation `8ed92fe9d88f901e1fd67f147312981df3925d22`; proofs `1f6275e518cd85d9960e6a9fe5244f6e764044a0`; CI `#1249` passed typecheck + full suite.
 
+## 14E — Execution admission permit — COMPLETE
+
+`src/autonomous-engineering-execution-admission.ts` issues a short-lived, single-use execution admission only for an exact M14D intent whose durable M14A loop remains at the same `implementation_in_progress` revision and whose current task/project/workspace/registry/Safety/worker/path binding still matches. Consumption repeats both checks and returns evidence only.
+
+The permit/receipt remains non-executing and carries no task/filesystem/Safety/lease/credential/release authority. It does not mutate TaskStore or loop state, start/continue Cline/runtime, acquire local/distributed writer authority, create distributed work, perform Git delivery or use credentials.
+
+Evidence: implementation `488723e44e12982b4b5e9f34a591ad0daab32b33`; proofs `000da7536a29fde598295e0c8d0b214861693b98`; CI `#1251` typechecked successfully and passed the full suite on rerun after the known unrelated M12N renewal timing flake.
+
 ## M14 work queue
 
 1. **COMPLETE — M14A autonomous-loop contract + durable state model.** CI `#1242` green.
 2. **COMPLETE — M14B trusted loop-transition admission gate.** CI `#1244` green.
 3. **COMPLETE — M14C durable admitted-transition application.** CI `#1246` green.
 4. **COMPLETE — M14D execution-intent bridge.** CI `#1249` green.
-5. **NEXT — M14E execution admission permit.** Convert one current M14D execution intent into a short-lived, one-shot execution admission only after another exact current task/Safety binding revalidation and exact loop-revision check. The permit must remain non-executing and must not itself start/continue Cline, acquire lease/fence authority, create distributed work, mutate TaskStore, or grant filesystem/release authority.
-6. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
-7. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
+5. **COMPLETE — M14E execution admission permit.** CI `#1251` rerun green.
+6. **NEXT — M14F durable execution preparation.** Persist exactly one non-executable execution preparation from a consumed M14E receipt after revalidating the exact loop revision and current task/Safety binding. Preserve the M14D objective/repair provenance and trusted validation/scope evidence, but do not start/continue Cline, acquire lease/fence authority, create distributed work, mutate TaskStore, or grant filesystem/release authority.
+7. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
+8. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
 
 ---
 
 # Current next step
 
-**M14E — execution admission permit.** Issue a short-lived, single-use permit from one exact M14D execution intent only while the durable loop remains at the same revision and the current task/Safety binding is still exact. Consumption should produce evidence only; runtime start remains a later separately reviewed slice.
+**M14F — durable execution preparation.** Consume only a valid M14E admission receipt and persist a one-per-intent preparation bound to the exact current loop revision, task/Safety identity, objective/repair provenance, trusted validation commands and approved path envelope. It remains preparation-only and cannot start or continue execution.
