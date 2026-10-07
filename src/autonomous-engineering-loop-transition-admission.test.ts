@@ -296,3 +296,47 @@ test("M14B admits reviewer escalation only with exact trusted reason", async () 
   assert.equal(admission.decisionId, "88888888-8888-4888-8888-888888888888");
   assert.equal(admission.grantsReleaseAuthority, false);
 });
+
+
+test("M14B admits repair start from reviewed completed task only with exact repair decision provenance", async () => {
+  let state = createAutonomousEngineeringLoop(supervisor, {
+    idFactory: () => "99999999-9999-4999-8999-999999999999",
+    now: () => new Date("2026-10-07T07:01:00.000Z"),
+    maxImplementationIterations: 3,
+    maxRepairAttempts: 2,
+  });
+  state = transitionAutonomousEngineeringLoop(state, {
+    type: "implementation_started",
+    at: "2026-10-07T07:02:00.000Z",
+  });
+  state = transitionAutonomousEngineeringLoop(state, {
+    type: "completion_evidence_captured",
+    at: "2026-10-07T07:10:30.000Z",
+  });
+  state = transitionAutonomousEngineeringLoop(state, {
+    type: "review_repair",
+    at: "2026-10-07T07:11:00.000Z",
+  });
+
+  const repair = decision("review_repair");
+  const admitted = await service(current("completed", 1)).admit(
+    state,
+    supervisor,
+    { type: "repair_started", at: "2026-10-07T07:13:00.000Z" },
+    { decision: repair },
+  );
+
+  assert.equal(admitted.observedTaskStatus, "completed");
+  assert.equal(admitted.decisionId, repair.decisionId);
+
+  await assert.rejects(
+    () => service(current("completed", 1)).admit(
+      state,
+      supervisor,
+      { type: "repair_started", at: "2026-10-07T07:13:00.000Z" },
+    ),
+    (error: unknown) =>
+      error instanceof AutonomousEngineeringLoopTransitionAdmissionError
+      && error.code === "decision_invalid",
+  );
+});
