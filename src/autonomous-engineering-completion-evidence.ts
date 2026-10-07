@@ -78,7 +78,7 @@ function assertLoop(loop: AutonomousEngineeringLoopStateV1): void {
     loop.schemaVersion !== 1
     || loop.authority !== "autonomous_engineering_loop_state_only"
     || loop.executable !== false
-    || loop.phase !== "implementation_in_progress"
+    || !["implementation_in_progress", "awaiting_review"].includes(loop.phase)
     || loop.grantsTaskAuthority !== false
     || loop.grantsFilesystemAuthority !== false
     || loop.grantsSafetyPlanAuthority !== false
@@ -87,7 +87,7 @@ function assertLoop(loop: AutonomousEngineeringLoopStateV1): void {
     || loop.grantsReleaseAuthority !== false
   ) {
     throw new AutonomousEngineeringCompletionEvidenceError(
-      "completion evidence requires a current implementation_in_progress autonomous loop",
+      "completion evidence requires a current implementation_in_progress or awaiting_review autonomous loop",
       "loop_invalid",
     );
   }
