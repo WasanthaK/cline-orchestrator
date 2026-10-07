@@ -47,7 +47,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
-| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`); M15B explicit delivery authority admission complete (`35a7a4fc`, CI `#1288`); M15C local commit boundary complete (`d9248af3`, CI `#1290`); M15D1 push-only boundary complete (`b6d90dd9`, CI `#1292`) |
+| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`); M15B explicit delivery authority admission complete (`35a7a4fc`, CI `#1288`); M15C local commit boundary complete (`d9248af3`, CI `#1290`); M15D push + PR boundary complete (`df68b8fc`, CI `#1295`) |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
@@ -1006,8 +1006,8 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 1. **COMPLETE — M15A delivery proposal contract.** CI `#1286` green.
 2. **COMPLETE — M15B explicit delivery authority admission.** CI `#1288` green.
 3. **COMPLETE — M15C local commit preparation/execution boundary.** CI `#1290` green.
-4. **IN PROGRESS — M15D push + PR boundary.** M15D1 push-only complete (`b6d90dd9`, CI `#1292`). **NEXT — M15D2 pull-request create/update** under a separate consumed `pull_request` permit after verifying the exact pushed remote ref and configured repository/base target. No merge or deploy.
-5. **FOLLOW — M15E merge authority boundary.** Separate merge approval and freshness checks; no deployment.
+4. **COMPLETE — M15D push + PR boundary.** M15D1 push-only (`b6d90dd9`, CI `#1292`) and M15D2 PR create/update (`df68b8fc`, CI `#1295`) complete.
+5. **NEXT — M15E merge authority boundary.** Consume only a separate one-shot `merge` authorization, require the exact M15D2 PR result plus fresh open/head/base/check/policy evidence, and merge exactly that PR. No deployment authority.
 6. **FOLLOW — M15F deployment/release boundary.** Separate deployment authorization from merge and GitHub state.
 7. **FOLLOW — M15G release recovery/replay safety.** Fail closed across restart, ambiguous remote outcomes and partial delivery.
 8. **FOLLOW — M15H Milestone 15 acceptance harness.** Prove capability separation, replay prevention, stale-evidence rejection and exact explicit-authority enforcement.
@@ -1018,4 +1018,4 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 
 # Current next step
 
-**M15D2 — pull-request create/update boundary.** Consume only an exact M15B `pull_request` authorization bound to the same M15A proposal plus the exact verified M15D1 push result. Require an explicit configured GitHub repository/base branch/head ref target, verify the pushed head commit is still current immediately before mutation, create or update only that one PR, and perform no merge or deploy.
+**M15E — merge authority boundary.** Consume only an exact M15B `merge` authorization bound to the same M15A proposal plus the exact verified M15D2 PR result. Revalidate immediately before mutation that the PR is still open, head/base identities are unchanged, required checks/policy are satisfied and the configured merge method is allowed. Merge only that PR; deployment remains a separate M15F authority.
