@@ -47,7 +47,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
-| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`); M15B explicit delivery authority admission complete (`35a7a4fc`, CI `#1288`) |
+| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`); M15B explicit delivery authority admission complete (`35a7a4fc`, CI `#1288`); M15C local commit boundary complete (`d9248af3`, CI `#1290`) |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
@@ -1005,8 +1005,8 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 
 1. **COMPLETE — M15A delivery proposal contract.** CI `#1286` green.
 2. **COMPLETE — M15B explicit delivery authority admission.** CI `#1288` green.
-3. **NEXT — M15C local commit preparation/execution boundary.** Add commit authority separately from push, preserving exact task-delta/fingerprint and message constraints. The commit path must not sweep pre-existing user changes into the delivery commit.
-4. **FOLLOW — M15D push + PR boundary.** Add remote mutation only under explicit current authority and credential isolation; no merge.
+3. **COMPLETE — M15C local commit preparation/execution boundary.** CI `#1290` green.
+4. **NEXT — M15D push + PR boundary.** Implement as two sub-slices: M15D1 push-only under an exact consumed `push` permit and exact M15C commit identity; M15D2 pull-request create/update under a separate consumed `pull_request` permit after verifying the pushed remote ref. Credential handling must remain isolated and no merge is permitted.
 5. **FOLLOW — M15E merge authority boundary.** Separate merge approval and freshness checks; no deployment.
 6. **FOLLOW — M15F deployment/release boundary.** Separate deployment authorization from merge and GitHub state.
 7. **FOLLOW — M15G release recovery/replay safety.** Fail closed across restart, ambiguous remote outcomes and partial delivery.
@@ -1018,4 +1018,4 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 
 # Current next step
 
-**M15C — local commit preparation/execution boundary.** Consume only an exact M15B `commit` authorization and create at most one local commit containing only the task delta proven by the task checkpoint/diff-safety evidence. Preserve any pre-existing user staged/unstaged/untracked state, revalidate current Git identity immediately before commit, constrain the commit message, and perform no push/PR/merge/deploy or credential use.
+**M15D1 — push-only remote delivery boundary.** Consume only an exact M15B `push` authorization bound to the same M15A proposal plus the exact verified M15C commit result. Revalidate local branch/HEAD and task/Safety evidence immediately before push, allow only one configured remote/ref target, isolate credential use behind the Git remote driver, and perform no PR, merge or deploy.
