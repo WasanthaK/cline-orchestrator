@@ -253,3 +253,19 @@ test("M14J rejects a successful terminal packet without passing validation", asy
       && error.code === "evidence_incomplete",
   );
 });
+
+
+test("M14J recaptures current completion evidence in awaiting_review for restart safety", async () => {
+  const p = packet("completed", 2);
+  const awaiting = { ...structuredClone(loop), phase: "awaiting_review" as const, revision: 3 };
+  const service = new AutonomousEngineeringCompletionEvidenceService(
+    fakeMachine(p),
+    { async revalidateCurrent() { return current("completed", 2); } },
+    async () => structuredClone(p),
+  );
+
+  const result = await service.capture(awaiting);
+  assert.equal(result.loopRevision, 3);
+  assert.equal(result.packet.status, "completed");
+  assert.equal(result.observedRunCount, 2);
+});
