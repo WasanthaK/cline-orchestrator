@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake); M14F durable execution preparation complete (`e2de6d62`, CI `#1253` rerun green after unrelated M12I ProjectMemory read race); M14G execution activation gate complete (`b5944221`, CI `#1256`); M14H trusted initial local runtime start complete (`fb423e47`, CI `#1259`); M14I trusted bounded-repair runtime continuation complete (`90347cbe`, CI `#1263`) |
+| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake); M14F durable execution preparation complete (`e2de6d62`, CI `#1253` rerun green after unrelated M12I ProjectMemory read race); M14G execution activation gate complete (`b5944221`, CI `#1256`); M14H trusted initial local runtime start complete (`fb423e47`, CI `#1259`); M14I trusted bounded-repair runtime continuation complete (`90347cbe`, CI `#1263`); M14J post-runtime completion evidence complete (`5734f7a4`, CI `#1265`) |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -975,13 +975,13 @@ Evidence: scheduled runner repair path `b83dc2f04147150f6c09b4405d89374b7126e5ff
 7. **COMPLETE — M14G execution activation gate.** CI `#1256` green.
 8. **COMPLETE — M14H trusted initial local runtime start.** CI `#1259` green.
 9. **COMPLETE — M14I trusted bounded-repair runtime continuation.** CI `#1263` green.
-10. **NEXT — M14J post-runtime completion evidence bridge.** After M14H/M14I returns, re-read the same durable task through the trusted completion-packet boundary and emit only current independent completion evidence for the exact loop/task/run. Require terminal task state, current task/Safety binding, current run count, checkpoint evidence and diff-safety/validation evidence as applicable. Do not mutate loop state or invoke reviewer/model logic in this slice.
-11. **FOLLOW — M14K autonomous reviewer decision bridge.** Feed only an M14J current completion packet into the existing supervisor review/decision contracts, then require M14B admission before any loop transition.
-12. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14J/M14K.
+10. **COMPLETE — M14J post-runtime completion evidence bridge.** CI `#1265` green.
+11. **NEXT — M14K autonomous reviewer decision bridge.** Feed only an exact M14J current completion packet into the existing supervisor review/decision contracts, producing trusted `review_pass`, `review_repair`, or `review_escalation` evidence. The bridge must not mutate M14 loop state directly; every resulting loop transition still requires M14B admission and M14C durable application.
+12. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14K.
 13. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
 
 ---
 
 # Current next step
 
-**M14J — post-runtime completion evidence bridge.** Capture one exact current `TaskCompletionPacketV1` after local runtime execution and bind it to the active M14 loop revision/run without mutating the loop. The packet must remain independently derived from durable orchestrator state; runtime prose is not evidence.
+**M14K — autonomous reviewer decision bridge.** Reuse the existing trusted supervisor completion reviewer/decision admission using only the exact M14J packet and current supervisor-task binding. Return decision evidence only; do not queue repair through the legacy continuation path and do not mutate the M14 loop until M14B/M14C admit and apply that decision.
