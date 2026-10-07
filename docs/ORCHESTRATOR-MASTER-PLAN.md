@@ -953,12 +953,13 @@ Evidence: implementation `626eb660581df0dacbe49f5c564ec442023ddb18`; corrected i
 5. **COMPLETE — M14E execution admission permit.** CI `#1251` rerun green.
 6. **COMPLETE — M14F durable execution preparation.** CI `#1253` rerun green.
 7. **COMPLETE — M14G execution activation gate.** CI `#1256` green.
-8. **NEXT — M14H trusted local runtime start.** Consume one exact M14G activation context and start/continue only the already-approved local orchestrator task through existing trusted task/runtime APIs. Revalidate the activation binding and live writer lease immediately before handoff; initial implementation and bounded repair must map to existing start/continue semantics without widening objective, scope, validation or release authority.
-9. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14H.
-10. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
+8. **NEXT — M14H trusted initial local runtime start.** Consume one exact M14G activation context for `initial_implementation` and hand the already-approved task plus the same live scheduler-owned writer lease to the existing `ScheduledHubWriterAuthorityRunner.runApprovedTask` path. Revalidate activation/lease identity immediately before handoff. Do not weaken the scheduled runner's fresh-task invariant.
+9. **FOLLOW — M14I trusted bounded-repair runtime continuation.** Add a separately reviewed lease-aware continuation path for an exact `bounded_repair` activation; do not fake an initial start or route repair through an unguarded continuation API.
+10. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14H/M14I.
+11. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
 
 ---
 
 # Current next step
 
-**M14H — trusted local runtime start.** Bridge one exact M14G activation into the existing local task runtime only after fresh lease validation and binding checks. Initial implementation may start only the already-approved task; bounded repair may continue only the same task with the exact trusted repair instruction. No new authority path, distributed execution or release action is permitted.
+**M14H — trusted initial local runtime start.** Bridge only an exact M14G `initial_implementation` activation into the existing scheduled lease-aware local writer runner after fresh lease validation. Bounded repair is deliberately rejected in M14H and remains M14I so the existing fresh-task safety invariant is preserved.
