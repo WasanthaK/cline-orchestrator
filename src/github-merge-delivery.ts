@@ -50,12 +50,12 @@ export interface GitHubMergeCurrentEvidenceV1 {
   workspaceId: string;
   repository: string;
   pullRequestNumber: number;
-  open: true;
+  open: boolean;
   headSha: string;
   baseRef: string;
-  mergeable: true;
-  requiredChecksPassing: true;
-  policyAllowsMerge: true;
+  mergeable: boolean;
+  requiredChecksPassing: boolean;
+  policyAllowsMerge: boolean;
   authority: "current_merge_delivery_evidence";
   grantsReleaseAuthority: false;
 }
