@@ -1,7 +1,7 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-10-05
-Branch: `phase-1/bootstrap`
+Last updated: 2026-10-07
+Branch: `milestone-13/delegation`
 
 ## Canonical rules
 
@@ -45,7 +45,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`#1186` / `#1187`); M13D one-shot child execution admission complete (`#1190` / `#1191`); M13E durable child preparation complete (`#1194`); M13F child activation complete (`#1196`); M13G single child runtime-start complete (`#1200`); M13H child review handoff complete (`#1202`); M13I supervisor child-review decision complete (`#1204`); M13J bounded child repair admission complete (`#1207`); M13K fresh repair-child rematerialization complete (`#1209` rerun); M13L repair-child execution admission complete (`#1212`); M13M repair-child durable preparation complete (`#1214`); M13N repair-child activation gate complete (`#1216`); M13O repair-child runtime-start complete (`#1218`); M13P repair-child completion/review handoff complete (`#1220`); M13Q sibling execution-set admission complete (`#1222`); M13R sibling execution preparation set complete (`#1224`); M13S sibling execution admission batch complete (`#1226`); M13T sibling durable-preparation batch complete (`#1228`); M13U sibling writer-lease compatibility gate complete (`#1231`); M13V selected-sibling activation bridge complete (`#1233`); M13W selected-sibling runtime bridge complete (`#1236`); M13X deferred-sibling progression gate complete (`4b8844bb`, CI `#1238` attempt 2; attempt 1 only known M12N timing flake) |
+| 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Planned |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
@@ -831,6 +831,16 @@ The gate removes only the completed selected child from the prepared set, record
 
 Evidence: `4b8844bbf596d35c9675ba893cef000a792cd5e8`; PR #3 CI `#1238` attempt 2 passed typecheck + full suite. Attempt 1 failed only the known unrelated M12N lease-renewal timing assertion.
 
+## 13Y — Milestone 13 acceptance harness — COMPLETE
+
+`src/multi-agent-m13-acceptance.test.ts` provides the deterministic in-process Milestone 13 acceptance proof. It composes the existing M13A–M13X contracts to prove bounded child decomposition, sibling isolation, one-at-a-time same-workspace writer progression under the existing exclusive workspace-writer invariant, independent completion/review evidence, and one bounded repair cycle.
+
+The acceptance proof also verifies that repair cannot widen the original child authority envelope: the repair child retains the exact approved path scope, protected paths and trusted validation commands, receives a fresh child identity, cannot resume the prior child, cannot recurse delegation or agent teams, and receives no shell/network/MCP/plugin or release authority.
+
+M13Y adds no new runtime, writer-lease, filesystem, distributed, credential or release authority. It is acceptance evidence only.
+
+Evidence: `26305244eeeeeccc5c64eb1088c849f894a5be3a`; PR #3 CI `#1240` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
@@ -857,11 +867,25 @@ Evidence: `4b8844bbf596d35c9675ba893cef000a792cd5e8`; PR #3 CI `#1238` attempt 2
 22. **COMPLETE — M13V selected-sibling activation bridge.** CI `#1233` green.
 23. **COMPLETE — M13W selected-sibling runtime bridge.** CI `#1236` green.
 24. **COMPLETE — M13X deferred-sibling progression gate.** CI `#1238` attempt 2 green; attempt 1 failed only the known unrelated M12N timing flake.
-25. **NEXT — M13Y milestone acceptance harness.** Prove the complete bounded delegation acceptance target end-to-end in-process: validated sibling set, one-at-a-time same-workspace writer progression, independent completion/review evidence, and one bounded repair cycle with no authority widening. This should be evidence-only; do not add new runtime authority.
+25. **COMPLETE — M13Y milestone acceptance harness.** Commit `26305244`; PR #3 CI `#1240` green.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
+
+---
+
+# Milestone 14 — Autonomous Engineering Loops
+
+Acceptance target: given one already-approved bounded engineering goal, the orchestrator can durably progress through implementation → independent completion evidence → supervisor review → bounded repair/continuation → repeat until the acceptance criteria are satisfied or a trusted stop condition requires human action. Autonomy must reuse the existing task/Safety, worker, validation, diff-safety, review, repair, lease/fence and escalation boundaries rather than creating a parallel authority path.
+
+Milestone 14 must remain bounded and fail closed: every iteration stays inside the current approved authority envelope; loop budgets and stop conditions are deterministic; stale or restarted loop state cannot resurrect authority; reviewer/model output remains advisory until admitted by trusted code; and commit/push/PR/merge/deploy/release authority remains outside this milestone unless separately introduced by Milestone 15.
+
+## M14 work queue
+
+1. **NEXT — M14A autonomous-loop contract + durable state model.** Define the finite loop states, exact parent task/Safety binding, iteration/repair budget, independent-evidence requirements, trusted stop conditions, restart semantics and authority-free transition records. This first slice must be contract/state only: no automatic worker start, lease/fence acquisition, distributed dispatch, Git delivery, credential use or release mutation.
+2. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
+3. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
 
 ---
 
 # Current next step
 
-**M13Y — Milestone 13 acceptance harness.** The next trusted slice should prove the existing M13A–M13X contracts compose into the Milestone 13 acceptance target without adding authority: bounded child decomposition, sibling isolation, one-at-a-time same-workspace writer execution, independent review evidence, and one bounded repair cycle. The harness should be deterministic/in-process, evidence-only, and should not introduce new worker, lease, filesystem, distributed, credential, or release authority.
+**M14A — autonomous-loop contract + durable state model.** Start by defining the trusted, finite, restart-safe state machine for one already-approved engineering goal. It should specify bounded iteration/repair budgets, independent-evidence gates, terminal success/failure/escalation conditions and exact authority bindings while remaining non-executing and authority-free.
