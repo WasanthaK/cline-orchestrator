@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake) |
+| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake); M14F durable execution preparation complete (`e2de6d62`, CI `#1253` rerun green after unrelated M12I ProjectMemory read race) |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -926,6 +926,16 @@ The permit/receipt remains non-executing and carries no task/filesystem/Safety/l
 
 Evidence: implementation `488723e44e12982b4b5e9f34a591ad0daab32b33`; proofs `000da7536a29fde598295e0c8d0b214861693b98`; CI `#1251` typechecked successfully and passed the full suite on rerun after the known unrelated M12N renewal timing flake.
 
+## 14F — Durable execution preparation — COMPLETE
+
+`src/autonomous-engineering-execution-preparation.ts` persists exactly one durable, non-executable preparation per M14D execution intent after a consumed M14E receipt is presented. Preparation revalidates the exact durable loop revision plus current task/project/workspace/registry/Safety/worker/path binding and preserves the approved objective, acceptance criteria, trusted validation commands and exact scope/protected-path envelope.
+
+For bounded repairs, the durable preparation also preserves the exact trusted repair instruction and reviewer decision identity. Reusing the same intent fails closed, and advancing the loop or drifting current Safety state invalidates preparation.
+
+M14F does not mutate TaskStore or loop state, start/continue Cline/runtime, acquire writer lease/fence authority, create distributed work, perform Git delivery, use credentials, or grant task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `edaadb25c485ad02cb1e0c40d2604d427e72abd9`; proofs `e2de6d628b6fbed527f533143c6278eddcc7d578`; CI `#1253` passed on rerun after an unrelated pre-existing M12I ProjectMemory read race.
+
 ## M14 work queue
 
 1. **COMPLETE — M14A autonomous-loop contract + durable state model.** CI `#1242` green.
@@ -933,12 +943,13 @@ Evidence: implementation `488723e44e12982b4b5e9f34a591ad0daab32b33`; proofs `000
 3. **COMPLETE — M14C durable admitted-transition application.** CI `#1246` green.
 4. **COMPLETE — M14D execution-intent bridge.** CI `#1249` green.
 5. **COMPLETE — M14E execution admission permit.** CI `#1251` rerun green.
-6. **NEXT — M14F durable execution preparation.** Persist exactly one non-executable execution preparation from a consumed M14E receipt after revalidating the exact loop revision and current task/Safety binding. Preserve the M14D objective/repair provenance and trusted validation/scope evidence, but do not start/continue Cline, acquire lease/fence authority, create distributed work, mutate TaskStore, or grant filesystem/release authority.
-7. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
-8. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
+6. **COMPLETE — M14F durable execution preparation.** CI `#1253` rerun green.
+7. **NEXT — M14G execution activation gate.** Activate only one current M14F preparation after revalidating the exact durable loop revision/current task-Safety binding and requiring a live scheduler-owned local writer lease bound to the same task/workspace. Activation remains process-local and `runtimeStartAuthorized: false`; no Cline/runtime start, distributed dispatch or release authority.
+8. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
+9. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
 
 ---
 
 # Current next step
 
-**M14F — durable execution preparation.** Consume only a valid M14E admission receipt and persist a one-per-intent preparation bound to the exact current loop revision, task/Safety identity, objective/repair provenance, trusted validation commands and approved path envelope. It remains preparation-only and cannot start or continue execution.
+**M14G — execution activation gate.** Require the exact M14F durable preparation, current loop revision, fresh task/Safety binding and a live scheduler-owned writer lease for the same task/workspace, then emit only process-local runtime input with `runtimeStartAuthorized: false`. Runtime start remains a later slice.
