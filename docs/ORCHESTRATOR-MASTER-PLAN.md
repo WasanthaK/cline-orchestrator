@@ -47,7 +47,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
-| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`); M15B explicit delivery authority admission complete (`35a7a4fc`, CI `#1288`); M15C local commit boundary complete (`d9248af3`, CI `#1290`); M15D push + PR boundary complete (`df68b8fc`, CI `#1295`); M15E merge boundary complete (`7d1776d3`, CI `#1298`); M15F deployment boundary complete (`7f5ea994`, CI `#1301`) |
+| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`); M15B explicit delivery authority admission complete (`35a7a4fc`, CI `#1288`); M15C local commit boundary complete (`d9248af3`, CI `#1290`); M15D push + PR boundary complete (`df68b8fc`, CI `#1295`); M15E merge boundary complete (`7d1776d3`, CI `#1298`); M15F deployment boundary complete (`7f5ea994`, CI `#1301`); M15G recovery/replay safety complete (`6b2dd979`, CI `#1303`) |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
@@ -1009,8 +1009,8 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 4. **COMPLETE — M15D push + PR boundary.** M15D1 push-only (`b6d90dd9`, CI `#1292`) and M15D2 PR create/update (`df68b8fc`, CI `#1295`) complete.
 5. **COMPLETE — M15E merge authority boundary.** CI `#1298` green after correcting the merge-evidence boolean test contract.
 6. **COMPLETE — M15F deployment/release boundary.** CI `#1301` green.
-7. **NEXT — M15G release recovery/replay safety.** Persist enough pre-mutation intent to classify consumed-authority outcomes after restart. Recovery may only observe and classify commit/push/PR/merge/deploy as confirmed-applied, confirmed-not-applied, or ambiguous; it must never replay the mutation, reuse the consumed permit, or mint retry authority.
-8. **FOLLOW — M15H Milestone 15 acceptance harness.** Prove capability separation, replay prevention, stale-evidence rejection and exact explicit-authority enforcement.
+7. **COMPLETE — M15G release recovery/replay safety.** CI `#1303` green.
+8. **NEXT — M15H Milestone 15 acceptance harness.** Prove capability separation, replay prevention, stale-evidence rejection, restart recovery and exact explicit-authority enforcement across proposal → per-action authorization → commit → push → PR → merge → deploy.
 9. **DO NOT** allow model/planner/reviewer output, autonomous-loop success, CI success, possession of GitHub credentials, or a prior delivery permit to grant another delivery capability.
 
 ---
@@ -1018,4 +1018,4 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 
 # Current next step
 
-**M15G — release recovery/replay safety.** Read only durable consumed-action intent plus fresh action-specific observation evidence after restart. Classify the uncertain action outcome without mutating Git/GitHub/deployment state. A confirmed-not-applied outcome still requires a brand-new explicit M15B authorization before any retry; ambiguous outcomes remain fail-closed for human resolution.
+**M15H — Milestone 15 acceptance harness.** Prove M15A–M15G compose without authority bleed: success of one action cannot authorize the next, every mutating step requires its own explicit one-shot permit, stale evidence blocks mutation, consumed permits cannot replay across restart, and uncertain outcomes recover observationally without retry authority. The harness adds no production mutation path.
