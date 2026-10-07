@@ -330,13 +330,33 @@ function assertEventAdmissible(
         "transition_not_admissible",
       );
     }
-    if (evidence.completionPacket || evidence.decision) {
+    if (evidence.completionPacket) {
       throw new AutonomousEngineeringLoopTransitionAdmissionError(
-        "repair start admission must not consume stale completion/review evidence",
+        "repair start admission must not replay completion-packet evidence",
         "transition_not_admissible",
       );
     }
-    return {};
+    const decision = evidence.decision;
+    if (
+      !decision
+      || decision.schemaVersion !== 1
+      || !UUID.test(decision.decisionId)
+      || decision.kind !== "review_repair"
+      || decision.provenance !== "reviewer"
+      || decision.supervisorTaskId !== loop.authorityBinding.supervisorTaskId
+      || decision.taskId !== loop.authorityBinding.taskId
+      || decision.safetyPlanId !== loop.authorityBinding.safetyPlanId
+      || decision.safetyProfileId !== loop.authorityBinding.safetyProfileId
+      || decision.safetyProfileRevision !== loop.authorityBinding.safetyProfileRevision
+      || decision.workspaceRegistryRevision !== loop.authorityBinding.workspaceRegistryRevision
+      || !decision.repairInstruction?.trim()
+    ) {
+      throw new AutonomousEngineeringLoopTransitionAdmissionError(
+        "repair start requires the exact trusted reviewer repair decision",
+        "decision_invalid",
+      );
+    }
+    return { decisionId: decision.decisionId };
   }
 
   if (event.type === "completion_evidence_captured") {
