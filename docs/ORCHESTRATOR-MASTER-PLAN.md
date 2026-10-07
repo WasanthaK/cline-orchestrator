@@ -994,6 +994,28 @@ Evidence: acceptance harness `4f276b959c88334f76d8ed62d4f5fcf4461bdfad`; CI `#12
 
 ---
 
+
+# Milestone 15 — GitHub Delivery / Release Authority
+
+Acceptance target: after a bounded engineering task has reached a trusted successful terminal state, the orchestrator may prepare and, only through separately admitted explicit authority, perform narrowly scoped Git/GitHub delivery actions without allowing edit authority, model output, CI status, credentials, prior confirmations or restart history to become release authority.
+
+Milestone 15 must keep each delivery capability distinct. Commit, push, pull-request creation/update, merge and deployment are separate authorities with separate evidence and confirmation requirements. Delivery authority is short-lived, single-purpose, bound to exact repository/workspace/task/evidence identity, replay-protected, and invalidated by repository/task/Safety drift. Merge, deploy, destructive Git and any external mutation continue to require explicit user authorization immediately before the authorized action.
+
+## M15 work queue
+
+1. **NEXT — M15A delivery proposal contract.** Create a non-mutating, durable/evidence-only proposal bound to an exact succeeded M14 loop, current task/Safety binding, current successful completion packet and exact Git terminal identity. Proposal may request commit/push/PR/merge/deploy actions but grants none of them.
+2. **FOLLOW — M15B explicit delivery authority admission.** Define short-lived, one-shot human-authorized permits for individual delivery actions. No permit can be inferred from task success, reviewer pass, CI, credentials or prior approvals.
+3. **FOLLOW — M15C local commit preparation/execution boundary.** Add commit authority separately from push, preserving exact diff/fingerprint and message constraints.
+4. **FOLLOW — M15D push + PR boundary.** Add remote mutation only under explicit current authority and credential isolation; no merge.
+5. **FOLLOW — M15E merge authority boundary.** Separate merge approval and freshness checks; no deployment.
+6. **FOLLOW — M15F deployment/release boundary.** Separate deployment authorization from merge and GitHub state.
+7. **FOLLOW — M15G release recovery/replay safety.** Fail closed across restart, ambiguous remote outcomes and partial delivery.
+8. **FOLLOW — M15H Milestone 15 acceptance harness.** Prove capability separation, replay prevention, stale-evidence rejection and exact explicit-authority enforcement.
+9. **DO NOT** allow model/planner/reviewer output, autonomous-loop success, CI success, possession of GitHub credentials, or a prior delivery permit to grant another delivery capability.
+
+---
+
+
 # Current next step
 
-**Milestone 15 — GitHub delivery / release authority.** Define the first bounded release-authority slice from the existing Git safety and delivery primitives before implementing any commit/push/PR/merge/deploy capability. No release mutation is authorized merely by entering Milestone 15.
+**M15A — delivery proposal contract.** Bind one proposal to exact successful M14/task/Safety/completion/Git evidence and requested delivery actions. The proposal is evidence only and cannot commit, push, create/update a PR, merge, deploy, use credentials or grant release authority.
