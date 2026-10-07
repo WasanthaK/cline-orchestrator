@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | Planned |
+| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`) |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -878,14 +878,25 @@ Acceptance target: given one already-approved bounded engineering goal, the orch
 
 Milestone 14 must remain bounded and fail closed: every iteration stays inside the current approved authority envelope; loop budgets and stop conditions are deterministic; stale or restarted loop state cannot resurrect authority; reviewer/model output remains advisory until admitted by trusted code; and commit/push/PR/merge/deploy/release authority remains outside this milestone unless separately introduced by Milestone 15.
 
+## 14A — Autonomous-loop contract + durable state model — COMPLETE
+
+`src/autonomous-engineering-loop.ts` defines a finite authority-free loop state machine bound exactly to one approved `SupervisorTaskV1`. The durable loop record preserves project/workspace/registry/Safety/worker/path bindings, explicit implementation/repair budgets, monotonic revisions and terminal stop reasons.
+
+The transition model permits only bounded implementation → evidence → review → bounded repair progression. Budget exhaustion fails closed to `waiting_for_human`; terminal state cannot resume. `FileAutonomousEngineeringLoopStore` persists loop state outside TaskStore and rejects stale revision replacement after reconstruction, so restart history cannot resurrect stale loop progression.
+
+M14A is non-executing: it starts no worker/Cline/runtime, acquires no local lease or distributed fence, creates no distributed dispatch, performs no Git delivery, uses no credentials and grants no task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `f3ce2bb6fc7e74805fc9e21a6d6eb79f1a435915`; proofs `e6237eb6a87dc220e32314336a17ca86f4b47d18`; CI `#1242` passed typecheck + full suite.
+
 ## M14 work queue
 
-1. **NEXT — M14A autonomous-loop contract + durable state model.** Define the finite loop states, exact parent task/Safety binding, iteration/repair budget, independent-evidence requirements, trusted stop conditions, restart semantics and authority-free transition records. This first slice must be contract/state only: no automatic worker start, lease/fence acquisition, distributed dispatch, Git delivery, credential use or release mutation.
-2. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
-3. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
+1. **COMPLETE — M14A autonomous-loop contract + durable state model.** CI `#1242` green.
+2. **NEXT — M14B trusted loop-transition admission gate.** Admit only the next authority-free loop transition after revalidating the exact current parent task/Safety binding and validating the required independent evidence for that transition. Reviewer/model output remains advisory; the gate must not start workers, acquire leases/fences, mutate TaskStore, create distributed state, or grant filesystem/release authority.
+3. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
+4. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
 
 ---
 
 # Current next step
 
-**M14A — autonomous-loop contract + durable state model.** Start by defining the trusted, finite, restart-safe state machine for one already-approved engineering goal. It should specify bounded iteration/repair budgets, independent-evidence gates, terminal success/failure/escalation conditions and exact authority bindings while remaining non-executing and authority-free.
+**M14B — trusted loop-transition admission gate.** Reuse current parent/Safety revalidation and independent completion/review evidence to authorize only an authority-free state transition in the durable M14 loop. No execution or release action may be coupled to transition admission.
