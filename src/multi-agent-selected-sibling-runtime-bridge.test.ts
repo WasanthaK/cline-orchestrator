@@ -123,7 +123,7 @@ test("selected activated sibling enters existing M13G starter once",async()=>{
     updatedAt:"2026-10-07T01:56:00.000Z",
   };
   const bridge=new MultiAgentSelectedSiblingRuntimeBridge({
-    async start(received){
+    async start(received: MultiAgentChildExecutionActivationContext){
       calls+=1;
       assert.equal(received.runtimeInput.childTaskId,childTaskId);
       return resultTask;
@@ -137,7 +137,7 @@ test("selected activated sibling enters existing M13G starter once",async()=>{
 test("deferred sibling cannot enter runtime bridge",async()=>{
   let calls=0;
   const bridge=new MultiAgentSelectedSiblingRuntimeBridge({
-    async start(task){calls+=1;return task as any;},
+    async start(task: MultiAgentChildExecutionActivationContext){calls+=1;return task as any;},
   } as any);
   assert.throws(
     ()=>bridge.assertChildSelected(selection,otherChildTaskId),
@@ -155,7 +155,7 @@ test("deferred sibling cannot enter runtime bridge",async()=>{
 test("cross-bound activation workspace fails before M13G",async()=>{
   let calls=0;
   const bridge=new MultiAgentSelectedSiblingRuntimeBridge({
-    async start(task){calls+=1;return task as any;},
+    async start(task: MultiAgentChildExecutionActivationContext){calls+=1;return task as any;},
   } as any);
   const bad=context();
   bad.runtimeInput={...bad.runtimeInput,workspaceId:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"};
