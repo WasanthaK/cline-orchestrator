@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`) |
+| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`) |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -898,16 +898,27 @@ M14B starts no worker/Cline/runtime, acquires no lease/fence, creates no distrib
 
 Evidence: implementation `cb0cf01cf03ee0f5876ca75f0005041f148456b8`; proofs `2f99533581e4a65aa67293d3e667cf7e1edb90ed`; CI `#1244` passed typecheck + full suite.
 
+## 14C — Durable admitted-transition application — COMPLETE
+
+`src/autonomous-engineering-loop-transition-apply.ts` consumes one still-fresh M14B transition admission only against the exact expected M14A loop revision, applies the already-admitted deterministic transition and persists the next revision through the M14A store. Admission expiry, wrong revision and replay fail closed.
+
+Admission consumption is persisted separately from loop state, so reconstructing the apply service cannot reuse an already-consumed admission. The applied receipt remains state evidence only and explicitly grants no task/filesystem/Safety/lease/credential/release authority.
+
+M14C mutates only the durable autonomous-loop record. It does not mutate TaskStore, start workers/Cline/runtime, acquire writer leases or distributed fences, create distributed state, perform Git delivery, or use credentials.
+
+Evidence: implementation `b8831841004c4c2f3de560dc8cb4f9e9711f23b5`; proofs `b123ee1d5a3002a37f9a4aeb7dde03825a3839aa`; CI `#1246` passed typecheck + full suite.
+
 ## M14 work queue
 
 1. **COMPLETE — M14A autonomous-loop contract + durable state model.** CI `#1242` green.
 2. **COMPLETE — M14B trusted loop-transition admission gate.** CI `#1244` green.
-3. **NEXT — M14C durable admitted-transition application.** Consume one fresh M14B admission against the exact expected M14A loop revision, apply only the already-admitted deterministic state transition, and persist the new loop revision atomically. Reject expired, replayed, wrong-loop or stale-revision admission evidence. This slice remains state-only: no TaskStore mutation, worker/runtime start, lease/fence acquisition, distributed state, Git delivery or release authority.
-4. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
-5. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
+3. **COMPLETE — M14C durable admitted-transition application.** CI `#1246` green.
+4. **NEXT — M14D execution-intent bridge.** Derive a bounded, non-executing execution intent only from a current durable loop phase that requires implementation or repair. Revalidate exact current task/Safety binding and preserve the existing task objective/repair instruction provenance. The bridge must not itself continue/start the task, acquire lease/fence authority, create distributed work, or grant filesystem/release authority.
+5. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
+6. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
 
 ---
 
 # Current next step
 
-**M14C — durable admitted-transition application.** Apply only a still-fresh M14B transition admission to the exact expected durable M14A loop revision, persist the resulting revision atomically, and make admission replay/stale-revision use fail closed. This remains loop-state mutation only, not task/runtime/release execution.
+**M14D — execution-intent bridge.** Convert a current durable `implementation_in_progress` loop revision into a bounded execution-intent descriptor after fresh task/Safety revalidation, distinguishing initial implementation from admitted bounded repair provenance. This descriptor is evidence/preparation only and cannot itself start or continue execution.
