@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake); M14F durable execution preparation complete (`e2de6d62`, CI `#1253` rerun green after unrelated M12I ProjectMemory read race); M14G execution activation gate complete (`b5944221`, CI `#1256`) |
+| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake); M14F durable execution preparation complete (`e2de6d62`, CI `#1253` rerun green after unrelated M12I ProjectMemory read race); M14G execution activation gate complete (`b5944221`, CI `#1256`); M14H trusted initial local runtime start complete (`fb423e47`, CI `#1259`) |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -944,6 +944,16 @@ The activation result contains only process-local runtime input and activation e
 
 Evidence: implementation `626eb660581df0dacbe49f5c564ec442023ddb18`; corrected identity-change proof `b5944221e4d76760ac422badbcc335ab6ee168a7`; CI `#1256` passed typecheck + full suite.
 
+## 14H — Trusted initial local runtime start — COMPLETE
+
+`src/autonomous-engineering-initial-runtime-start.ts` bridges only an exact M14G `initial_implementation` activation into the existing `ScheduledHubWriterAuthorityRunner` path. Before handoff it revalidates the runner's current approved task/workspace/owner binding, validates the same live scheduler-owned writer lease again, and rechecks that the M14G activation evidence still matches the current lease identity.
+
+M14H deliberately rejects `bounded_repair`. It does not weaken or bypass the scheduled runner's fresh-created-task invariant and therefore cannot silently reinterpret continuation as initial start. Runtime execution continues to inherit the scheduled runner's existing lease-aware Hub runtime, durable authority revalidation, provider preflight, validation/diff-safety behavior and fail-safe abort on lease loss.
+
+M14H adds no distributed execution, credentials, Git delivery or release authority.
+
+Evidence: implementation `d59f2ee85e377ad84611971c201cac9cd62ef6bd`; proofs `fb423e471873ea82a6d0cd603503434594dfe9a3`; CI `#1259` passed typecheck + full suite.
+
 ## M14 work queue
 
 1. **COMPLETE — M14A autonomous-loop contract + durable state model.** CI `#1242` green.
@@ -953,13 +963,13 @@ Evidence: implementation `626eb660581df0dacbe49f5c564ec442023ddb18`; corrected i
 5. **COMPLETE — M14E execution admission permit.** CI `#1251` rerun green.
 6. **COMPLETE — M14F durable execution preparation.** CI `#1253` rerun green.
 7. **COMPLETE — M14G execution activation gate.** CI `#1256` green.
-8. **NEXT — M14H trusted initial local runtime start.** Consume one exact M14G activation context for `initial_implementation` and hand the already-approved task plus the same live scheduler-owned writer lease to the existing `ScheduledHubWriterAuthorityRunner.runApprovedTask` path. Revalidate activation/lease identity immediately before handoff. Do not weaken the scheduled runner's fresh-task invariant.
-9. **FOLLOW — M14I trusted bounded-repair runtime continuation.** Add a separately reviewed lease-aware continuation path for an exact `bounded_repair` activation; do not fake an initial start or route repair through an unguarded continuation API.
-10. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14H/M14I.
+8. **COMPLETE — M14H trusted initial local runtime start.** CI `#1259` green.
+9. **NEXT — M14I trusted bounded-repair runtime continuation.** Add a separate lease-aware continuation boundary for an exact `bounded_repair` M14G activation. It must require current durable task/Safety binding, the same live writer lease, exact trusted reviewer repair provenance and a task state eligible for repair continuation. Do not route through unguarded `MachineOrchestratorService.continueTask`, and do not weaken the scheduled runner's fresh-task start invariant.
+10. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14I.
 11. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
 
 ---
 
 # Current next step
 
-**M14H — trusted initial local runtime start.** Bridge only an exact M14G `initial_implementation` activation into the existing scheduled lease-aware local writer runner after fresh lease validation. Bounded repair is deliberately rejected in M14H and remains M14I so the existing fresh-task safety invariant is preserved.
+**M14I — trusted bounded-repair runtime continuation.** Introduce a dedicated lease-aware repair continuation path for the same already-approved task using only the exact trusted repair instruction preserved through M14D–M14G. Revalidate task/Safety/lease state immediately before resume, preserve validation/diff-safety and fail-safe lease-loss behavior, and add no release authority.
