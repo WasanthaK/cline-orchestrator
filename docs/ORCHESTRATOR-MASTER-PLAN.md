@@ -47,7 +47,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
-| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`) |
+| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`); M15B explicit delivery authority admission complete (`35a7a4fc`, CI `#1288`) |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
@@ -1004,8 +1004,8 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 ## M15 work queue
 
 1. **COMPLETE — M15A delivery proposal contract.** CI `#1286` green.
-2. **NEXT — M15B explicit delivery authority admission.** Define short-lived, one-shot human-authorized permits for individual delivery actions. No permit can be inferred from task success, reviewer pass, CI, credentials or prior approvals.
-3. **FOLLOW — M15C local commit preparation/execution boundary.** Add commit authority separately from push, preserving exact diff/fingerprint and message constraints.
+2. **COMPLETE — M15B explicit delivery authority admission.** CI `#1288` green.
+3. **NEXT — M15C local commit preparation/execution boundary.** Add commit authority separately from push, preserving exact task-delta/fingerprint and message constraints. The commit path must not sweep pre-existing user changes into the delivery commit.
 4. **FOLLOW — M15D push + PR boundary.** Add remote mutation only under explicit current authority and credential isolation; no merge.
 5. **FOLLOW — M15E merge authority boundary.** Separate merge approval and freshness checks; no deployment.
 6. **FOLLOW — M15F deployment/release boundary.** Separate deployment authorization from merge and GitHub state.
@@ -1018,4 +1018,4 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 
 # Current next step
 
-**M15B — explicit delivery authority admission.** Admit one exact action from an M15A proposal only through a short-lived, single-use explicit authorization record bound to the same task/workspace/Safety/Git evidence. The permit authorizes only that one delivery action and still performs no Git/GitHub mutation.
+**M15C — local commit preparation/execution boundary.** Consume only an exact M15B `commit` authorization and create at most one local commit containing only the task delta proven by the task checkpoint/diff-safety evidence. Preserve any pre-existing user staged/unstaged/untracked state, revalidate current Git identity immediately before commit, constrain the commit message, and perform no push/PR/merge/deploy or credential use.
