@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`); M14E execution admission permit complete (`000da753`, CI `#1251` rerun green after known unrelated M12N timing flake); M14F durable execution preparation complete (`e2de6d62`, CI `#1253` rerun green after unrelated M12I ProjectMemory read race); M14G execution activation gate complete (`b5944221`, CI `#1256`); M14H trusted initial local runtime start complete (`fb423e47`, CI `#1259`); M14I trusted bounded-repair runtime continuation complete (`90347cbe`, CI `#1263`); M14J post-runtime completion evidence complete (`5734f7a4`, CI `#1265`); M14K autonomous reviewer decision bridge complete (`9c9528a8`, CI `#1267`); M14L completion/review progression composition complete (`0814d70d`, CI `#1269`); M14M bounded repair-cycle launch complete (`d690f5de`, CI `#1274`); M14N initial-cycle launch complete (`f917684c`, CI `#1276`); M14O phase-aware step controller complete (`76be4fc6`, CI `#1281`) |
+| 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -981,12 +981,19 @@ Evidence: scheduled runner repair path `b83dc2f04147150f6c09b4405d89374b7126e5ff
 13. **COMPLETE — M14M bounded repair-cycle launch composition.** CI `#1274` green.
 14. **COMPLETE — M14N initial-cycle launch composition.** CI `#1276` green.
 15. **COMPLETE — M14O phase-aware autonomous step controller.** CI `#1281` green.
-16. **NEXT — M14P Milestone 14 acceptance harness.** Prove repeated restart-safe M14O stepping over the existing durable stores reaches `succeeded` after a bounded repair cycle and fails closed on budget exhaustion/stale authority/terminal stop, with no release authority.
-17. **DO NOT** add distributed runtime start, commit/push/PR/merge/deploy automation, credentials or release authority in M14O/M14P.
-18. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
+16. **COMPLETE — M14P Milestone 14 acceptance harness.** CI `#1283` green.
+17. **MILESTONE 14 COMPLETE.** The bounded restart-safe autonomous loop acceptance target is satisfied without Git delivery, credentials or release authority.
+
+## 14P — Milestone 14 acceptance harness — COMPLETE
+
+`src/autonomous-engineering-m14-acceptance.test.ts` proves the M14A–M14O contracts compose into a bounded restart-safe loop using the actual durable M14 loop store/state machine across reconstructed controller instances. The acceptance path covers initial execution, independent completion evidence, trusted review repair, one bounded repair continuation, fresh evidence and eventual `succeeded` state.
+
+The harness also proves restart from `awaiting_review`, deterministic repair-budget exhaustion to `waiting_for_human`, stale supervisor/Safety binding rejection, terminal no-op behavior and continued absence of Git delivery, credential or release authority.
+
+Evidence: acceptance harness `4f276b959c88334f76d8ed62d4f5fcf4461bdfad`; CI `#1283` passed typecheck + full suite.
 
 ---
 
 # Current next step
 
-**M14P — Milestone 14 acceptance harness.** Prove the existing M14A–M14O contracts compose into a bounded restart-safe autonomous engineering loop: initial execution, independent evidence, trusted repair decision, bounded repair continuation, fresh evidence and eventual success; plus fail-closed proofs for budget exhaustion, stale authority and terminal no-op. The harness adds no production authority.
+**Milestone 15 — GitHub delivery / release authority.** Define the first bounded release-authority slice from the existing Git safety and delivery primitives before implementing any commit/push/PR/merge/deploy capability. No release mutation is authorized merely by entering Milestone 15.
