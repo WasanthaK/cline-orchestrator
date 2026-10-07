@@ -120,7 +120,7 @@ function lease(overrides: Partial<{
   aborted: boolean;
   changed: boolean;
 }> = {}): WriterLeaseSession {
-  let changed = overrides.changed ?? false;
+  let changed = false;
   const aborter = new AbortController();
   if (overrides.aborted) aborter.abort();
   return {
