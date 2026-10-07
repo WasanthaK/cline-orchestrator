@@ -122,6 +122,39 @@ function assertFreshScheduledTask(task: OrchestratorTask): void {
   }
 }
 
+function assertRepairableScheduledTask(task: OrchestratorTask, instruction: string): void {
+  if (task.status !== "completed") {
+    throw new ScheduledHubWriterError(
+      `Bounded repair may only continue a completed reviewed task; task ${task.id} is ${task.status}`,
+      "task_not_runnable",
+    );
+  }
+  if ((task.runCount ?? 0) < 1 || (task.sessionGeneration ?? 0) < 1 || !task.clineSessionId) {
+    throw new ScheduledHubWriterError(
+      `Completed task ${task.id} lacks prior orchestrator-owned runtime/session evidence required for bounded repair`,
+      "task_not_runnable",
+    );
+  }
+  if (!task.lastRunCheckpoint?.available || task.lastRunCheckpoint.restoredAt) {
+    throw new ScheduledHubWriterError(
+      `Completed task ${task.id} has no usable rollback checkpoint for bounded repair`,
+      "task_not_runnable",
+    );
+  }
+  if (task.pendingEscalation) {
+    throw new ScheduledHubWriterError(
+      `Completed task ${task.id} has unresolved human attention and cannot enter bounded repair`,
+      "task_not_runnable",
+    );
+  }
+  if (!instruction.trim()) {
+    throw new ScheduledHubWriterError(
+      "Bounded repair instruction must not be empty",
+      "task_not_runnable",
+    );
+  }
+}
+
 function assertRecoverableScheduledTask(task: OrchestratorTask, permit?: RecoveryPermit): void {
   if (task.status !== "running") {
     throw new ScheduledHubWriterError(
@@ -266,6 +299,204 @@ export class ScheduledHubWriterAuthorityRunner implements WriterAuthorityRunner 
       workspaceId: located.workspace.workspaceId,
       ownerInstanceId: owner.ownerInstanceId,
     };
+  }
+
+  async revalidateApprovedRepair(
+    taskId: string,
+    instruction: string,
+  ): Promise<ApprovedWriterBindingV1> {
+    const owner = this.ownerFor(taskId);
+    const { located } = await this.currentAuthority(taskId, owner.ownerInstanceId);
+    if (this.recoveries.has(taskId)) {
+      throw new ScheduledHubWriterError(
+        `Task ${taskId} has restart-recovery state and cannot also enter bounded repair`,
+        "task_not_runnable",
+      );
+    }
+    assertRepairableScheduledTask(located.task, instruction);
+    return {
+      taskId: located.task.id,
+      workspaceId: located.workspace.workspaceId,
+      ownerInstanceId: owner.ownerInstanceId,
+    };
+  }
+
+  async runApprovedRepair(
+    taskId: string,
+    instruction: string,
+    lease: WriterLeaseSession,
+  ): Promise<void> {
+    const owner = this.ownerFor(taskId);
+    if (lease.taskId !== taskId || lease.ownerInstanceId !== owner.ownerInstanceId) {
+      throw new ScheduledHubWriterError(
+        "Bounded-repair lease task/owner identity does not match the orchestrator-owned writer",
+        "lease_binding_mismatch",
+      );
+    }
+
+    const { located } = await this.currentAuthority(taskId, owner.ownerInstanceId);
+    if (this.recoveries.has(taskId)) {
+      throw new ScheduledHubWriterError(
+        `Task ${taskId} has restart-recovery state and cannot also enter bounded repair`,
+        "task_not_runnable",
+      );
+    }
+    assertRepairableScheduledTask(located.task, instruction);
+    if (lease.workspaceId !== located.workspace.workspaceId) {
+      throw new ScheduledHubWriterError(
+        "Bounded-repair lease workspace does not match current registered task workspace",
+        "lease_binding_mismatch",
+      );
+    }
+    await lease.validateCurrent();
+
+    let worker: WorkerConfig;
+    try {
+      worker = await this.resolveWorkerProfile(located.workspace.safetyProfile.workerProfileId);
+    } catch (error) {
+      throw new ScheduledHubWriterError(
+        `Worker profile '${located.workspace.safetyProfile.workerProfileId}' is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        "worker_profile_unavailable",
+      );
+    }
+    const preflight = await this.providerPreflight(worker);
+    if (!preflight.ok) {
+      throw new ScheduledHubWriterError(
+        `Provider preflight failed: ${preflight.message}`,
+        "provider_preflight_failed",
+      );
+    }
+
+    const authorityProvider: LeaseAwareWriterAuthorityProvider = {
+      revalidateCurrent: async (requestedTaskId: string) => {
+        if (requestedTaskId !== taskId) {
+          throw new ScheduledHubWriterError(
+            "Lease-aware repair executor requested authority for another task",
+            "task_binding_stale",
+          );
+        }
+        const current = await this.currentAuthority(taskId, owner.ownerInstanceId);
+        assertRepairableScheduledTask(current.located.task, instruction);
+        return current.authority;
+      },
+    };
+
+    const runtimeFactory = new LeaseAwareHubRuntimeFactory(
+      this.runtimeFactory,
+      located.task,
+      worker,
+      { lease, authorityProvider },
+    );
+    const runner = new ClineRunner(located.workspace.canonicalRoot, worker, {
+      runtimeMode: "hub",
+      runtimeFactory,
+    });
+
+    let leaseLost = lease.signal.aborted;
+    let abortPromise: Promise<void> | undefined;
+    const abortForLeaseLoss = () => {
+      leaseLost = true;
+      if (abortPromise) return;
+      abortPromise = (async () => {
+        try {
+          await runner.abort(taskId, LEASE_LOST_ABORT_REASON);
+        } catch {
+          // The task may already be terminal. Lease-aware writes still fail closed.
+        }
+      })();
+    };
+    lease.signal.addEventListener("abort", abortForLeaseLoss, { once: true });
+
+    try {
+      if (lease.signal.aborted) {
+        abortForLeaseLoss();
+        await abortPromise;
+        throw new ScheduledHubWriterError(LEASE_LOST_ABORT_REASON, "lease_lost");
+      }
+      await lease.validateCurrent();
+
+      const current = await this.currentAuthority(taskId, owner.ownerInstanceId);
+      assertRepairableScheduledTask(current.located.task, instruction);
+      current.located.task.finishReason = undefined;
+      current.located.task.error = undefined;
+      current.located.task.lastValidation = undefined;
+      current.located.task.validationRepairCount = 0;
+      current.located.task.lastPrompt = instruction;
+      current.located.task.status = "repairing";
+      await lease.validateCurrent();
+      await current.located.store.save(current.located.task);
+      await current.located.store.appendEvent(taskId, "resume_queued", {
+        status: current.located.task.status,
+        message: "Autonomous bounded repair queued inside the existing approved safety envelope",
+      });
+
+      let result = await runner.resume(current.located.task, instruction);
+      while (result.status === "validating") {
+        await lease.validateCurrent();
+        const commands = result.validationCommands ?? [];
+        if (commands.length === 0) {
+          throw new ScheduledHubWriterError(
+            "Bounded repair entered validation without approved commands",
+            "worker_result_invalid",
+          );
+        }
+        const validation = await runValidationCommands(located.workspace.canonicalRoot, commands, {
+          timeoutMs: worker.validationTimeoutMs,
+          maxOutputChars: worker.maxValidationOutputChars,
+          signal: lease.signal,
+        });
+        await lease.validateCurrent();
+        const latest = await located.store.load(taskId);
+        if (latest.status === "aborted") {
+          throw new ScheduledHubWriterError(LEASE_LOST_ABORT_REASON, "lease_lost");
+        }
+        latest.lastValidation = validation;
+        if (validation.passed) {
+          latest.status = "completed";
+          latest.finishReason = "completed";
+          latest.error = undefined;
+          await lease.validateCurrent();
+          await located.store.save(latest);
+          result = latest;
+          break;
+        }
+
+        const failure = validationFailureMessage(validation);
+        const repairsUsed = latest.validationRepairCount ?? 0;
+        if (repairsUsed >= worker.maxValidationRepairs) {
+          latest.status = "validation_failed";
+          latest.finishReason = "validation_failed";
+          latest.error = failure;
+          await lease.validateCurrent();
+          await located.store.save(latest);
+          result = latest;
+          break;
+        }
+
+        latest.validationRepairCount = repairsUsed + 1;
+        latest.status = "repairing";
+        latest.finishReason = undefined;
+        latest.error = failure;
+        await lease.validateCurrent();
+        await located.store.save(latest);
+        result = await runner.resume(latest, buildValidationRepairPrompt(latest, validation));
+      }
+
+      if (abortPromise) await abortPromise;
+      if (leaseLost || lease.signal.aborted) {
+        throw new ScheduledHubWriterError(LEASE_LOST_ABORT_REASON, "lease_lost");
+      }
+      if (result.status !== "completed" && result.status !== "waiting_for_human") {
+        throw new ScheduledHubWriterError(
+          `Bounded repair ended in unexpected task state ${result.status}`,
+          "worker_result_invalid",
+        );
+      }
+    } finally {
+      lease.signal.removeEventListener("abort", abortForLeaseLoss);
+      if (abortPromise) await abortPromise;
+      await runner.close("autonomous bounded repair complete");
+    }
   }
 
   async runApprovedTask(taskId: string, lease: WriterLeaseSession): Promise<void> {
