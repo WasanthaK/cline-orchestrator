@@ -47,7 +47,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
-| 15 | GitHub delivery / release authority | In progress — M15A delivery proposal complete (`f18b3be9`, CI `#1286`); M15B explicit delivery authority admission complete (`35a7a4fc`, CI `#1288`); M15C local commit boundary complete (`d9248af3`, CI `#1290`); M15D push + PR boundary complete (`df68b8fc`, CI `#1295`); M15E merge boundary complete (`7d1776d3`, CI `#1298`); M15F deployment boundary complete (`7f5ea994`, CI `#1301`); M15G recovery/replay safety complete (`6b2dd979`, CI `#1303`) |
+| 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
@@ -1010,12 +1010,20 @@ Milestone 15 must keep each delivery capability distinct. Commit, push, pull-req
 5. **COMPLETE — M15E merge authority boundary.** CI `#1298` green after correcting the merge-evidence boolean test contract.
 6. **COMPLETE — M15F deployment/release boundary.** CI `#1301` green.
 7. **COMPLETE — M15G release recovery/replay safety.** CI `#1303` green.
-8. **NEXT — M15H Milestone 15 acceptance harness.** Prove capability separation, replay prevention, stale-evidence rejection, restart recovery and exact explicit-authority enforcement across proposal → per-action authorization → commit → push → PR → merge → deploy.
-9. **DO NOT** allow model/planner/reviewer output, autonomous-loop success, CI success, possession of GitHub credentials, or a prior delivery permit to grant another delivery capability.
+8. **COMPLETE — M15H Milestone 15 acceptance harness.** CI `#1305` green.
+9. **MILESTONE 15 COMPLETE.** Delivery capability separation, explicit per-action authority, replay prevention, stale-evidence rejection and restart recovery are proven across commit → push → PR → merge → deploy.
+10. **DO NOT** allow model/planner/reviewer output, autonomous-loop success, CI success, possession of GitHub credentials, or a prior delivery permit to grant another delivery capability.
+
+## 15H — Milestone 15 acceptance harness — COMPLETE
+
+`src/github-delivery-m15-acceptance.test.ts` composes the real M15A–M15G proposal, authority-admission, commit, push, PR, merge, deployment and recovery boundaries while faking only the external Git/GitHub/deployment drivers. The acceptance path proves each mutation requires its own explicit single-use permit and that a successful earlier delivery result cannot authorize a later capability.
+
+The harness also proves stale evidence blocks mutation before side effects, consumed permits remain non-replayable across executor reconstruction/restart, recovery is observation-only, ambiguous outcomes cannot reuse a permit or mint retry authority, and no stage grants broad/general release authority.
+
+Evidence: acceptance harness `fcc3f52d1323d2c8363f8b3de86407e04ac11950`; CI `#1305` passed typecheck + full suite.
 
 ---
 
-
 # Current next step
 
-**M15H — Milestone 15 acceptance harness.** Prove M15A–M15G compose without authority bleed: success of one action cannot authorize the next, every mutating step requires its own explicit one-shot permit, stale evidence blocks mutation, consumed permits cannot replay across restart, and uncertain outcomes recover observationally without retry authority. The harness adds no production mutation path.
+**Milestone 16 — Production security / reliability / observability.** Define the first bounded production-hardening slice from the existing security, audit, health, rate-limit, recovery and observability primitives before implementing broader operational behavior. No new external authority is implied by entering Milestone 16.
