@@ -48,7 +48,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
-| 16 | Production security / reliability / observability | Planned |
+| 16 | Production security / reliability / observability | In progress — M16A production readiness baseline/evaluator active |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
 
@@ -1024,6 +1024,28 @@ Evidence: acceptance harness `fcc3f52d1323d2c8363f8b3de86407e04ac11950`; CI `#13
 
 ---
 
+
+# Milestone 16 — Production Security / Reliability / Observability
+
+Acceptance target: the orchestrator can determine, before production use, whether its critical security, durability/recovery and observability controls are healthy enough for operation, expose only sanitized operator-facing diagnostics, and fail closed when required controls are unavailable or stale. Production hardening must not widen task, filesystem, network, credential, writer, Git delivery or release authority.
+
+Milestone 16 builds on existing controls already proven in earlier milestones: remote-session replay/rate/audit protection, restrictive local-operator transport/UI controls, durable task/recovery/checkpoint state, writer fencing, Sentinel incidents, operator visualization and run metrics.
+
+## M16 work queue
+
+1. **NEXT — M16A production readiness baseline/evaluator.** Define a read-only, sanitized readiness contract that aggregates critical security, reliability and observability probes. Missing audit/replay/rate controls, durable-state/recovery/fencing failures, or observability blindness must make readiness fail closed.
+2. **FOLLOW — M16B secret-safe structured operational events.** Standardize bounded structured event envelopes and redaction rules for production logs/audit without exposing prompts, raw worker output, credentials, tokens, workspace paths or secret material.
+3. **FOLLOW — M16C durable operational health history.** Persist bounded readiness/incident transitions with corruption-safe append semantics and retention controls.
+4. **FOLLOW — M16D alert classification + escalation.** Map critical operational failures to deterministic operator attention/escalation without autonomous repair authority.
+5. **FOLLOW — M16E reliability fault injection.** Prove crash/restart, torn/corrupt state, lease/fence loss, audit sink loss, provider/runtime unavailability and recovery fail closed.
+6. **FOLLOW — M16F resource/backpressure hardening.** Bound concurrency, request sizes, queues, replay stores, audit growth and recovery scans with deterministic saturation behavior.
+7. **FOLLOW — M16G observability/operator integration.** Feed sanitized readiness/incidents into the existing passive operator visualization and MCP read-only surfaces.
+8. **FOLLOW — M16H Milestone 16 acceptance harness.** Prove security control loss, reliability degradation and observability blindness are visible and fail closed without authority widening.
+9. **DO NOT** make readiness status itself an authorization source or allow health/recovery code to mutate task, Git, deployment or credential state.
+
+---
+
+
 # Current next step
 
-**Milestone 16 — Production security / reliability / observability.** Define the first bounded production-hardening slice from the existing security, audit, health, rate-limit, recovery and observability primitives before implementing broader operational behavior. No new external authority is implied by entering Milestone 16.
+**M16A — production readiness baseline/evaluator.** Aggregate read-only probes for existing security controls, durable/recovery/fencing health and observability availability into one sanitized readiness result. Any required control loss fails closed; the result grants no authority and performs no mutation.
