@@ -46,7 +46,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
-| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`) |
+| 14 | Autonomous engineering loops | In progress — M14A autonomous-loop contract + durable state model complete (`e6237eb6`, CI `#1242`); M14B trusted loop-transition admission complete (`2f995335`, CI `#1244`); M14C durable admitted-transition application complete (`b123ee1d`, CI `#1246`); M14D execution-intent bridge complete (`1f6275e5`, CI `#1249`) |
 | 15 | GitHub delivery / release authority | Planned |
 | 16 | Production security / reliability / observability | Planned |
 | 17 | Productization / installer / first-run UX | Planned |
@@ -908,17 +908,28 @@ M14C mutates only the durable autonomous-loop record. It does not mutate TaskSto
 
 Evidence: implementation `b8831841004c4c2f3de560dc8cb4f9e9711f23b5`; proofs `b123ee1d5a3002a37f9a4aeb7dde03825a3839aa`; CI `#1246` passed typecheck + full suite.
 
+## 14D — Execution-intent bridge — COMPLETE
+
+`src/autonomous-engineering-execution-intent.ts` derives a bounded non-executing execution-intent descriptor only from an `implementation_in_progress` M14A loop revision whose exact M14B transition admission has already been durably applied by M14C. The bridge revalidates the current task/project/workspace/registry/Safety/worker/path binding before emitting intent.
+
+Initial implementation intent uses only the already-approved supervisor objective, acceptance criteria and trusted validation commands. Repair intent additionally requires the exact trusted `review_repair` decision referenced by the admitted repair transition; stale or mismatched reviewer provenance fails closed. Loop state or model prose alone cannot create a repair instruction.
+
+M14D does not mutate TaskStore or loop state, start/continue Cline/runtime, acquire lease/fence authority, create distributed work, perform Git delivery, use credentials, or grant task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `8ed92fe9d88f901e1fd67f147312981df3925d22`; proofs `1f6275e518cd85d9960e6a9fe5244f6e764044a0`; CI `#1249` passed typecheck + full suite.
+
 ## M14 work queue
 
 1. **COMPLETE — M14A autonomous-loop contract + durable state model.** CI `#1242` green.
 2. **COMPLETE — M14B trusted loop-transition admission gate.** CI `#1244` green.
 3. **COMPLETE — M14C durable admitted-transition application.** CI `#1246` green.
-4. **NEXT — M14D execution-intent bridge.** Derive a bounded, non-executing execution intent only from a current durable loop phase that requires implementation or repair. Revalidate exact current task/Safety binding and preserve the existing task objective/repair instruction provenance. The bridge must not itself continue/start the task, acquire lease/fence authority, create distributed work, or grant filesystem/release authority.
-5. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
-6. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
+4. **COMPLETE — M14D execution-intent bridge.** CI `#1249` green.
+5. **NEXT — M14E execution admission permit.** Convert one current M14D execution intent into a short-lived, one-shot execution admission only after another exact current task/Safety binding revalidation and exact loop-revision check. The permit must remain non-executing and must not itself start/continue Cline, acquire lease/fence authority, create distributed work, mutate TaskStore, or grant filesystem/release authority.
+6. **DO NOT** let loop state, planner/reviewer output, completion prose, retry counters or restart history mint task/filesystem/Safety/lease/credential/release authority.
+7. **DO NOT** add commit/push/PR/merge/deploy automation in Milestone 14; release authority remains Milestone 15.
 
 ---
 
 # Current next step
 
-**M14D — execution-intent bridge.** Convert a current durable `implementation_in_progress` loop revision into a bounded execution-intent descriptor after fresh task/Safety revalidation, distinguishing initial implementation from admitted bounded repair provenance. This descriptor is evidence/preparation only and cannot itself start or continue execution.
+**M14E — execution admission permit.** Issue a short-lived, single-use permit from one exact M14D execution intent only while the durable loop remains at the same revision and the current task/Safety binding is still exact. Consumption should produce evidence only; runtime start remains a later separately reviewed slice.
