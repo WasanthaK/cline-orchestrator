@@ -100,6 +100,12 @@ export function productCliUsage(): string {
     "  cline-orchestrator abort <workspace> <task-id> [reason...]",
     "  cline-orchestrator rollback <workspace> <task-id>",
     "  cline-orchestrator legacy <legacy-command> <workspace> [...args]",
+    "",
+    "Safety:",
+    "  diagnose/config/setup/status are read-only product commands.",
+    "  setup proposes actions only; mutations require separate explicit confirmation.",
+    "  daemon/product configuration remains loopback-only by default.",
+    "  task mutations delegate to the existing authority-enforcing dispatcher.",
   ].join("\n");
 }
 
