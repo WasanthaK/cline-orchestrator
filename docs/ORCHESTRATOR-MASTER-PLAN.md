@@ -49,7 +49,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
-| 17 | Productization / installer / first-run UX | In progress — M17A first-run assessment complete (`e9bdf480`, CI `#1326`); M17B product configuration complete (`fb3f095d`, CI `#1329`); M17C explicit first-run setup complete (`b896277d`, CI `#1331`); M17D packaged CLI complete (`5b667c2b`, CI `#1334`); M17E service lifecycle packaging complete (`13829bf0`, CI `#1338` rerun green after known M12N timing flake); M17F installer packaging complete (`7f24d277`, CI `#1341`) |
+| 17 | Productization / installer / first-run UX | Complete — M17A–M17H productization contracts and acceptance composition; harness `400ce861`, type correction `3aa7a573`, CI `#1346` green. Installer execution and physical service installation are not proven by the fake-driver harness. |
 | 18 | Production release | Planned |
 
 ---
@@ -1070,12 +1070,23 @@ Productization must preserve local-first defaults, explicit workspace registrati
 5. **COMPLETE — M17E service lifecycle packaging.** CI `#1338` rerun green after known unrelated M12N renewal timing flake.
 6. **COMPLETE — M17F installer/uninstaller packaging.** CI `#1341` green after path-validator correction.
 7. **COMPLETE — M17G first-run operator UX/docs.** README/help/operator guidance aligned with actual product boundaries; commit `158a00f58d182c19f1f92e8894828e1d3fa2e310`, CI `#1344` green.
-8. **IN PROGRESS — M17H Milestone 17 acceptance harness.** Compose real M17A–M17G boundaries with fake external effects; install/uninstall remain plans, service lifecycle uses fake drivers, and CLI start is verified as existing-dispatcher routing. Completion requires exact-head GitHub-hosted typecheck + full suite.
-9. **DO NOT** make installer convenience an authority source or silently turn on command/edit approval, remote listeners, delivery, merge or deploy capabilities.
+8. **COMPLETE — M17H Milestone 17 acceptance harness.** Harness `400ce861c206df037e00e1a5ea8a649e2cac3ed3`, type correction `3aa7a573a556b2a4be7163bf56209ecaba46143f`; CI `#1346` passed typecheck + full suite.
+9. **MILESTONE 17 COMPLETE — software contracts and acceptance composition.** Install/uninstall remain non-mutating ownership plans, service lifecycle uses fake external drivers in acceptance, and CLI start delegates to the existing dispatcher. Physical installation/service deployment is not acceptance evidence here.
+10. **DO NOT** make installer convenience an authority source or silently turn on command/edit approval, remote listeners, delivery, merge or deploy capabilities.
 
 ---
 
 
+## 17H — Milestone 17 acceptance harness — COMPLETE
+
+`src/productization-m17-acceptance.test.ts` composes the real M17 assessment, configuration, explicit setup confirmation, native CLI, service lifecycle and installer ownership boundaries. Windows and Linux specifications cover clean-state diagnosis, read-only setup/config/status, independently confirmed configuration/project/workspace actions, explicit service install/start/stop/status calls and deterministic install/uninstall plans preserving user-owned configuration, registry, secrets and task state.
+
+The harness also proves confirmation action/digest binding, replay rejection, expiry, reconstruction invalidation, consumption on execution failure, provider-preflight degradation, production-observability loss and rejection of remote listener/raw-secret/ownership widening before external effects. Only external drivers and observations are faked. No installer executor, service driver, new CLI command or setup authority path is added, and no shared local runtime or physical installation is exercised.
+
+Evidence: harness `400ce861c206df037e00e1a5ea8a649e2cac3ed3`; test type correction `3aa7a573a556b2a4be7163bf56209ecaba46143f`; GitHub-hosted CI [#1346](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37759190677) passed typecheck and the full suite for that exact branch head.
+
+---
+
 # Current next step
 
-**M17H — Milestone 17 acceptance harness.** Validate `src/productization-m17-acceptance.test.ts` in GitHub-hosted CI, then record completion only after exact-head typecheck and full suite pass. The harness composes clean-state diagnosis, read-only setup/config/status, individually confirmed setup actions, explicit service lifecycle, and install/uninstall ownership plans on Windows/Linux specifications. It also covers replay/expiry/reconstruction/failure, provider/readiness loss and authority-widening rejection. It adds no installer executor, service driver, CLI command or setup authority path; no physical installation or local shared runtime proof is claimed. Documentation must not imply authority that the product does not grant.
+**Milestone 18 — Production release.** Begin with a read-only release-readiness assessment and a bounded release plan. Reconcile the completed software acceptance evidence with outstanding physical installation/service-driver and deferred external proof gaps before defining a release candidate. Separate preparation from merge, credentials, listener activation, publication and deployment; each actual external action retains its existing explicit authority boundary.
