@@ -9,10 +9,10 @@ import {
   type FirstRunWorkspaceObservationV1,
 } from "./first-run-assessment.js";
 import {
-  resolveProductConfig,
   type ProductConfigEnvironment,
   type ResolvedProductConfigV1,
 } from "./product-config.js";
+import { resolveProductConfigSource } from "./product-config-source.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
 
 export const PRODUCT_CLI_CONTRACT = Object.freeze({
@@ -40,7 +40,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 });
 
 export type ProductCliRoute =
-  | { kind: "native"; command: "diagnose" | "config" | "setup" | "daemon_status"; args: string[] }
+  | { kind: "native"; command: "diagnose" | "config" | "setup" | "daemon_status"; args: string[]; configPath?: string }
   | { kind: "legacy"; args: string[] };
 
 export interface ProductCliFetchResult {
@@ -56,6 +56,7 @@ export interface ProductCliDependencies {
     platform: string;
     architecture: string;
   };
+  readConfigFile?(filePath: string): Promise<string>;
   findWorkspace(root: string): Promise<FirstRunWorkspaceObservationV1>;
   fetchJson(url: string): Promise<ProductCliFetchResult>;
 }
@@ -88,6 +89,8 @@ export function productCliUsage(): string {
     "Cline Orchestrator",
     "",
     "Usage:",
+    "  cline-orchestrator [--config <file>] <native-command> [...args]",
+    "  ORCH_CONFIG_FILE selects a file for native commands; --config takes precedence.",
     "  cline-orchestrator diagnose <workspace>",
     "  cline-orchestrator config",
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
@@ -110,6 +113,17 @@ export function productCliUsage(): string {
 }
 
 export function routeProductCli(argv: string[]): ProductCliRoute {
+  if (argv[0] === "--config") {
+    const filePath = argv[1];
+    if (!filePath?.trim() || filePath.startsWith("-") || filePath.includes("\0") || argv.length < 3) {
+      throw new ProductCliError(productCliUsage(), "usage_invalid");
+    }
+    const route = routeProductCli(argv.slice(2));
+    if (route.kind !== "native" || route.configPath !== undefined) {
+      throw new ProductCliError(productCliUsage(), "usage_invalid");
+    }
+    return { ...route, configPath: filePath };
+  }
   const [command, ...rest] = argv;
   if (!command) throw new ProductCliError(productCliUsage(), "usage_invalid");
 
@@ -193,7 +207,11 @@ export async function runNativeProductCommand(
   route: Extract<ProductCliRoute, { kind: "native" }>,
   deps: ProductCliDependencies,
 ): Promise<ProductCliNativeResult> {
-  const config = resolveProductConfig({ schemaVersion: 1 }, deps.env);
+  const config = await resolveProductConfigSource(
+    route.configPath ?? deps.env.ORCH_CONFIG_FILE,
+    deps.env,
+    deps.readConfigFile,
+  );
 
   if (route.command === "config") {
     return nativeResult("config", config);

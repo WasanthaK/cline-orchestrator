@@ -51,6 +51,33 @@ cline-orchestrator config
 
 Product configuration is schema-versioned. Environment variables override file values, and absent values resolve through explicit defaults.
 
+Select a JSON configuration file for the read-only native commands:
+
+```bash
+cline-orchestrator --config /path/to/product.json config
+cline-orchestrator --config /path/to/product.json diagnose /path/to/workspace
+cline-orchestrator --config /path/to/product.json setup /path/to/workspace
+cline-orchestrator --config /path/to/product.json status /path/to/workspace
+```
+
+`ORCH_CONFIG_FILE` also selects the file; the leading `--config` option takes precedence. With no selector, the CLI reads no configuration file and uses environment values and defaults. Requested files must exist, contain valid schema-version-1 JSON and fit within 64 KiB. Invalid files fail even when environment values could override them. Errors do not print paths, file contents or underlying exceptions.
+
+Example file:
+
+```json
+{
+  "schemaVersion": 1,
+  "provider": {
+    "providerId": "ollama-openai",
+    "modelId": "qwen38-27b-192k",
+    "baseUrl": "http://127.0.0.1:8080/v1"
+  },
+  "daemon": { "host": "127.0.0.1", "port": 4317 }
+}
+```
+
+File selection currently applies to native observation commands only. A leading `--config` with start/task/legacy commands is rejected; execution still uses the existing environment configuration until M18B2 connects validated settings to that dispatcher. The file loader does not resolve named secret values or perform setup mutations.
+
 Current defaults:
 
 ```text
