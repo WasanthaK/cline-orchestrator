@@ -49,7 +49,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
-| 17 | Productization / installer / first-run UX | In progress — M17A first-run assessment complete (`e9bdf480`, CI `#1326`); M17B product configuration complete (`fb3f095d`, CI `#1329`) |
+| 17 | Productization / installer / first-run UX | In progress — M17A first-run assessment complete (`e9bdf480`, CI `#1326`); M17B product configuration complete (`fb3f095d`, CI `#1329`); M17C explicit first-run setup complete (`b896277d`, CI `#1331`) |
 | 18 | Production release | Planned |
 
 ---
@@ -1065,8 +1065,8 @@ Productization must preserve local-first defaults, explicit workspace registrati
 
 1. **COMPLETE — M17A first-run assessment + setup plan.** CI `#1326` green.
 2. **COMPLETE — M17B product configuration file.** CI `#1329` green after normalized URL expectation correction.
-3. **NEXT — M17C interactive first-run setup.** Generate a proposed config/workspace-registration/service-start plan and require a separate explicit one-shot confirmation before each local mutation; no remote listener or elevated authority by default.
-4. **FOLLOW — M17D packaged CLI surface.** Replace developer-only `npm run dev --` ergonomics with a stable executable/command model while retaining current low-level commands for compatibility.
+3. **COMPLETE — M17C interactive first-run setup.** CI `#1331` green.
+4. **NEXT — M17D packaged CLI surface.** Replace developer-only `npm run dev --` ergonomics with a stable executable/command model while retaining current low-level commands for compatibility and preserving existing safety/authority checks.
 5. **FOLLOW — M17E service lifecycle packaging.** Add explicit install/start/stop/status integration for supported local service managers without silently enabling network exposure.
 6. **FOLLOW — M17F installer/uninstaller packaging.** Produce platform-specific install/uninstall flows with reversible state ownership and preservation of user workspaces/secrets.
 7. **FOLLOW — M17G first-run operator UX/docs.** Align README/help/operator UI with actual providers, safety model, workspace registration, MCP/remote boundaries and production readiness.
@@ -1078,4 +1078,4 @@ Productization must preserve local-first defaults, explicit workspace registrati
 
 # Current next step
 
-**M17C — interactive first-run setup.** Build a bounded setup plan from M17A/M17B inputs and execute at most one local setup action per explicit one-shot confirmation. Config write, project/workspace registration and loopback daemon start remain separate actions; no confirmation can widen to another action, enable remote listeners, or grant task/delivery authority.
+**M17D — packaged CLI surface.** Add a stable `cline-orchestrator` executable entry point with explicit product commands for diagnose/config/setup/start/status plus compatibility passthrough to existing low-level commands. The CLI layer must delegate to existing authority-enforcing services and must not silently broaden permissions or listener exposure.
