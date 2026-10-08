@@ -51,3 +51,7 @@ Keep operator-owned config files, workspace registry, secret provisioning and ta
 M18C1 establishes the locked source build and tarball contents (CI #1356). M18C2 adds disposable installed-package/run/removal acceptance pending exact-head CI. Windows/Linux platform acceptance is deferred to M18C3. Service installation, live daemon readiness and production release are not proven.
 
 M18C2 initial consumer-install CI #1357 found an unavailable newer `@ai-sdk/openai` transitive version. Runtime packaging therefore declares the source-tested exact `4.0.89` dependency to constrain consumer resolution; this does not embed a consumer lockfile or guarantee offline installation.
+
+## M18C3 supported-platform acceptance
+
+CI also builds and verifies the packaged product on hosted Windows and Linux (Node 22), using platform-native npm-installed shims and disposable consumer prefixes. This checks the private tarball installation lifecycle, sanitized errors and preservation of operator-owned data, without installing or starting a service. Hosted CI success is the platform acceptance gate, not a physical production deployment proof.

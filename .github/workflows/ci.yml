@@ -33,3 +33,20 @@ jobs:
       - run: npm run build
       - run: npm run verify:package
       - run: npm run verify:installed-package
+
+  packaged-artifact-platforms:
+    name: packaged artifact (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run verify:package
+      - run: npm run verify:installed-package

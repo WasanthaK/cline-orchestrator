@@ -38,11 +38,15 @@ try {
  const list = JSON.parse(packed.stdout); assert.equal(list.length,1);
  const archive = path.join(artifacts,list[0].filename); assert.ok(await exists(archive));
  ok(npm(["install","--global","--prefix",prefix,"--ignore-scripts","--no-audit","--no-fund",archive]),"install");
- const modulePath=path.join(prefix,"lib","node_modules","cline-orchestrator");
- const shim=path.join(prefix,"bin","cline-orchestrator");
+ const windows = process.platform === "win32";
+ const modulePath=windows ? path.join(prefix,"node_modules","cline-orchestrator") : path.join(prefix,"lib","node_modules","cline-orchestrator");
+ const shim=windows ? path.join(prefix,"cline-orchestrator.cmd") : path.join(prefix,"bin","cline-orchestrator");
+ const runInstalled = args => windows
+  ? run(process.env.ComSpec || "cmd.exe", ["/d","/s","/c", `""${shim}" ${args.map(a=>`"${a}"`).join(" ")}"`])
+  : run(shim,args);
  assert.ok(await exists(modulePath)); assert.ok(await exists(shim));
  assert.ok(await exists(path.join(modulePath,"dist","product-cli.js")));
- const config=run(shim,["config"]); ok(config,"installed config");
+ const config=runInstalled(["config"]); ok(config,"installed config");
  const output=JSON.parse(config.stdout);
  assert.equal(output.command,"config"); assert.equal(output.grantsAuthority,false);
  assert.equal(output.mutatesConfig,false); assert.equal(output.startsService,false);
@@ -51,7 +55,7 @@ try {
  assert.equal(output.payload.runtime.autoApproveCommands,false);
  const bad=path.join(tmp,"invalid.json");
  await writeFile(bad,JSON.stringify({schemaVersion:1,provider:{apiKey:sentinel}}));
- const rejected=run(shim,["--config",bad,"config"]);
+ const rejected=runInstalled(["--config",bad,"config"]);
  assert.notEqual(rejected.status,0); assert.match(rejected.stderr,/Product configuration is invalid; check schema, field types and secret references/);
  assert.ok(!(rejected.stderr+rejected.stdout).includes(sentinel),"secret leaked");
  assert.equal(await exists(path.join(home,".cline-orchestrator")),false);
@@ -60,7 +64,7 @@ try {
  assert.equal(await exists(modulePath),false); assert.equal(await exists(shim),false);
  assert.ok(await exists(prefix));
  for (const [name,expected] of hashes) assert.equal(hash(await readFile(path.join(owned,name))),expected,name);
- console.log(JSON.stringify({slice:"M18C2",package:list[0].filename,installedCli:true,
+ console.log(JSON.stringify({slice:"M18C3",platform:process.platform,package:list[0].filename,installedCli:true,
   sanitizedRejection:true,removed:true,operatorSentinelsPreserved:hashes.size,
   serviceInstalled:false,daemonStarted:false,grantsAuthority:false}));
 } finally { await rm(tmp,{recursive:true,force:true,maxRetries:3,retryDelay:150}); }
