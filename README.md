@@ -117,6 +117,38 @@ cline-orchestrator setup-config ./draft.json ./config.json
 
 An interactive terminal is required. Review the displayed destination and contents, then type `WRITE CONFIG` within 60 seconds. The destination directory must already exist; existing files and symlinks are refused. The draft is read once without environment overrides and may contain secret reference names, never raw provider keys. The new file uses owner-only permissions where supported. This action only creates the config; it does not register a project/workspace, start a daemon or grant task authority. `setup <workspace>` continues to return a read-only plan.
 
+Register a project with a separate confirmation:
+
+```bash
+cline-orchestrator setup-project "My project"
+```
+
+Review the name and registry location, then type `REGISTER PROJECT` within 60 seconds. The result supplies the project ID for an explicit workspace registration draft:
+
+```json
+{
+  "projectId": "<project ID from the result>",
+  "displayName": "My workspace",
+  "root": "/absolute/path/to/workspace",
+  "safetyProfile": {
+    "policyVersion": "policy-v1",
+    "workerProfileId": "safe-worker-v1",
+    "maxChangedFiles": 3,
+    "allowedPathPatterns": ["src/**"],
+    "protectedPathPatterns": ["src/auth/**", ".env*", ".git/**"],
+    "validationCommands": ["npm test"]
+  }
+}
+```
+
+Choose the paths, limits, worker profile and validation commands for your workspace; setup supplies no Safety defaults. Save the draft as `workspace.json`, then run:
+
+```bash
+cline-orchestrator setup-workspace ./workspace.json
+```
+
+Review the project ID, requested and canonical roots, complete Safety profile and registry location; type `REGISTER WORKSPACE` within 60 seconds. The workspace directory must exist, and the existing registry rejects filesystem/system-sensitive roots and duplicate canonical roots. Both registration commands use the normal user registry, ignore product config/environment overrides, and require an interactive terminal. A registry change or root replacement detected after review requires a fresh confirmation. Registration does not execute validation commands, edit workspace files, start a daemon or approve a task; each task still requires the existing Safety controls.
+
 A raw filesystem path is not sufficient to give ChatGPT, the planner, or Cline write authority.
 
 Governed work is bound to an explicitly registered project/workspace and Safety profile. That binding carries the approved workspace identity, allowed/protected paths, validation commands, worker profile and policy revisions. Scope expansion and stale bindings fail closed.

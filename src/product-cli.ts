@@ -13,8 +13,9 @@ import {
   type ProductConfigEnvironment,
   type ResolvedProductConfigV1,
 } from "./product-config.js";
-import { resolveProductConfigSource, readProductConfigFile } from "./product-config-source.js";
+import { resolveProductConfigSource, readProductConfigFile, PRODUCT_CONFIG_SOURCE_CONTRACT } from "./product-config-source.js";
 import { runConfigWriteSetup, type ConfigWriteReview } from "./config-write-setup.js";
+import { runRegistrationSetup, RegistrationSetupError, type RegistrationSetupReview } from "./registration-setup.js";
 import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
 
@@ -26,6 +27,8 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "config",
     "setup",
     "setup-config",
+    "setup-project",
+    "setup-workspace",
     "start",
     "status",
     "tasks",
@@ -44,6 +47,8 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 });
 
 export type ProductCliRoute =
+  | { kind: "setup_project"; displayName: string; configPath?: never }
+  | { kind: "setup_workspace"; inputPath: string; configPath?: never }
   | { kind: "setup_config"; inputPath: string; targetPath: string; configPath?: never }
   | { kind: "native"; command: "diagnose" | "config" | "setup" | "daemon_status"; args: string[]; configPath?: string }
   | { kind: "legacy"; args: string[]; configPath?: string };
@@ -64,6 +69,8 @@ export interface ProductCliDependencies {
   readConfigFile?(filePath: string): Promise<string>;
   dispatchLegacy?(args: string[], env: Record<string, string | undefined>): Promise<void>;
   confirmConfigWrite?(review: ConfigWriteReview): Promise<boolean>;
+  confirmRegistration?(review: RegistrationSetupReview): Promise<boolean>;
+  registrationRegistry?: WorkspaceRegistry;
   findWorkspace(root: string): Promise<FirstRunWorkspaceObservationV1>;
   fetchJson(url: string): Promise<ProductCliFetchResult>;
 }
@@ -102,6 +109,8 @@ export function productCliUsage(): string {
     "  cline-orchestrator config",
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
+    "  cline-orchestrator setup-project <display-name>  # interactive project registration",
+    "  cline-orchestrator setup-workspace <input.json>  # interactive workspace/Safety registration",
     "  cline-orchestrator start <workspace>",
     "  cline-orchestrator status <workspace> [task-id]",
     "  cline-orchestrator tasks <workspace>",
@@ -127,13 +136,18 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     const route = routeProductCli(argv.slice(2));
-    if (route.kind === "setup_config" || route.configPath !== undefined) {
+    if ((route.kind !== "native" && route.kind !== "legacy") || route.configPath !== undefined) {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     return { ...route, configPath: filePath };
   }
   const [command, ...rest] = argv;
   if (!command) throw new ProductCliError(productCliUsage(), "usage_invalid");
+  if (command === "setup-project" || command === "setup-workspace") {
+    if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return command === "setup-project" ? { kind: "setup_project", displayName: rest[0]! }
+      : { kind: "setup_workspace", inputPath: rest[0]! };
+  }
   if (command === "setup-config") {
     if (rest.length !== 2) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "setup_config", inputPath: rest[0]!, targetPath: rest[1]! };
@@ -376,6 +390,32 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "setup_project" || route.kind === "setup_workspace") {
+    let input: unknown = { displayName: route.kind === "setup_project" ? route.displayName : "" };
+    if (route.kind === "setup_workspace") {
+      try {
+        const text = await (deps.readConfigFile ?? readProductConfigFile)(route.inputPath);
+        if (Buffer.byteLength(text, "utf8") > PRODUCT_CONFIG_SOURCE_CONTRACT.maxFileBytes) throw new Error("oversized");
+        input = JSON.parse(text);
+      } catch { throw new RegistrationSetupError("input_invalid"); }
+    }
+    const confirm = deps.confirmRegistration ?? (async (review: RegistrationSetupReview) => {
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        throw new ProductCliError("Registration requires an interactive terminal", "interactive_required");
+      }
+      process.stdout.write(`${review.confirmationText}\nRegistry: ${review.registryPath}\n`
+        + `${JSON.stringify(review.registration, null, 2)}\n`
+        + (review.canonicalRoot ? `Canonical workspace root: ${review.canonicalRoot}\n` : ""));
+      const phrase = review.action === "register_project" ? "REGISTER PROJECT" : "REGISTER WORKSPACE";
+      const terminal = createInterface({ input: process.stdin, output: process.stdout });
+      try { return await terminal.question(`Type ${phrase} to confirm: `) === phrase; }
+      finally { terminal.close(); }
+    });
+    const result = await runRegistrationSetup(route.kind === "setup_project" ? "register_project" : "register_workspace",
+      input, confirm, deps.registrationRegistry);
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return undefined;
+  }
   if (route.kind === "setup_config") {
     const reader = deps.readConfigFile ?? readProductConfigFile;
     let text = "";
