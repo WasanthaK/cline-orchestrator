@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { createInterface } from "node:readline/promises";
 import {
   assessFirstRun,
   type FirstRunAssessmentV1,
@@ -12,7 +13,8 @@ import {
   type ProductConfigEnvironment,
   type ResolvedProductConfigV1,
 } from "./product-config.js";
-import { resolveProductConfigSource } from "./product-config-source.js";
+import { resolveProductConfigSource, readProductConfigFile } from "./product-config-source.js";
+import { runConfigWriteSetup, type ConfigWriteReview } from "./config-write-setup.js";
 import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
 
@@ -23,6 +25,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "diagnose",
     "config",
     "setup",
+    "setup-config",
     "start",
     "status",
     "tasks",
@@ -41,6 +44,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 });
 
 export type ProductCliRoute =
+  | { kind: "setup_config"; inputPath: string; targetPath: string; configPath?: never }
   | { kind: "native"; command: "diagnose" | "config" | "setup" | "daemon_status"; args: string[]; configPath?: string }
   | { kind: "legacy"; args: string[]; configPath?: string };
 
@@ -59,6 +63,7 @@ export interface ProductCliDependencies {
   };
   readConfigFile?(filePath: string): Promise<string>;
   dispatchLegacy?(args: string[], env: Record<string, string | undefined>): Promise<void>;
+  confirmConfigWrite?(review: ConfigWriteReview): Promise<boolean>;
   findWorkspace(root: string): Promise<FirstRunWorkspaceObservationV1>;
   fetchJson(url: string): Promise<ProductCliFetchResult>;
 }
@@ -78,7 +83,7 @@ export interface ProductCliNativeResult {
 export class ProductCliError extends Error {
   constructor(
     message: string,
-    public readonly code: "usage_invalid" | "native_failed" | "legacy_failed",
+    public readonly code: "usage_invalid" | "native_failed" | "legacy_failed" | "interactive_required",
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -96,6 +101,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator diagnose <workspace>",
     "  cline-orchestrator config",
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
+    "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
     "  cline-orchestrator start <workspace>",
     "  cline-orchestrator status <workspace> [task-id]",
     "  cline-orchestrator tasks <workspace>",
@@ -121,13 +127,17 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     const route = routeProductCli(argv.slice(2));
-    if (route.configPath !== undefined) {
+    if (route.kind === "setup_config" || route.configPath !== undefined) {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     return { ...route, configPath: filePath };
   }
   const [command, ...rest] = argv;
   if (!command) throw new ProductCliError(productCliUsage(), "usage_invalid");
+  if (command === "setup-config") {
+    if (rest.length !== 2) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "setup_config", inputPath: rest[0]!, targetPath: rest[1]! };
+  }
 
   if (command === "diagnose" || command === "setup") {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -366,6 +376,27 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "setup_config") {
+    const reader = deps.readConfigFile ?? readProductConfigFile;
+    let text = "";
+    await resolveProductConfigSource(route.inputPath, {}, async (file) => {
+      text = await reader(file);
+      return text;
+    });
+    const config: unknown = JSON.parse(text);
+    const confirm = deps.confirmConfigWrite ?? (async (review: ConfigWriteReview) => {
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        throw new ProductCliError("Config creation requires an interactive terminal", "interactive_required");
+      }
+      process.stdout.write(`Create config at: ${review.targetPath}\n${JSON.stringify(review.config, null, 2)}\n`);
+      const terminal = createInterface({ input: process.stdin, output: process.stdout });
+      try { return await terminal.question("Type WRITE CONFIG to create this file: ") === "WRITE CONFIG"; }
+      finally { terminal.close(); }
+    });
+    const result = await runConfigWriteSetup(route.targetPath, config, confirm);
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return undefined;
+  }
   if (route.kind === "legacy") {
     const config = await resolveProductConfigSource(
       route.configPath ?? deps.env.ORCH_CONFIG_FILE, deps.env, deps.readConfigFile,

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { resolveProductConfigSource } from "./product-config-source.js";
 
 export type FirstRunSetupAction =
   | "write_config"
@@ -105,7 +106,7 @@ function payloadDigest(payload: Record<string, unknown>): string {
   return crypto.createHash("sha256").update(stable(payload)).digest("hex");
 }
 
-function assertPlainPayload(action: FirstRunSetupAction, payload: Record<string, unknown>): void {
+async function assertPlainPayload(action: FirstRunSetupAction, payload: Record<string, unknown>): Promise<void> {
   const serialized = JSON.stringify(payload);
   if (
     !payload
@@ -117,6 +118,20 @@ function assertPlainPayload(action: FirstRunSetupAction, payload: Record<string,
     throw new FirstRunSetupError("setup payload is invalid or oversized", "payload_invalid");
   }
 
+  if (action === "write_config") {
+    const wrapped = Object.hasOwn(payload, "config");
+    if (wrapped && (Object.keys(payload).some((key) => !["targetPath", "config"].includes(key))
+      || typeof payload.targetPath !== "string" || !payload.targetPath || payload.targetPath.includes("\0"))) {
+      throw new FirstRunSetupError("setup configuration payload is invalid", "payload_invalid");
+    }
+    try {
+      await resolveProductConfigSource("setup-preview", {}, async () =>
+        JSON.stringify(wrapped ? payload.config : payload));
+    } catch {
+      throw new FirstRunSetupError("setup configuration payload is invalid", "payload_invalid");
+    }
+    return;
+  }
   const text = serialized.toLowerCase();
   if (
     text.includes("apikey")
@@ -189,7 +204,7 @@ export class FirstRunSetupService {
       throw new FirstRunSetupError("setup action is invalid", "action_invalid");
     }
     const payload = structuredClone(request.payload);
-    assertPlainPayload(request.action, payload);
+    await assertPlainPayload(request.action, payload);
 
     const now = this.now();
     this.prepare(now);

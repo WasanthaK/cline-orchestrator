@@ -109,6 +109,14 @@ For daemon start, provision the selected environment variable through your local
 
 ## Workspace and Safety authority
 
+To create a new product config from a validated JSON draft, run:
+
+```bash
+cline-orchestrator setup-config ./draft.json ./config.json
+```
+
+An interactive terminal is required. Review the displayed destination and contents, then type `WRITE CONFIG` within 60 seconds. The destination directory must already exist; existing files and symlinks are refused. The draft is read once without environment overrides and may contain secret reference names, never raw provider keys. The new file uses owner-only permissions where supported. This action only creates the config; it does not register a project/workspace, start a daemon or grant task authority. `setup <workspace>` continues to return a read-only plan.
+
 A raw filesystem path is not sufficient to give ChatGPT, the planner, or Cline write authority.
 
 Governed work is bound to an explicitly registered project/workspace and Safety profile. That binding carries the approved workspace identity, allowed/protected paths, validation commands, worker profile and policy revisions. Scope expansion and stale bindings fail closed.
