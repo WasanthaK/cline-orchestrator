@@ -1,129 +1,223 @@
 # Cline Orchestrator
 
-A local-first orchestration layer for supervising long-running Cline coding sessions across large codebases.
+Cline Orchestrator is a local-first supervisory layer for running long-lived Cline engineering work with durable task state, explicit workspace/Safety authority, validation, recovery, review, multi-agent delegation, Git delivery controls, and production-readiness checks.
 
-The product goal is simple: hand over a substantial engineering objective, let Cline work in bounded resumable tasks, preserve state outside the model context window, validate progress, and safely continue unattended.
-
-## Phase 1
-
-Phase 1 proves the core control loop:
-
-- start a Cline coding session against any workspace;
-- stream its progress;
-- persist orchestration state outside the model context;
-- record the Cline session ID;
-- inspect task status later;
-- resume the same Cline session after interruption;
-- use Ollama/local models as first-class workers;
-- keep shell execution and file edits opt-in during bootstrap.
-
-Cline itself owns model interaction, coding tools, and session persistence. This project adds the supervisory layer above it.
+The product is designed so that planning, observation, health, setup guidance and review do **not** silently become execution authority. Workspace write scope, runtime execution, remote transport, Git delivery, merge and deployment remain separately governed capabilities.
 
 ## Requirements
 
 - Node.js 22+
-- Cline SDK (installed by `npm install`)
-- Ollama for the default local-worker setup
-- A model available in Ollama, for example `qwen3.6:27b`
+- `npm install`
+- a supported Cline model/provider
+- at least one explicitly registered project/workspace before governed task execution
 
-## Install
-
-```bash
-git clone https://github.com/WasanthaK/cline-orchestrator.git
-cd cline-orchestrator
-git checkout phase-1/bootstrap
-npm install
-```
-
-## Configure a local Ollama worker
-
-```bash
-export ORCH_PROVIDER=ollama
-export ORCH_MODEL=qwen3.6:27b
-export ORCH_BASE_URL=http://localhost:11434
-```
-
-PowerShell:
-
-```powershell
-$env:ORCH_PROVIDER="ollama"
-$env:ORCH_MODEL="qwen3.6:27b"
-$env:ORCH_BASE_URL="http://localhost:11434"
-```
-
-## Run a supervised task
-
-```bash
-npm run dev -- run /path/to/project "Inspect the authentication flow and explain the current architecture"
-```
-
-The orchestrator creates a persistent task record under:
+The packaged CLI is exposed as:
 
 ```text
-<target-workspace>/.orchestrator/tasks/<task-id>.json
+cline-orchestrator
 ```
 
-Check it later:
+During development you can run the same façade with:
 
 ```bash
-npm run dev -- status /path/to/project <task-id>
+npm run cli -- <command>
 ```
 
-Resume the same Cline session:
+## First run
+
+Start with a read-only diagnosis:
 
 ```bash
-npm run dev -- resume /path/to/project <task-id> "Continue by proposing the smallest safe implementation plan"
+cline-orchestrator diagnose /path/to/workspace
 ```
 
-## Allow code changes
+This checks the current runtime, provider/model readiness, workspace registration/Safety setup, and daemon state. It does not write configuration, register a workspace, start a service, open a listener, or grant authority.
 
-During bootstrap, command execution and edits are deliberately not auto-approved.
-
-Enable them explicitly when you are ready to let the worker act unattended:
+See the setup plan without performing any mutation:
 
 ```bash
-export ORCH_AUTO_APPROVE_COMMANDS=true
-export ORCH_AUTO_APPROVE_EDITS=true
+cline-orchestrator setup /path/to/workspace
 ```
 
-PowerShell:
+The setup command is plan-only. Any later config write, project registration, workspace registration, or loopback-daemon start must pass through its own explicit, single-use confirmation boundary.
 
-```powershell
-$env:ORCH_AUTO_APPROVE_COMMANDS="true"
-$env:ORCH_AUTO_APPROVE_EDITS="true"
+Inspect the resolved product configuration:
+
+```bash
+cline-orchestrator config
 ```
 
-## Architecture direction
+## Provider configuration
+
+Product configuration is schema-versioned. Environment variables override file values, and absent values resolve through explicit defaults.
+
+Current defaults:
 
 ```text
-ChatGPT / Planner / Reviewer
-            |
-            v
-     Cline Orchestrator
-     - task state
-     - retries/watchdog
-     - context memory
-     - validation gates
-     - Git checkpoints
-            |
-            v
-        ClineCore
-     - model/provider
-     - coding tools
-     - Cline sessions
-            |
-            v
-       target workspace
+ORCH_PROVIDER=ollama-openai
+ORCH_MODEL=qwen38-27b-192k:latest
+ORCH_BASE_URL=http://localhost:11434
+ORCH_DAEMON_HOST=127.0.0.1
+ORCH_DAEMON_PORT=4317
 ```
 
-## Roadmap
+Provider behavior:
 
-1. **Bootstrap** — start, stream, persist and resume a Cline task.
-2. **Supervision** — watchdog, retries, waiting-for-human state, usage/event logs and validation commands.
-3. **Project memory** — architecture summaries, decision log, task DAG and context packs.
-4. **Autonomous runs** — Git checkpoints, acceptance gates and overnight execution policies.
-5. **VS Code** — live orchestration dashboard sharing sessions through Cline Hub/RPC.
-6. **MCP** — expose orchestrator actions to external supervisors such as ChatGPT/API agents.
-7. **Multi-worker** — investigator, implementer, tester and reviewer Cline agents.
+- `ollama-openai` uses Cline's OpenAI-compatible provider path against an Ollama-compatible `/v1` endpoint.
+- `ollama` uses Cline's native Ollama provider path.
+- Other Cline provider IDs may be configured through the existing worker configuration path. If no metadata-only preflight exists for that provider, preflight reports that limitation rather than granting or denying broader authority.
 
-See [`docs/PHASE-1.md`](docs/PHASE-1.md) for the current acceptance criteria.
+Raw provider secrets are not part of the M17 product-config file. Use a named secret reference such as:
+
+```text
+ORCH_API_KEY_SECRET_REF=ORCH_PROVIDER_API_KEY
+```
+
+The product configuration stores the reference name, not the secret value.
+
+## Workspace and Safety authority
+
+A raw filesystem path is not sufficient to give ChatGPT, the planner, or Cline write authority.
+
+Governed work is bound to an explicitly registered project/workspace and Safety profile. That binding carries the approved workspace identity, allowed/protected paths, validation commands, worker profile and policy revisions. Scope expansion and stale bindings fail closed.
+
+The first-run diagnostic reports whether the workspace is registered and whether its Safety profile and validation commands are configured.
+
+## Daemon and local surfaces
+
+The product configuration is loopback-only by default:
+
+```text
+127.0.0.1:4317
+```
+
+Start the orchestrator daemon for a workspace:
+
+```bash
+cline-orchestrator start /path/to/workspace
+```
+
+Check daemon reachability:
+
+```bash
+cline-orchestrator status /path/to/workspace
+```
+
+The first-run/product config does not permit `0.0.0.0`, LAN, or public daemon binding. Remote/distributed transport, MCP, operator control and public bindings are separate capabilities with their own authentication, fencing and safety boundaries; product setup does not silently enable them.
+
+## Task commands
+
+Run a supervised task:
+
+```bash
+cline-orchestrator run /path/to/workspace "Inspect the authentication flow and propose the smallest safe change"
+```
+
+List tasks:
+
+```bash
+cline-orchestrator tasks /path/to/workspace
+```
+
+Inspect a task:
+
+```bash
+cline-orchestrator status /path/to/workspace <task-id>
+```
+
+Inspect events:
+
+```bash
+cline-orchestrator events /path/to/workspace <task-id>
+```
+
+Resume:
+
+```bash
+cline-orchestrator resume /path/to/workspace <task-id> "Continue with the approved bounded objective"
+```
+
+Abort:
+
+```bash
+cline-orchestrator abort /path/to/workspace <task-id> "operator requested stop"
+```
+
+Rollback to the authorized checkpoint:
+
+```bash
+cline-orchestrator rollback /path/to/workspace <task-id>
+```
+
+The packaged façade delegates task mutations to the existing authority-enforcing dispatcher rather than reimplementing those controls.
+
+## Production readiness
+
+Production-hardening checks cover security controls, durable/recovery/fencing health, observability and resource saturation. Readiness is observation-only.
+
+Loss of a required control, stale evidence, corruption, observability blindness or hard resource saturation fails closed and surfaces sanitized operator evidence. Health/readiness status never becomes task, filesystem, credential, Git-delivery or deployment authority.
+
+## Service lifecycle
+
+M17 service packaging defines explicit lifecycle actions for supported local service managers:
+
+- Windows Service
+- systemd
+
+Install, start and stop are explicit operations. Status is read-only. Service definitions remain loopback-only and use secret references rather than embedded secret material.
+
+## Install/uninstall ownership
+
+Installer manifests distinguish product-owned artifacts from user-owned data.
+
+Product-owned examples:
+- packaged binaries
+- product service registrations
+
+User-owned data preserved by default:
+- product configuration
+- workspace registry
+- secret references/material managed outside the product package
+- durable task/orchestration state
+
+Default uninstall planning removes product-owned artifacts only. Destructive deletion of user-owned state is not implied by uninstall and would require a separate explicit confirmation path.
+
+## Safety model
+
+Important boundaries:
+
+- Planner/model output is advisory until admitted through trusted authority boundaries.
+- One writer may own a workspace at a time.
+- Workspace/Safety drift invalidates execution authority.
+- Remote sessions, distributed fencing and public bindings are separately authenticated and fail closed.
+- Autonomous engineering-loop success does not authorize Git delivery.
+- Commit, push, pull request, merge and deploy each require their own explicit, single-use delivery authority.
+- Production readiness, alerts and operator status are observation-only.
+- Installer/setup convenience is not an authority source.
+
+## Developer compatibility
+
+The original low-level dispatcher is retained for compatibility:
+
+```bash
+npm run dev -- daemon <workspace>
+npm run dev -- run <workspace> <goal...>
+npm run dev -- list <workspace>
+npm run dev -- status <workspace> <task-id>
+npm run dev -- events <workspace> <task-id>
+npm run dev -- resume <workspace> <task-id> <prompt...>
+npm run dev -- abort <workspace> <task-id> [reason...]
+npm run dev -- rollback <workspace> <task-id>
+```
+
+The packaged CLI should be preferred for normal product use.
+
+## Canonical development plan
+
+The source of truth for current milestone status and security constraints is:
+
+```text
+docs/ORCHESTRATOR-MASTER-PLAN.md
+```
+
+Do not infer current authority or milestone status from older milestone/phase documents.
