@@ -51,13 +51,14 @@ cline-orchestrator config
 
 Product configuration is schema-versioned. Environment variables override file values, and absent values resolve through explicit defaults.
 
-Select a JSON configuration file for the read-only native commands:
+Select a JSON configuration file for product commands:
 
 ```bash
 cline-orchestrator --config /path/to/product.json config
 cline-orchestrator --config /path/to/product.json diagnose /path/to/workspace
 cline-orchestrator --config /path/to/product.json setup /path/to/workspace
 cline-orchestrator --config /path/to/product.json status /path/to/workspace
+cline-orchestrator --config /path/to/product.json start /path/to/workspace
 ```
 
 `ORCH_CONFIG_FILE` also selects the file; the leading `--config` option takes precedence. With no selector, the CLI reads no configuration file and uses environment values and defaults. Requested files must exist, contain valid schema-version-1 JSON and fit within 64 KiB. Invalid files fail even when environment values could override them. Errors do not print paths, file contents or underlying exceptions.
@@ -76,7 +77,9 @@ Example file:
 }
 ```
 
-File selection currently applies to native observation commands only. A leading `--config` with start/task/legacy commands is rejected; execution still uses the existing environment configuration until M18B2 connects validated settings to that dispatcher. The file loader does not resolve named secret values or perform setup mutations.
+Native observation commands and execution commands now use the same validated configuration. The CLI passes resolved provider/runtime/daemon settings to the existing dispatcher; it preserves existing diff-safety environment restrictions and removes stale raw-key, file-selector and output-token alias settings before dispatch. Task/workspace/Safety checks remain in the dispatcher.
+
+Product daemon configuration supports loopback HTTP only. Embedded URL credentials, query strings, fragments and non-root daemon URL paths are rejected. Raw `ORCH_API_KEY` values are rejected by the product facade. Daemon start with an `apiKeySecretRef` fails explicitly until M18B3 supplies the runtime credential boundary; native commands still inspect the reference name, and client commands do not resolve it. The low-level developer dispatcher retains its existing compatibility path.
 
 Current defaults:
 

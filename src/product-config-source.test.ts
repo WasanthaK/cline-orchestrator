@@ -145,15 +145,14 @@ test("M18B1 invalid file remains rejected when environment could override it", a
     { ORCH_API_KEY: "secret-sentinel" } as ProductCliDependencies["env"]), { code: "config_invalid" });
 });
 
-test("M18B1 explicit file option is native-only; malformed/repeated selectors reject", () => {
+test("M18B1 malformed/repeated selectors reject; M18B2 extends file selection to execution", () => {
   for (const args of [
     ["--config"], ["--config", "", "config"], ["--config", "--bad", "config"],
     ["--config", "one", "--config", "two", "config"],
-    ["--config", "one", "start", "workspace"],
-    ["--config", "one", "run", "workspace", "goal"],
-    ["--config", "one", "legacy", "daemon", "workspace"],
   ]) assert.throws(() => routeProductCli(args), { code: "usage_invalid" });
   assert.deepEqual(routeProductCli(["start", "workspace"]), { kind: "legacy", args: ["daemon", "workspace"] });
+  assert.deepEqual(routeProductCli(["--config", "one", "start", "workspace"]),
+    { kind: "legacy", args: ["daemon", "workspace"], configPath: "one" });
 });
 
 test("M18B1 actual CLI entry loads selected JSON and prints sanitized failure with nonzero exit", async () => {

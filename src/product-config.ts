@@ -168,8 +168,11 @@ function stripTrailingSlash(value: string): string {
 }
 
 function parseIntField(value: unknown, fallback: number, min = 0): number {
-  if (value === undefined) return fallback;
-  const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
+  const input = value === undefined ? fallback : value;
+  if (typeof input !== "number" && (typeof input !== "string" || !/^[0-9]+$/.test(input))) {
+    throw new ProductConfigError("numeric configuration field is invalid", "config_invalid");
+  }
+  const parsed = Number(input);
   if (!Number.isSafeInteger(parsed) || parsed < min) {
     throw new ProductConfigError("numeric configuration field is invalid", "config_invalid");
   }
@@ -327,7 +330,13 @@ export function resolveProductConfig(
   } catch {
     throw new ProductConfigError("daemon url is invalid", "config_invalid");
   }
-  if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(parsedDaemonUrl.hostname)) {
+  if (
+    parsedDaemonUrl.protocol !== "http:"
+    || parsedDaemonUrl.username || parsedDaemonUrl.password
+    || parsedDaemonUrl.search || parsedDaemonUrl.hash
+    || parsedDaemonUrl.pathname !== "/"
+    || !["localhost", "127.0.0.1", "[::1]", "::1"].includes(parsedDaemonUrl.hostname)
+  ) {
     throw new ProductConfigError(
       "daemon url must remain loopback in product configuration",
       "config_invalid",

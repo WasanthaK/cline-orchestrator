@@ -1123,8 +1123,16 @@ The assessment adds no runtime code, installer executor, service driver, credent
 
 ---
 
+## M18B1 — Explicit product config-file loading — COMPLETE
+
+Implementation `d16b8ff26b5764bccbb9b52e964a8f80e1fe60c4`; exact-head GitHub-hosted CI [#1349](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37783870570) passed typecheck and the full suite. Explicit file loading is bounded, read-only and sanitized; environment values override a valid selected file and an invalid requested file cannot silently fall back. M18B2 extends the same selected-file path to existing execution commands.
+
 # Current next step
 
-**M18B1 — Implemented, awaiting exact-head hosted CI.** `src/product-config-source.ts` loads only explicitly selected files via leading `--config <file>` or `ORCH_CONFIG_FILE` for native commands; the flag overrides environment file selection and environment values override valid file values. Reads are bounded to 64 KiB with regular-file checks, strict section/field types, schema/secret/loopback validation and fixed sanitized errors. Config/diagnose/setup/status share the loaded settings; malformed explicit files never silently fall back. The flag rejects legacy execution until M18B2 wires shared validated settings there. No secret values are resolved and no config/workspace/service mutation is added.
+**M18B2 — Implemented, awaiting exact-head hosted CI.** The packaged CLI resolves the same product config before every existing-dispatcher handoff, including start/task/explicit legacy routes. It serializes all resolved provider/runtime/daemon settings into the dispatcher's existing environment inputs and preserves unrelated existing controls, particularly diff-safety restrictions. It removes stale file selectors, raw-key/reference settings and the legacy output-token alias so the child cannot reinterpret the selected snapshot. This bridge is settings-only, adds no task/Safety authority and keeps existing dispatcher arguments and checks intact.
 
-Local validation: typecheck, diff whitespace check and 29 focused config-source/product-config/product-CLI/M17H tests passed, including real-file and actual CLI subprocess success/failure proofs. Full-suite GitHub-hosted CI remains the completion gate. Next after green: M18B2 shared validated product settings at the existing execution dispatcher.
+Numeric inputs now reject partial/fractional parsing instead of silently truncating. Product daemon URLs are restricted to the existing loopback HTTP transport with no embedded credentials, query/fragment or non-root path. IPv6 bracketed config hosts become valid bare bind literals. Source CLI delegation now selects the actual TypeScript entry with the existing loader flags; built CLI delegation continues to use index.js.
+
+Named credentials are not resolved in this slice: daemon start with a selected provider secret reference fails explicitly before dispatch; observation/client commands do not resolve credential values. Direct low-level developer dispatch remains unchanged. No shared local daemon, listener or Cline runtime was started during validation.
+
+Local validation: typecheck, whitespace check and 36 focused product config/source/CLI/execution/M17 acceptance tests passed. Proofs cover all settings round-trip, file/environment precedence, exact delegated arguments, preservation of diff-safety restrictions, unsafe config rejection before child launch, unresolved-credential rejection and the actual source CLI executing read-only task listing in a disposable directory. Full-suite hosted CI remains the completion gate. Next after green: M18B3 named-secret resolution at the existing runtime credential boundary and explicit setup integration, delivered in bounded sub-slices.

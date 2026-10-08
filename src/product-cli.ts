@@ -13,6 +13,7 @@ import {
   type ResolvedProductConfigV1,
 } from "./product-config.js";
 import { resolveProductConfigSource } from "./product-config-source.js";
+import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
 
 export const PRODUCT_CLI_CONTRACT = Object.freeze({
@@ -41,7 +42,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 
 export type ProductCliRoute =
   | { kind: "native"; command: "diagnose" | "config" | "setup" | "daemon_status"; args: string[]; configPath?: string }
-  | { kind: "legacy"; args: string[] };
+  | { kind: "legacy"; args: string[]; configPath?: string };
 
 export interface ProductCliFetchResult {
   ok: boolean;
@@ -57,6 +58,7 @@ export interface ProductCliDependencies {
     architecture: string;
   };
   readConfigFile?(filePath: string): Promise<string>;
+  dispatchLegacy?(args: string[], env: Record<string, string | undefined>): Promise<void>;
   findWorkspace(root: string): Promise<FirstRunWorkspaceObservationV1>;
   fetchJson(url: string): Promise<ProductCliFetchResult>;
 }
@@ -76,7 +78,7 @@ export interface ProductCliNativeResult {
 export class ProductCliError extends Error {
   constructor(
     message: string,
-    public readonly code: "usage_invalid" | "native_failed" | "legacy_failed",
+    public readonly code: "usage_invalid" | "native_failed" | "legacy_failed" | "credential_resolution_pending",
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -89,8 +91,8 @@ export function productCliUsage(): string {
     "Cline Orchestrator",
     "",
     "Usage:",
-    "  cline-orchestrator [--config <file>] <native-command> [...args]",
-    "  ORCH_CONFIG_FILE selects a file for native commands; --config takes precedence.",
+    "  cline-orchestrator [--config <file>] <command> [...args]",
+    "  ORCH_CONFIG_FILE selects a file; --config takes precedence.",
     "  cline-orchestrator diagnose <workspace>",
     "  cline-orchestrator config",
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
@@ -119,7 +121,7 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     const route = routeProductCli(argv.slice(2));
-    if (route.kind !== "native" || route.configPath !== undefined) {
+    if (route.configPath !== undefined) {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     return { ...route, configPath: filePath };
@@ -339,13 +341,14 @@ function defaultDependencies(): ProductCliDependencies {
   };
 }
 
-async function runLegacy(args: string[]): Promise<void> {
+async function runLegacy(args: string[], env: Record<string, string | undefined>): Promise<void> {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const entry = path.join(here, "index.js");
+  const fromSource = fileURLToPath(import.meta.url).endsWith(".ts");
+  const entry = path.join(here, fromSource ? "index.ts" : "index.js");
   const code = await new Promise<number>((resolve, reject) => {
-    const child = spawn(process.execPath, [entry, ...args], {
+    const child = spawn(process.execPath, [...(fromSource ? process.execArgv : []), entry, ...args], {
       stdio: "inherit",
-      env: process.env,
+      env,
       windowsHide: true,
     });
     child.once("error", reject);
@@ -364,7 +367,16 @@ export async function runProductCli(
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
   if (route.kind === "legacy") {
-    await runLegacy(route.args);
+    const config = await resolveProductConfigSource(
+      route.configPath ?? deps.env.ORCH_CONFIG_FILE, deps.env, deps.readConfigFile,
+    );
+    if (route.args[0] === "daemon" && config.provider.apiKeySecretRef) {
+      throw new ProductCliError(
+        "Named provider credentials are not yet supported for daemon start",
+        "credential_resolution_pending",
+      );
+    }
+    await (deps.dispatchLegacy ?? runLegacy)(route.args, productExecutionEnvironment(config, deps.env));
     return undefined;
   }
 
