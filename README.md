@@ -6,8 +6,8 @@ The product is designed so that planning, observation, health, setup guidance an
 
 ## Requirements
 
-- Node.js 22+
-- `npm install`
+- Node.js 22.15 or newer
+- for source development, `npm ci --ignore-scripts`
 - a supported Cline model/provider
 - at least one explicitly registered project/workspace before governed task execution
 
@@ -16,6 +16,8 @@ The packaged CLI is exposed as:
 ```text
 cline-orchestrator
 ```
+
+The initial distribution is a private local npm tarball. Build/installation/removal instructions and the current proof limits are in [Product distribution](docs/PRODUCT-DISTRIBUTION.md). Package installation does not register a workspace, install a service or start a daemon.
 
 During development you can run the same façade with:
 

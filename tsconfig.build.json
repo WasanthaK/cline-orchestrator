@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/live-*.ts",
+    "src/cr3-preflight.ts"
+  ]
+}
