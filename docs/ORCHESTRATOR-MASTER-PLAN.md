@@ -49,7 +49,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
-| 17 | Productization / installer / first-run UX | In progress — M17A first-run assessment complete (`e9bdf480`, CI `#1326`); M17B product configuration complete (`fb3f095d`, CI `#1329`); M17C explicit first-run setup complete (`b896277d`, CI `#1331`); M17D packaged CLI complete (`5b667c2b`, CI `#1334`) |
+| 17 | Productization / installer / first-run UX | In progress — M17A first-run assessment complete (`e9bdf480`, CI `#1326`); M17B product configuration complete (`fb3f095d`, CI `#1329`); M17C explicit first-run setup complete (`b896277d`, CI `#1331`); M17D packaged CLI complete (`5b667c2b`, CI `#1334`); M17E service lifecycle packaging complete (`13829bf0`, CI `#1338` rerun green after known M12N timing flake) |
 | 18 | Production release | Planned |
 
 ---
@@ -1067,8 +1067,8 @@ Productization must preserve local-first defaults, explicit workspace registrati
 2. **COMPLETE — M17B product configuration file.** CI `#1329` green after normalized URL expectation correction.
 3. **COMPLETE — M17C interactive first-run setup.** CI `#1331` green.
 4. **COMPLETE — M17D packaged CLI surface.** CI `#1334` green.
-5. **NEXT — M17E service lifecycle packaging.** Add explicit install/start/stop/status integration for supported local service managers without silently enabling network exposure or widening authority.
-6. **FOLLOW — M17F installer/uninstaller packaging.** Produce platform-specific install/uninstall flows with reversible state ownership and preservation of user workspaces/secrets.
+5. **COMPLETE — M17E service lifecycle packaging.** CI `#1338` rerun green after known unrelated M12N renewal timing flake.
+6. **NEXT — M17F installer/uninstaller packaging.** Produce platform-specific install/uninstall plans with explicit ownership, reversible mutations and preservation of user workspaces/config/secrets/state by default.
 7. **FOLLOW — M17G first-run operator UX/docs.** Align README/help/operator UI with actual providers, safety model, workspace registration, MCP/remote boundaries and production readiness.
 8. **FOLLOW — M17H Milestone 17 acceptance harness.** Prove clean install/diagnose/configure/start/stop/uninstall flows are deterministic, reversible and authority-safe.
 9. **DO NOT** make installer convenience an authority source or silently turn on command/edit approval, remote listeners, delivery, merge or deploy capabilities.
@@ -1078,4 +1078,4 @@ Productization must preserve local-first defaults, explicit workspace registrati
 
 # Current next step
 
-**M17E — service lifecycle packaging.** Define an explicit local service specification and lifecycle driver for install/start/stop/status on supported service managers. Service definitions must remain loopback-only by default, reference existing config/secret locations rather than embed secret material, and require explicit operator action for install/start/stop; status remains read-only.
+**M17F — installer/uninstaller packaging.** Define platform install/uninstall manifests that distinguish product-owned files/service registrations from user-owned config, workspace registry, secrets and task state. Install/uninstall execution must be explicit, reversible where possible, and default uninstall must preserve all user-owned data unless separately confirmed.
