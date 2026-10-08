@@ -48,7 +48,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
-| 16 | Production security / reliability / observability | In progress — M16A readiness evaluator complete (`e6c99050`, CI `#1308`); M16B secret-safe operational events complete (`120473a2`, CI `#1310`) |
+| 16 | Production security / reliability / observability | In progress — M16A readiness evaluator complete (`e6c99050`, CI `#1308`); M16B secret-safe operational events complete (`120473a2`, CI `#1310`); M16C durable operational history complete (`6d22c004`, CI `#1312`) |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
 
@@ -1035,8 +1035,8 @@ Milestone 16 builds on existing controls already proven in earlier milestones: r
 
 1. **COMPLETE — M16A production readiness baseline/evaluator.** CI `#1308` green.
 2. **COMPLETE — M16B secret-safe structured operational events.** CI `#1310` green.
-3. **NEXT — M16C durable operational health history.** Persist bounded sanitized readiness/incident transitions with corruption-safe append semantics, restart-safe reads and retention controls.
-4. **FOLLOW — M16D alert classification + escalation.** Map critical operational failures to deterministic operator attention/escalation without autonomous repair authority.
+3. **COMPLETE — M16C durable operational health history.** CI `#1312` green.
+4. **NEXT — M16D alert classification + escalation.** Map sanitized readiness/event failures to deterministic operator attention/escalation classes without autonomous repair authority.
 5. **FOLLOW — M16E reliability fault injection.** Prove crash/restart, torn/corrupt state, lease/fence loss, audit sink loss, provider/runtime unavailability and recovery fail closed.
 6. **FOLLOW — M16F resource/backpressure hardening.** Bound concurrency, request sizes, queues, replay stores, audit growth and recovery scans with deterministic saturation behavior.
 7. **FOLLOW — M16G observability/operator integration.** Feed sanitized readiness/incidents into the existing passive operator visualization and MCP read-only surfaces.
@@ -1048,4 +1048,4 @@ Milestone 16 builds on existing controls already proven in earlier milestones: r
 
 # Current next step
 
-**M16C — durable operational health history.** Persist only sanitized M16A readiness summaries and M16B operational-event transition records in a bounded local history. Writes must be crash-safe, reads must fail closed on malformed/corrupt records, retention must be deterministic, and the history cannot become an authority source.
+**M16D — alert classification + escalation.** Consume only sanitized M16A/M16B evidence and deterministically classify operator attention as informational, warning, urgent, or blocking. Blocking classes must fail closed and require operator attention, but classification itself cannot pause/abort/retry/repair tasks or grant any authority.
