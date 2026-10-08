@@ -19,7 +19,7 @@ test("M17B empty v1 config resolves explicit current-safe defaults", () => {
   const config = resolveProductConfig({ schemaVersion: 1 });
   assert.equal(config.provider.providerId, "ollama-openai");
   assert.equal(config.provider.modelId, "qwen38-27b-192k:latest");
-  assert.equal(config.provider.baseUrl, "http://localhost:11434/");
+  assert.equal(config.provider.baseUrl, "http://localhost:11434");
   assert.equal(config.runtime.autoApproveCommands, false);
   assert.equal(config.runtime.autoApproveEdits, false);
   assert.equal(config.daemon.host, "127.0.0.1");
