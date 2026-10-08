@@ -25,7 +25,8 @@
     "start:mcp": "node dist/mcp-main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/*.test.ts",
-    "cli": "tsx src/product-cli.ts"
+    "cli": "tsx src/product-cli.ts",
+    "verify:installed-package": "node scripts/verify-installed-package.mjs"
   },
   "engines": {
     "node": ">=22.15.0"

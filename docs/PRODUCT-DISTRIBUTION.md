@@ -12,6 +12,7 @@ npm run typecheck
 npm test
 npm run build
 npm run verify:package
+npm run verify:installed-package
 npm pack
 ```
 
@@ -19,7 +20,7 @@ npm pack
 
 The build cleans its fixed repository `dist` directory and compiles the runtime sources. Source typecheck/tests still use the full source configuration. Tests, live-proof programs and the CR3 developer preflight are excluded from the runtime build; the build fails if imports pull those excluded programs back into its output.
 
-`verify:package` inspects npm's prospective tarball entries, requires the product/legacy/MCP compiled entrypoints and product documentation, rejects unexpected entries or test/proof programs, and checks the product binary shebang. CI runs this check after the locked source tests and runtime build. It does not install the package or start a listener.
+`verify:package` inspects npm's prospective tarball entries, requires the product/legacy/MCP compiled entrypoints and product documentation, rejects unexpected entries or test/proof programs, and checks the product binary shebang. CI runs this check after the locked source tests and runtime build. It does not install the package or start a listener. The separate `verify:installed-package` command tests installation, the real installed CLI shim, sanitized error handling, npm uninstall and preservation of external operator-owned state in a disposable Linux environment.
 
 The package allowlist includes compiled JavaScript under `dist`, the README and this distribution guide. npm also includes package metadata and applicable standard license files. It excludes source TypeScript, tests, proof programs, build scripts/configuration, the master plan, dependency directories and operator configuration/registry/secret/task data. Installed runtime dependencies are declared in package metadata and are not bundled in the tarball.
 
@@ -47,4 +48,4 @@ Keep operator-owned config files, workspace registry, secret provisioning and ta
 
 ## Evidence status
 
-M18C1 establishes the locked source build and tarball contents. Packaged-binary install/run/remove smoke proof and supported-platform CI are subsequent acceptance work; this guide does not claim those proofs passed merely because a build or pack completed.
+M18C1 establishes the locked source build and tarball contents (CI #1356). M18C2 adds disposable installed-package/run/removal acceptance pending exact-head CI. Windows/Linux platform acceptance is deferred to M18C3. Service installation, live daemon readiness and production release are not proven.
