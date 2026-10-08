@@ -49,3 +49,5 @@ Keep operator-owned config files, workspace registry, secret provisioning and ta
 ## Evidence status
 
 M18C1 establishes the locked source build and tarball contents (CI #1356). M18C2 adds disposable installed-package/run/removal acceptance pending exact-head CI. Windows/Linux platform acceptance is deferred to M18C3. Service installation, live daemon readiness and production release are not proven.
+
+M18C2 initial consumer-install CI #1357 found an unavailable newer `@ai-sdk/openai` transitive version. Runtime packaging therefore declares the source-tested exact `4.0.89` dependency to constrain consumer resolution; this does not embed a consumer lockfile or guarantee offline installation.
