@@ -59,8 +59,17 @@ export class InstallerPackagingError extends Error {
   }
 }
 
-const SAFE_RELATIVE = /^(?![A-Za-z]:)(?!/)(?!\\)(?!.*(?:^|[\\/])\.\.(?:[\\/]|$))[A-Za-z0-9._ @()\-\\/]+$/;
+const SAFE_PATH_CHARS = /^[A-Za-z0-9._ @()\\/\\-]+$/;
 const SAFE_VERSION = /^[0-9A-Za-z._+-]{1,64}$/;
+
+function isSafeRelativePath(value: string): boolean {
+  if (!value || value.includes("\\0")) return false;
+  if (/^[A-Za-z]:/.test(value)) return false;
+  if (value.startsWith("/") || value.startsWith("\\\\")) return false;
+  if (!SAFE_PATH_CHARS.test(value)) return false;
+  const segments = value.split(/[\\\\/]+/);
+  return segments.every((segment) => segment !== ".." && segment.length > 0);
+}
 
 function assertManifest(manifest: InstallManifestV1): void {
   if (
@@ -77,7 +86,7 @@ function assertManifest(manifest: InstallManifestV1): void {
   const seen = new Set<string>();
   for (const entry of manifest.entries) {
     if (
-      !SAFE_RELATIVE.test(entry.path)
+      !isSafeRelativePath(entry.path)
       || ![
         "product_owned",
         "user_owned_config",
