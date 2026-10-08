@@ -16,6 +16,7 @@ import {
 import { resolveProductConfigSource, readProductConfigFile, PRODUCT_CONFIG_SOURCE_CONTRACT } from "./product-config-source.js";
 import { runConfigWriteSetup, type ConfigWriteReview } from "./config-write-setup.js";
 import { runRegistrationSetup, RegistrationSetupError, type RegistrationSetupReview } from "./registration-setup.js";
+import { runDaemonStartSetup, type DaemonStartSetupReview } from "./daemon-start-setup.js";
 import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
 
@@ -29,6 +30,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "setup-config",
     "setup-project",
     "setup-workspace",
+    "setup-start",
     "start",
     "status",
     "tasks",
@@ -47,6 +49,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 });
 
 export type ProductCliRoute =
+  | { kind: "setup_start"; workspaceId: string; configPath?: string }
   | { kind: "setup_project"; displayName: string; configPath?: never }
   | { kind: "setup_workspace"; inputPath: string; configPath?: never }
   | { kind: "setup_config"; inputPath: string; targetPath: string; configPath?: never }
@@ -70,6 +73,7 @@ export interface ProductCliDependencies {
   dispatchLegacy?(args: string[], env: Record<string, string | undefined>): Promise<void>;
   confirmConfigWrite?(review: ConfigWriteReview): Promise<boolean>;
   confirmRegistration?(review: RegistrationSetupReview): Promise<boolean>;
+  confirmDaemonStart?(review: DaemonStartSetupReview): Promise<boolean>;
   registrationRegistry?: WorkspaceRegistry;
   findWorkspace(root: string): Promise<FirstRunWorkspaceObservationV1>;
   fetchJson(url: string): Promise<ProductCliFetchResult>;
@@ -111,6 +115,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
     "  cline-orchestrator setup-project <display-name>  # interactive project registration",
     "  cline-orchestrator setup-workspace <input.json>  # interactive workspace/Safety registration",
+    "  cline-orchestrator [--config <file>] setup-start <workspace-id>  # confirmed foreground daemon",
     "  cline-orchestrator start <workspace>",
     "  cline-orchestrator status <workspace> [task-id]",
     "  cline-orchestrator tasks <workspace>",
@@ -136,13 +141,17 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     const route = routeProductCli(argv.slice(2));
-    if ((route.kind !== "native" && route.kind !== "legacy") || route.configPath !== undefined) {
+    if ((route.kind !== "native" && route.kind !== "legacy" && route.kind !== "setup_start") || route.configPath !== undefined) {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     return { ...route, configPath: filePath };
   }
   const [command, ...rest] = argv;
   if (!command) throw new ProductCliError(productCliUsage(), "usage_invalid");
+  if (command === "setup-start") {
+    if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "setup_start", workspaceId: rest[0]! };
+  }
   if (command === "setup-project" || command === "setup-workspace") {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return command === "setup-project" ? { kind: "setup_project", displayName: rest[0]! }
@@ -390,6 +399,24 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "setup_start") {
+    const inherited = { ...deps.env };
+    const config = await resolveProductConfigSource(route.configPath ?? inherited.ORCH_CONFIG_FILE,
+      inherited, deps.readConfigFile);
+    const confirm = deps.confirmDaemonStart ?? (async (review: DaemonStartSetupReview) => {
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        throw new ProductCliError("Daemon setup requires an interactive terminal", "interactive_required");
+      }
+      process.stdout.write(`${review.confirmationText}\n${JSON.stringify({ workspace: review.workspace, config: review.config }, null, 2)}\n`);
+      const terminal = createInterface({ input: process.stdin, output: process.stdout });
+      try { return await terminal.question("Type START DAEMON to run in the foreground: ") === "START DAEMON"; }
+      finally { terminal.close(); }
+    });
+    const result = await runDaemonStartSetup(route.workspaceId, config, inherited, confirm,
+      deps.dispatchLegacy ?? runLegacy, deps.registrationRegistry);
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return undefined;
+  }
   if (route.kind === "setup_project" || route.kind === "setup_workspace") {
     let input: unknown = { displayName: route.kind === "setup_project" ? route.displayName : "" };
     if (route.kind === "setup_workspace") {

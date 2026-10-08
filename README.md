@@ -175,6 +175,16 @@ Check daemon reachability:
 cline-orchestrator status /path/to/workspace
 ```
 
+For a separately confirmed setup start, use the workspace ID returned by `setup-workspace`:
+
+```bash
+cline-orchestrator --config ./config.json setup-start <workspace-id>
+```
+
+Review the registered workspace, Safety profile and resolved provider/runtime/loopback settings, then type `START DAEMON` within 60 seconds in an interactive terminal. The selected config file and environment overrides are captured once. Startup refuses raw paths/unregistered IDs, workspace or Safety drift detected after review, and automatic command/edit approval settings. Named provider credentials are resolved only by the existing daemon child; the preview contains reference names only.
+
+This runs the existing foreground daemon command for the verified canonical root. Keep the terminal open; existing foreground interruption behavior applies. It does not install a service, change registry/config files or approve a task. The setup call waits for the child to exit and does not issue an immediate listener-readiness receipt; use `status` from another terminal to check reachability. Existing task execution and Safety controls retain their current behavior.
+
 The first-run/product config does not permit `0.0.0.0`, LAN, or public daemon binding. Remote/distributed transport, MCP, operator control and public bindings are separate capabilities with their own authentication, fencing and safety boundaries; product setup does not silently enable them.
 
 ## Task commands
