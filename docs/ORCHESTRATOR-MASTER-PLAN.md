@@ -49,7 +49,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
-| 17 | Productization / installer / first-run UX | In progress — M17A first-run assessment active |
+| 17 | Productization / installer / first-run UX | In progress — M17A first-run assessment complete (`e9bdf480`, CI `#1326`) |
 | 18 | Production release | Planned |
 
 ---
@@ -1063,8 +1063,8 @@ Productization must preserve local-first defaults, explicit workspace registrati
 
 ## M17 work queue
 
-1. **NEXT — M17A first-run assessment + setup plan.** Add a read-only first-run diagnostic that reports Node/runtime compatibility, provider/model configuration, workspace-registration state, daemon configuration and production-readiness prerequisites using sanitized bounded output. It must not write config, register workspaces, start services or open listeners.
-2. **FOLLOW — M17B product configuration file.** Define a versioned local config file with explicit defaults, environment override precedence, secret references instead of raw secret persistence, and migration-safe parsing.
+1. **COMPLETE — M17A first-run assessment + setup plan.** CI `#1326` green.
+2. **NEXT — M17B product configuration file.** Define a versioned local config file with explicit safe defaults, environment override precedence, secret references instead of raw secret persistence, and migration-safe parsing.
 3. **FOLLOW — M17C interactive first-run setup.** Generate a proposed config/workspace registration plan and require explicit confirmation before each local mutation; no remote listener or elevated authority by default.
 4. **FOLLOW — M17D packaged CLI surface.** Replace developer-only `npm run dev --` ergonomics with a stable executable/command model while retaining current low-level commands for compatibility.
 5. **FOLLOW — M17E service lifecycle packaging.** Add explicit install/start/stop/status integration for supported local service managers without silently enabling network exposure.
@@ -1078,4 +1078,4 @@ Productization must preserve local-first defaults, explicit workspace registrati
 
 # Current next step
 
-**M17A — first-run assessment + setup plan.** Add a read-only diagnostic over runtime version, provider/model settings, workspace registration, daemon configuration and production-readiness prerequisites. Output is sanitized and bounded; it performs no configuration writes, workspace registration, service start or listener/network mutation.
+**M17B — product configuration file.** Define schema-versioned local configuration and a read-only resolver with explicit safe defaults. Environment variables override file values, raw secret material is rejected in favor of named secret references, unsupported/future schemas fail closed, and parsing/resolution performs no machine or runtime mutation.
