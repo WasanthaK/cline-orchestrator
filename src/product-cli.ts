@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -482,7 +483,7 @@ export async function runProductCli(
 }
 
 const isMain = process.argv[1]
-  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  ? realpathSync(fileURLToPath(import.meta.url)) === realpathSync(path.resolve(process.argv[1]))
   : false;
 
 if (isMain) {
