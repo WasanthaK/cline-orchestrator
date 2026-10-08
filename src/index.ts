@@ -2,6 +2,7 @@ import path from "node:path";
 import process from "node:process";
 import { defaultContextRotateAtTokens } from "./context-supervisor.js";
 import { startDaemon } from "./daemon.js";
+import { withRuntimeProviderCredential, RuntimeProviderCredentialError } from "./runtime-provider-credential.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
 import type {
   OrchestratorTask,
@@ -317,7 +318,9 @@ async function main() {
   }
 
   if (command === "daemon") {
-    const config = workerConfig();
+    const config = withRuntimeProviderCredential(
+      workerConfig(), process.env.ORCH_API_KEY_SECRET_REF, (name) => process.env[name],
+    );
     const { host, port } = daemonAddress();
     console.log(
       `[worker: ${config.providerId} ${config.modelId} @ ${config.baseUrl ?? "default"}; context=${config.contextWindow}; input=${config.maxInputTokens}; turn=${config.maxTokensPerTurn}; rotateAt=${config.contextRotateAtTokens}; maxRotations=${config.maxContextRotations}; reasoning=${config.reasoningEffort}; preflight=${config.preflightTimeoutMs}ms; validation=${config.validationTimeoutMs}ms; validationRepairs=${config.maxValidationRepairs}; checkpointFiles=${config.checkpointMaxUntrackedFiles}; checkpointBytes=${config.checkpointMaxUntrackedBytes}; stall=${config.stallTimeoutMs}ms; retries=${config.maxRetries}]`,
@@ -382,6 +385,11 @@ async function main() {
 }
 
 main().catch(async (error) => {
+  if (error instanceof RuntimeProviderCredentialError) {
+    console.error(error.message);
+    process.exitCode = 1;
+    return;
+  }
   if (error instanceof TaskNotFoundError) {
     console.error(error.message);
     const store = new TaskStore(error.workspace);

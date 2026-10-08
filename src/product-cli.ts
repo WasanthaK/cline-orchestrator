@@ -78,7 +78,7 @@ export interface ProductCliNativeResult {
 export class ProductCliError extends Error {
   constructor(
     message: string,
-    public readonly code: "usage_invalid" | "native_failed" | "legacy_failed" | "credential_resolution_pending",
+    public readonly code: "usage_invalid" | "native_failed" | "legacy_failed",
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -370,13 +370,11 @@ export async function runProductCli(
     const config = await resolveProductConfigSource(
       route.configPath ?? deps.env.ORCH_CONFIG_FILE, deps.env, deps.readConfigFile,
     );
+    const childEnv = productExecutionEnvironment(config, deps.env);
     if (route.args[0] === "daemon" && config.provider.apiKeySecretRef) {
-      throw new ProductCliError(
-        "Named provider credentials are not yet supported for daemon start",
-        "credential_resolution_pending",
-      );
+      childEnv.ORCH_API_KEY_SECRET_REF = config.provider.apiKeySecretRef;
     }
-    await (deps.dispatchLegacy ?? runLegacy)(route.args, productExecutionEnvironment(config, deps.env));
+    await (deps.dispatchLegacy ?? runLegacy)(route.args, childEnv);
     return undefined;
   }
 

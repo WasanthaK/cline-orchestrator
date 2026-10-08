@@ -79,7 +79,7 @@ Example file:
 
 Native observation commands and execution commands now use the same validated configuration. The CLI passes resolved provider/runtime/daemon settings to the existing dispatcher; it preserves existing diff-safety environment restrictions and removes stale raw-key, file-selector and output-token alias settings before dispatch. Task/workspace/Safety checks remain in the dispatcher.
 
-Product daemon configuration supports loopback HTTP only. Embedded URL credentials, query strings, fragments and non-root daemon URL paths are rejected. Raw `ORCH_API_KEY` values are rejected by the product facade. Daemon start with an `apiKeySecretRef` fails explicitly until M18B3 supplies the runtime credential boundary; native commands still inspect the reference name, and client commands do not resolve it. The low-level developer dispatcher retains its existing compatibility path.
+Product daemon configuration supports loopback HTTP only. Embedded URL credentials, query strings, fragments and non-root daemon URL paths are rejected. Raw `ORCH_API_KEY` values are rejected by the product facade. The low-level developer dispatcher retains its existing compatibility path.
 
 Current defaults:
 
@@ -104,6 +104,8 @@ ORCH_API_KEY_SECRET_REF=ORCH_PROVIDER_API_KEY
 ```
 
 The product configuration stores the reference name, not the secret value.
+
+For daemon start, provision the selected environment variable through your local secret-management process. The daemon child resolves exactly that name while assembling its in-memory provider configuration for the existing preflight/Cline consumers. Missing, empty, oversized or control-character-bearing values fail before startup. Observation and task-client commands do not resolve it. The key is not added to command arguments, product config files or credential-resolution diagnostics. Raw-key and self-referential names are rejected; credential lookup grants no task, workspace, filesystem or delivery authority.
 
 ## Workspace and Safety authority
 

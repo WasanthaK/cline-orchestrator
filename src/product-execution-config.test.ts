@@ -112,13 +112,17 @@ test("M18B2 invalid/remote/raw-secret inputs fail before dispatcher for start an
   assert.deepEqual(f.calls, []);
 });
 
-test("M18B2 unresolved named credential blocks daemon start without reading secret values; clients still use dispatcher", async () => {
+test("M18B3a daemon handoff carries a reference, while clients do not select runtime credentials", async () => {
   const f = fixture({ ORCH_API_KEY_SECRET_REF: "PROVIDER_KEY", PROVIDER_KEY: "secret-sentinel" });
-  await assert.rejects(runProductCli(["start", "workspace"], f.deps), { code: "credential_resolution_pending" });
-  assert.equal(f.calls.length, 0);
-  await runProductCli(["tasks", "workspace"], f.deps);
+  await runProductCli(["start", "workspace"], f.deps);
   assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0]!.env.ORCH_API_KEY_SECRET_REF, "PROVIDER_KEY");
   assert.equal(f.calls[0]!.env.ORCH_API_KEY, undefined);
+  assert.doesNotMatch(JSON.stringify(f.calls[0]!.args), /secret-sentinel|PROVIDER_KEY/);
+  await runProductCli(["tasks", "workspace"], f.deps);
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[1]!.env.ORCH_API_KEY_SECRET_REF, undefined);
+  assert.equal(f.calls[1]!.env.ORCH_API_KEY, undefined);
 });
 
 test("M18B2 IPv6 loopback host becomes a valid bind literal without changing URL", () => {
