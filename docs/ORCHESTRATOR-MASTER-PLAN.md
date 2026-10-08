@@ -48,7 +48,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
-| 16 | Production security / reliability / observability | In progress — M16A production readiness baseline/evaluator active |
+| 16 | Production security / reliability / observability | In progress — M16A readiness evaluator complete (`e6c99050`, CI `#1308`) |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
 
@@ -1033,8 +1033,8 @@ Milestone 16 builds on existing controls already proven in earlier milestones: r
 
 ## M16 work queue
 
-1. **NEXT — M16A production readiness baseline/evaluator.** Define a read-only, sanitized readiness contract that aggregates critical security, reliability and observability probes. Missing audit/replay/rate controls, durable-state/recovery/fencing failures, or observability blindness must make readiness fail closed.
-2. **FOLLOW — M16B secret-safe structured operational events.** Standardize bounded structured event envelopes and redaction rules for production logs/audit without exposing prompts, raw worker output, credentials, tokens, workspace paths or secret material.
+1. **COMPLETE — M16A production readiness baseline/evaluator.** CI `#1308` green.
+2. **NEXT — M16B secret-safe structured operational events.** Standardize bounded structured event envelopes and redaction rules for production logs/audit without exposing prompts, raw worker output, credentials, tokens, workspace paths or secret material.
 3. **FOLLOW — M16C durable operational health history.** Persist bounded readiness/incident transitions with corruption-safe append semantics and retention controls.
 4. **FOLLOW — M16D alert classification + escalation.** Map critical operational failures to deterministic operator attention/escalation without autonomous repair authority.
 5. **FOLLOW — M16E reliability fault injection.** Prove crash/restart, torn/corrupt state, lease/fence loss, audit sink loss, provider/runtime unavailability and recovery fail closed.
@@ -1048,4 +1048,4 @@ Milestone 16 builds on existing controls already proven in earlier milestones: r
 
 # Current next step
 
-**M16A — production readiness baseline/evaluator.** Aggregate read-only probes for existing security controls, durable/recovery/fencing health and observability availability into one sanitized readiness result. Any required control loss fails closed; the result grants no authority and performs no mutation.
+**M16B — secret-safe structured operational events.** Define a fixed allowlisted event envelope with bounded IDs/codes/counters only, deterministic redaction/rejection of sensitive keys and free-form secret-bearing values, and a sink contract that never grants authority or changes runtime state.
