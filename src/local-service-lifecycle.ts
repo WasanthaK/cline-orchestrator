@@ -113,7 +113,7 @@ function assertSpec(spec: LocalServiceSpecV1): void {
     );
   }
 
-  const sensitiveLiteral = /(?:bearer\\s+\\S+|-----BEGIN [A-Z ]+PRIVATE KEY-----|(?:sk|ghp|github_pat)_[A-Za-z0-9_-]{8,}|(?:api[_-]?key|password|credential|token)\\s*[:=]\\s*\\S+)/i;
+  const sensitiveLiteral = /(?:bearer\s+\S+|-----BEGIN [A-Z ]+PRIVATE KEY-----|(?:sk|ghp|github_pat)_[A-Za-z0-9_-]{8,}|(?:api[_-]?key|password|credential|token)\s*[:=]\s*\S+)/i;
   const inspectableStrings = [
     spec.serviceName,
     spec.displayName,
