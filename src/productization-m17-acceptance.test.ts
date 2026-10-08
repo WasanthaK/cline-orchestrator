@@ -98,7 +98,7 @@ function fixture(platform: "windows" | "linux") {
     const route = routeProductCli(argv);
     assert.equal(route.kind, "native");
     if (route.kind !== "native") throw new Error("native route required");
-    const before = [...mutations];
+    const before: string[] = [...mutations];
     const result = await runNativeProductCommand(route, deps);
     assert.deepEqual(mutations, before);
     noAuthority(result);
@@ -144,7 +144,7 @@ for (const platform of ["windows", "linux"] as const) {
       { action: "register_workspace", payload: { root: "workspace", safetyProfile: { validationCommands: ["npm test"] } } },
     ];
     for (const request of requests) {
-      const before = [...f.mutations];
+      const before: string[] = [...f.mutations];
       const preview = await setup.preview({ schemaVersion: 1, ...request });
       noAuthority(preview);
       assert.deepEqual(f.mutations, before);
