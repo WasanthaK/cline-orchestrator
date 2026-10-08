@@ -48,7 +48,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
-| 16 | Production security / reliability / observability | In progress — M16A readiness evaluator complete (`e6c99050`, CI `#1308`); M16B secret-safe operational events complete (`120473a2`, CI `#1310`); M16C durable operational history complete (`6d22c004`, CI `#1312`); M16D alert classification complete (`ff49b30f`, CI `#1314`); M16E fault injection complete (`90e13c82`, CI `#1316`); M16F backpressure evaluator complete (`ba646c62`, CI `#1318`); M16G passive operator status complete (`a624a39b`, CI `#1321`) |
+| 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
 | 17 | Productization / installer / first-run UX | Planned |
 | 18 | Production release | Planned |
 
@@ -1040,12 +1040,20 @@ Milestone 16 builds on existing controls already proven in earlier milestones: r
 5. **COMPLETE — M16E reliability fault injection.** CI `#1316` green.
 6. **COMPLETE — M16F resource/backpressure hardening.** CI `#1318` green.
 7. **COMPLETE — M16G observability/operator integration.** CI `#1321` green after readonly tuple type correction.
-8. **NEXT — M16H Milestone 16 acceptance harness.** Prove security control loss, reliability degradation, saturation, corruption and observability blindness are visible, sanitized and fail closed across the M16A–M16G stack without authority widening.
-9. **DO NOT** make readiness status itself an authorization source or allow health/recovery code to mutate task, Git, deployment or credential state.
+8. **COMPLETE — M16H Milestone 16 acceptance harness.** CI `#1323` green.
+9. **MILESTONE 16 COMPLETE.** Security-control loss, reliability degradation, saturation, corruption and observability blindness are proven sanitized, bounded, operator-visible and fail closed without authority widening.
+10. **DO NOT** make readiness status itself an authorization source or allow health/recovery code to mutate task, Git, deployment or credential state.
+
+## 16H — Milestone 16 acceptance harness — COMPLETE
+
+`src/production-hardening-m16-acceptance.test.ts` composes the real M16A–M16G readiness, secret-safe event, durable history, alert-classification, backpressure and passive operator-status layers. The acceptance path proves healthy operation remains read-only and authority-free, while required-control loss, resource saturation, lease/fence/audit/recovery failures and observability blindness remain visible through bounded sanitized evidence.
+
+The harness also proves operational history survives reconstruction without authority, corrupt history fails closed, exception text/paths/tokens are not exposed, alert pressure is deterministically bounded, and no health/alert/status path can pause/abort/retry/repair tasks or grant authority.
+
+Evidence: acceptance harness `59a1170536e6de213933bdad7ca5afc25bc99964`; CI `#1323` passed typecheck + full suite.
 
 ---
 
-
 # Current next step
 
-**M16H — Milestone 16 acceptance harness.** Compose M16A–M16G end to end and prove required-control loss, corrupt durable history, resource saturation, lease/fence/audit/runtime failures and observability blindness remain sanitized, bounded, operator-visible and fail closed. Restart/reconstruction must preserve only non-authoritative evidence; no health/alert/status path may pause/abort/retry/repair tasks or grant authority.
+**Milestone 17 — Productization / installer / first-run UX.** Read the existing CLI/config/bootstrap/operator entry points and define the first bounded productization slice before adding installer or first-run behavior. Production authority and delivery semantics from prior milestones remain unchanged.
