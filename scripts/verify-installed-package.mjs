@@ -16,12 +16,12 @@ const env = { ...process.env, HOME: home, USERPROFILE: home,
  APPDATA: path.join(home, "AppData"), XDG_CONFIG_HOME: path.join(home, "xdg"),
  npm_config_cache: path.join(tmp, "npm-cache"), npm_config_update_notifier: "false" };
 for (const key of Object.keys(env)) if (key.startsWith("ORCH_") || key === "npm_config_prefix") delete env[key];
-const run = (command, args, cwd = tmp) => {
- const result = spawnSync(command, args, { cwd, env, encoding:"utf8", timeout:180000, maxBuffer:4*1024*1024, windowsHide:true });
+const run = (command, args, cwd = tmp, timeout = 180000) => {
+ const result = spawnSync(command, args, { cwd, env, encoding:"utf8", timeout, maxBuffer:4*1024*1024, windowsHide:true });
  if (result.error) throw result.error;
  return result;
 };
-const npm = (args, cwd = tmp) => run(process.execPath, [process.env.npm_execpath, ...args], cwd);
+const npm = (args, cwd = tmp) => run(process.execPath, [process.env.npm_execpath, ...args], cwd, 600000);
 const ok = (r, label) => assert.equal(r.status, 0, label + ": " + r.stderr?.slice(-1000));
 const hash = (v) => createHash("sha256").update(v).digest("hex");
 const exists = async p => { try { await stat(p); return true; } catch(e) { if(e.code === "ENOENT") return false; throw e; } };
