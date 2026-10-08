@@ -49,7 +49,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
-| 17 | Productization / installer / first-run UX | Planned |
+| 17 | Productization / installer / first-run UX | In progress — M17A first-run assessment active |
 | 18 | Production release | Planned |
 
 ---
@@ -1054,6 +1054,28 @@ Evidence: acceptance harness `59a1170536e6de213933bdad7ca5afc25bc99964`; CI `#13
 
 ---
 
+
+# Milestone 17 — Productization / Installer / First-run UX
+
+Acceptance target: a new operator can install, inspect, configure and start the orchestrator through a coherent product surface without editing source code, guessing environment variables or bypassing the safety/authority boundaries established in Milestones 1–16.
+
+Productization must preserve local-first defaults, explicit workspace registration/Safety authority, loopback-by-default transports, provider preflight, secret isolation and the production readiness model. Installer/first-run UX must never silently enable write authority, remote listeners, credentials, delivery actions or deployment authority.
+
+## M17 work queue
+
+1. **NEXT — M17A first-run assessment + setup plan.** Add a read-only first-run diagnostic that reports Node/runtime compatibility, provider/model configuration, workspace-registration state, daemon configuration and production-readiness prerequisites using sanitized bounded output. It must not write config, register workspaces, start services or open listeners.
+2. **FOLLOW — M17B product configuration file.** Define a versioned local config file with explicit defaults, environment override precedence, secret references instead of raw secret persistence, and migration-safe parsing.
+3. **FOLLOW — M17C interactive first-run setup.** Generate a proposed config/workspace registration plan and require explicit confirmation before each local mutation; no remote listener or elevated authority by default.
+4. **FOLLOW — M17D packaged CLI surface.** Replace developer-only `npm run dev --` ergonomics with a stable executable/command model while retaining current low-level commands for compatibility.
+5. **FOLLOW — M17E service lifecycle packaging.** Add explicit install/start/stop/status integration for supported local service managers without silently enabling network exposure.
+6. **FOLLOW — M17F installer/uninstaller packaging.** Produce platform-specific install/uninstall flows with reversible state ownership and preservation of user workspaces/secrets.
+7. **FOLLOW — M17G first-run operator UX/docs.** Align README/help/operator UI with actual providers, safety model, workspace registration, MCP/remote boundaries and production readiness.
+8. **FOLLOW — M17H Milestone 17 acceptance harness.** Prove clean install/diagnose/configure/start/stop/uninstall flows are deterministic, reversible and authority-safe.
+9. **DO NOT** make installer convenience an authority source or silently turn on command/edit approval, remote listeners, delivery, merge or deploy capabilities.
+
+---
+
+
 # Current next step
 
-**Milestone 17 — Productization / installer / first-run UX.** Read the existing CLI/config/bootstrap/operator entry points and define the first bounded productization slice before adding installer or first-run behavior. Production authority and delivery semantics from prior milestones remain unchanged.
+**M17A — first-run assessment + setup plan.** Add a read-only diagnostic over runtime version, provider/model settings, workspace registration, daemon configuration and production-readiness prerequisites. Output is sanitized and bounded; it performs no configuration writes, workspace registration, service start or listener/network mutation.
