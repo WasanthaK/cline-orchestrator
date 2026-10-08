@@ -52,7 +52,7 @@ try {
  const bad=path.join(tmp,"invalid.json");
  await writeFile(bad,JSON.stringify({schemaVersion:1,provider:{apiKey:sentinel}}));
  const rejected=run(shim,["--config",bad,"config"]);
- assert.notEqual(rejected.status,0); assert.match(rejected.stderr,/raw secret/i);
+ assert.notEqual(rejected.status,0); assert.match(rejected.stderr,/Product configuration is invalid; check schema, field types and secret references/);
  assert.ok(!(rejected.stderr+rejected.stdout).includes(sentinel),"secret leaked");
  assert.equal(await exists(path.join(home,".cline-orchestrator")),false);
  assert.equal(await exists(path.join(home,"xdg","cline-orchestrator")),false);
