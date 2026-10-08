@@ -244,7 +244,7 @@ export function buildProductionOperatorStatus(
     schemaVersion: 1,
     generatedAt: now.toISOString(),
     readOnly: true,
-    actions: [],
+    actions: [] as const,
     health,
     readiness: {
       ready: input.readiness.ready,
