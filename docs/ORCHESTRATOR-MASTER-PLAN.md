@@ -50,7 +50,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
 | 17 | Productization / installer / first-run UX | Complete — M17A–M17H productization contracts and acceptance composition; harness `400ce861`, type correction `3aa7a573`, CI `#1346` green. Installer execution and physical service installation are not proven by the fake-driver harness. |
-| 18 | Production release | Planned |
+| 18 | Production release | In progress — M18A source/evidence readiness assessment complete; production release blocked pending M18B–M18F. Current reviewed head `b9c11722`, CI `#1347` green. |
 
 ---
 
@@ -1087,6 +1087,42 @@ Evidence: harness `400ce861c206df037e00e1a5ea8a649e2cac3ed3`; test type correcti
 
 ---
 
+# Milestone 18 — Production release
+
+Acceptance target: a pinned, tested release candidate can be built, installed, configured, started, inspected, stopped and removed through shipped product paths with user-owned data preserved and the existing workspace/Safety, secret, transport and per-action release boundaries intact. Software-contract completion is not a substitute for artifact or physical proof.
+
+## M18A — Release-readiness source/evidence assessment — COMPLETE
+
+Assessment dated 2026-10-08 against branch head `b9c11722f9a8017bfa3f98f51100b5d5ab14f25f`. GitHub-hosted CI `#1347` is green for that head. M17H implementation acceptance remains `3aa7a573`, CI `#1346`. PR #3 is still open against `main`; its title describes older M13E work and must be aligned with the final scope before release review. No GitHub release is listed at assessment time.
+
+**Disposition: not ready for production release.** This is a read-only source/evidence assessment, not a runtime security certification or physical deployment result.
+
+| Area | Verified source/evidence | Release gap / required proof |
+|---|---|---|
+| Existing software boundaries | M13–M17 acceptance evidence recorded; current branch typecheck/full suite green | Preserve these proofs while closing product wiring gaps; CI success grants no release authority |
+| Product config loading | `resolveProductConfig` accepts a versioned input; native CLI calls it with only `{ schemaVersion: 1 }` plus environment | Ship explicit config-file loading/path/error handling; prove file → environment precedence through the actual CLI |
+| Execution/config consistency | Native product commands validate product config; `runLegacy` spawns `index.js` with the unchanged process environment; `index.ts` independently parses worker/daemon settings and raw `ORCH_API_KEY` | Make product execution consume the same validated config as diagnosis; prove loopback restrictions, safe defaults and named-secret handling at the real dispatch boundary without weakening task/Safety checks |
+| Confirmed setup | M17C provides per-action previews and single-use confirmation around injected driver calls; packaged `setup` remains plan-only | Ship narrowly scoped product adapters for config/project/workspace/loopback start through existing trusted boundaries, and expose a concrete operator confirmation flow; never treat a plan as confirmation |
+| Service lifecycle | Windows/systemd specifications and explicit lifecycle service around an injected driver; M17H uses fake drivers | Ship bounded platform drivers and prove actual install/start/status/stop behavior in disposable environments; no shared-host mutation is implied |
+| Installer ownership | Install/uninstall return non-mutating plans, preserving user-owned config/registry/secrets/tasks | Ship a bounded executor or explicitly choose a supported distribution method and prove its ownership/preservation behavior; plans alone cannot certify installation |
+| Built artifact | Package declares `dist/product-cli.js` binary and build script; TypeScript includes all source/tests; package remains `private: true`; no tracked npm lockfile, package file allowlist or release artifact workflow appears in tree | Define artifact contents, reproducible dependency resolution and distribution method; build/pack/install and exercise the binary from the artifact, not source; private flag requires an explicit distribution decision |
+| CI / supported platforms | Existing workflow runs `npm install`, typecheck and source tests on Ubuntu/Node 22 | Add build/artifact smoke proof and Windows/Linux matrix appropriate to the supported release; retain PostgreSQL safety proofs |
+| Remote scope | M11 external physical proof remains explicitly deferred; prior M12 Windows proofs cover their recorded scenarios | Exclude unproven external remote-control claims from initial release or complete a separately authorized proof; do not reopen listeners/credentials through onboarding |
+| Release/recovery | M15 proves separated commit/push/PR/merge/deploy authorities with fake external drivers | Prepare exact candidate evidence, rollback/support notes and staged release plan; publication/merge/deployment retain their existing explicit authorization |
+
+The assessment adds no runtime code, installer executor, service driver, credential resolution, listener, release mutation or new authority path. Legacy settings described above are a product consistency gap; this assessment does not establish that existing underlying transport or Safety controls are bypassed.
+
+## M18 work queue
+
+1. **COMPLETE — M18A release-readiness source/evidence assessment.** Reviewed head `b9c11722`, CI `#1347` green; gaps and bounded release sequence recorded here.
+2. **NEXT — M18B product config/execution integration.** Deliver in small sub-slices: B1 explicit config-file loading and sanitized diagnostics; B2 shared validated product settings at execution dispatch, including loopback/default consistency; B3 named-secret resolution only at the existing runtime credential boundary plus explicit setup adapters/operator confirmation. Preserve legacy compatibility without creating an alternate task/Safety authority path.
+3. **FOLLOW — M18C reproducible release artifact and packaged CLI proof.** Define distribution, dependency lock and artifact allowlist; build/pack/install in a disposable directory and run artifact-level diagnose/config/setup/status/error smoke tests. No publication or production listener activation.
+4. **FOLLOW — M18D real installation/service integration.** Implement only narrowly scoped supported platform adapters through the existing explicit action boundaries. Prove install/start/status/stop/uninstall, failures and user-data preservation on disposable Windows/Linux environments; shared-host changes require separately authorized physical proof.
+5. **FOLLOW — M18E release candidate acceptance and operator handoff.** Compose B–D through actual shipped paths, record supported/deferred features, exact artifact identity/checksums, provider/workspace/Safety prerequisites, operational readiness, backup/rollback and support instructions. Align PR metadata with the final change.
+6. **FOLLOW — M18F staged production release.** Prepare the exact reviewable candidate and release actions. Merge, tag/publication and deployment are distinct actions; perform only actions authorized for that concrete candidate through their existing boundaries. Record actual outcome and rollback evidence before closing Milestone 18.
+
+---
+
 # Current next step
 
-**Milestone 18 — Production release.** Begin with a read-only release-readiness assessment and a bounded release plan. Reconcile the completed software acceptance evidence with outstanding physical installation/service-driver and deferred external proof gaps before defining a release candidate. Separate preparation from merge, credentials, listener activation, publication and deployment; each actual external action retains its existing explicit authority boundary.
+**M18B1 — Explicit product config-file loading.** Add a bounded file-selection/loading path to the packaged CLI, preserve environment-over-file precedence, and fail with sanitized errors for missing requested files, malformed/schema-invalid input and raw secrets. Prove native commands consume the selected file while remaining read-only; this first sub-slice does not start a daemon, resolve credential values, register workspaces or alter legacy execution. M18B2 then connects the same validated settings to the existing execution dispatcher.
