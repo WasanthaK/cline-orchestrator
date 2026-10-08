@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 Branch: `milestone-13/delegation`
 
 ## Canonical rules
@@ -1069,8 +1069,8 @@ Productization must preserve local-first defaults, explicit workspace registrati
 4. **COMPLETE — M17D packaged CLI surface.** CI `#1334` green.
 5. **COMPLETE — M17E service lifecycle packaging.** CI `#1338` rerun green after known unrelated M12N renewal timing flake.
 6. **COMPLETE — M17F installer/uninstaller packaging.** CI `#1341` green after path-validator correction.
-7. **NEXT — M17G first-run operator UX/docs.** Align README/help/operator guidance with actual providers, safety model, workspace registration, MCP/remote boundaries, production readiness and the new packaged CLI.
-8. **FOLLOW — M17H Milestone 17 acceptance harness.** Prove clean install/diagnose/configure/start/stop/uninstall flows are deterministic, reversible and authority-safe.
+7. **COMPLETE — M17G first-run operator UX/docs.** README/help/operator guidance aligned with actual product boundaries; commit `158a00f58d182c19f1f92e8894828e1d3fa2e310`, CI `#1344` green.
+8. **IN PROGRESS — M17H Milestone 17 acceptance harness.** Compose real M17A–M17G boundaries with fake external effects; install/uninstall remain plans, service lifecycle uses fake drivers, and CLI start is verified as existing-dispatcher routing. Completion requires exact-head GitHub-hosted typecheck + full suite.
 9. **DO NOT** make installer convenience an authority source or silently turn on command/edit approval, remote listeners, delivery, merge or deploy capabilities.
 
 ---
@@ -1078,4 +1078,4 @@ Productization must preserve local-first defaults, explicit workspace registrati
 
 # Current next step
 
-**M17G — first-run operator UX/docs.** Replace stale developer-oriented onboarding with product-facing guidance for the packaged CLI, first-run diagnosis/setup plan, versioned config, supported provider modes, explicit workspace/Safety registration, loopback-default daemon/MCP/operator surfaces, production-readiness checks, and installer data-ownership semantics. Documentation must not imply authority that the product does not grant.
+**M17H — Milestone 17 acceptance harness.** Validate `src/productization-m17-acceptance.test.ts` in GitHub-hosted CI, then record completion only after exact-head typecheck and full suite pass. The harness composes clean-state diagnosis, read-only setup/config/status, individually confirmed setup actions, explicit service lifecycle, and install/uninstall ownership plans on Windows/Linux specifications. It also covers replay/expiry/reconstruction/failure, provider/readiness loss and authority-widening rejection. It adds no installer executor, service driver, CLI command or setup authority path; no physical installation or local shared runtime proof is claimed. Documentation must not imply authority that the product does not grant.
