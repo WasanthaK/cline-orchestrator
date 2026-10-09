@@ -3,13 +3,12 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 if (process.platform !== "linux") throw new Error("Linux-only unit verification");
 const root = fileURLToPath(new URL("../", import.meta.url));
 const temp = await mkdtemp(path.join(tmpdir(), "orch-systemd-unit-"));
-const npmCli = process.env.npm_execpath || createRequire(import.meta.url).resolve("npm/bin/npm-cli.js");
+const npmCli = process.env.npm_execpath;
 try {
   const archiveDir = path.join(temp, "archives");
   const prefix = path.join(temp, "consumer");
@@ -20,10 +19,10 @@ try {
     assert.equal(result.status,0, cmd+" failed: "+(result.stderr||"").slice(-1000));
     return result.stdout;
   };
-  const packed=JSON.parse(run(process.execPath,[npmCli,"pack","--ignore-scripts","--json","--pack-destination",archiveDir]));
+  const packed=JSON.parse(run(npmCli ? process.execPath : "npm",npmCli ? [npmCli,"pack","--ignore-scripts","--json","--pack-destination",archiveDir] : ["pack","--ignore-scripts","--json","--pack-destination",archiveDir]));
   assert.equal(packed.length,1);
   const archive=path.join(archiveDir,packed[0].filename);
-  run(process.execPath,[npmCli,"install","--global","--prefix",prefix,"--ignore-scripts","--no-audit","--no-fund",archive]);
+  run(npmCli ? process.execPath : "npm",npmCli ? [npmCli,"install","--global","--prefix",prefix,"--ignore-scripts","--no-audit","--no-fund",archive] : ["install","--global","--prefix",prefix,"--ignore-scripts","--no-audit","--no-fund",archive]);
   const index=path.join(prefix,"lib","node_modules","cline-orchestrator","dist","index.js");
   await readFile(index);
   const unitPath=path.join(temp,"cline-orchestrator.service");
