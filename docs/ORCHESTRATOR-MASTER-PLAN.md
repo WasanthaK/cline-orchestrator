@@ -1249,3 +1249,7 @@ M18D3 acceptance verification: commit `839cc58ba1d66b8bc124f4cdfaf6adbd1a51fd51`
 ## M18D4 — Physical service integration — READINESS GAPS CONFIRMED
 
 Source review at `7328ef59729b58cd494f0ba9e284f6baef828984` and CI [#1372](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37886573122): existing packaged Node CLI, M17E fake lifecycle driver, M18D1 previews and M18D2 command plans do not constitute real SCM/systemd integration. The actionable proof gates and M18D4a–d order are recorded in [M18D4 service integration readiness](M18D4-SERVICE-INTEGRATION-READINESS.md). Next code slice is capability assessment that fails closed where no real service host is shipped; platform mutation and physical proof remain separately gated. M18E-UX continues to follow M18D and must not be bypassed.
+
+## M18D4a — Fail-closed service-host readiness — IMPLEMENTED; CI PENDING
+
+Source-only check: valid Windows SCM or Linux systemd installation preview is insufficient to claim an operational service host. The new readiness assessment deliberately returns not-ready with explicit missing service-host and disposable lifecycle evidence for either platform; invalid service specs are rejected. This is a non-executing safety baseline, not a physical test, service installer or authorization mechanism. GitHub CI #1373 passed on retry after an unrelated pre-existing intermittent lease-renewal assertion. M18D4b–d remain blocked until actual disposable OS-level proof exists.
