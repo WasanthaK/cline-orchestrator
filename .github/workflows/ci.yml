@@ -34,6 +34,7 @@ jobs:
       - run: npm run verify:package
       - run: npm run verify:installed-package
       - run: node scripts/verify-linux-systemd-unit.mjs
+      - run: bash -n scripts/prove-disposable-linux-systemd.sh
 
   packaged-artifact-platforms:
     name: packaged artifact (${{ matrix.os }})
