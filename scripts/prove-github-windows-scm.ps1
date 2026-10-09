@@ -3,6 +3,8 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or $env:ORC
 $name = 'cline-orchestrator'
 $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$name"
 if (Get-Service -Name $name -ErrorAction SilentlyContinue) { throw 'Service name conflict; refusing to alter existing service' }
+if (Test-Path -LiteralPath $serviceKey) { throw 'SCM registry name already exists; refusing to alter existing service' }
+if (-not $env:RUNNER_TEMP -or -not $env:GITHUB_RUN_ID) { throw 'GitHub-hosted proof context missing' }
 $hostExe = (Resolve-Path 'native/windows-scm-host/bin/Release/net8.0-windows/WindowsScmHost.exe').Path
 $entry = (Resolve-Path 'dist/index.js').Path
 $node = (Get-Command node.exe).Source
