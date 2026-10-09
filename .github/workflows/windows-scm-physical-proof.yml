@@ -24,7 +24,7 @@ jobs:
       - name: Checkout reviewed proof candidate (not untrusted dispatch ref)
         uses: actions/checkout@v4
         with:
-          ref: 561abb17c299e5f70bafc70a7460b190395167f8
+          ref: 60ff71ff71914aaa9dc580cb5bc171f86a0a52a3
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -36,7 +36,7 @@ jobs:
         shell: pwsh
         run: |
           $actual = git rev-parse HEAD
-          if ($actual -ne '561abb17c299e5f70bafc70a7460b190395167f8') { throw 'Candidate SHA mismatch' }
+          if ($actual -ne '60ff71ff71914aaa9dc580cb5bc171f86a0a52a3') { throw 'Candidate SHA mismatch' }
           Write-Output "Reviewed candidate: $actual"
       - name: Execute temporary hosted-runner SCM lifecycle
         shell: pwsh
