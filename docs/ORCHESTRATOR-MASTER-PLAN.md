@@ -1274,6 +1274,8 @@ Current repository and CI configuration has no specifically provisioned, disposa
 
 M18D4b3 exact-head verification: `3b519d21036bd17b4de201f2bdd7f3973b676988`, [CI #1387](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37909161143), all three jobs green. The Linux proof guard rejects unauthorized invocation; no system service was installed, started or modified. M18D4b physical integration remains blocked on an expressly authorized isolated systemd guest. The next independent implementation track is M18D4c Windows SCM host readiness, not claiming SCM interoperability from the installed CLI.
 
-## M18D4c1 — Windows SCM host gap acceptance — IMPLEMENTED; CI PENDING
+## M18D4c1 — Windows SCM host gap acceptance — COMPLETE (CI #1391)
 
 Adds a Windows-hosted packaging gate confirming the currently shipped npm executable is a Node product CLI, not a verified Windows SCM service-host executable. The check fails on changed package assumptions requiring review. This is a negative capability check, not a service-host implementation or physical SCM proof. M18D4c remains open: implement a genuine SCM-aware service host, prove controlled registration/start/status/stop/deletion in a disposable Windows environment and preserve all pre-existing authority and user-data boundaries. No Windows service registration is attempted by CI.
+
+M18D4c1 exact-head hosted CI verification: `780f8f4831fede4d7a04a44a35d99ecf9c4b406d`, [CI #1391](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37911454432) green across full suite, Linux packaged artifact and Windows packaged artifact/SCM gap test. Windows service-host implementation and disposable SCM install/start/status/stop/delete proof remain outstanding. Next bounded step: define a dedicated SCM-aware host process and explicit service control semantics; never point `sc.exe create` at the ordinary Node CLI.
