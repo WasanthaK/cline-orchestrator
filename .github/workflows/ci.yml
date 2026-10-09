@@ -33,6 +33,7 @@ jobs:
       - run: npm run build
       - run: npm run verify:package
       - run: npm run verify:installed-package
+      - run: node scripts/verify-linux-systemd-unit.mjs
 
   packaged-artifact-platforms:
     name: packaged artifact (${{ matrix.os }})
