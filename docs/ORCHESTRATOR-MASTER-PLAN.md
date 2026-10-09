@@ -1227,3 +1227,7 @@ Decision (2026-10-09): UI/UX must be explicitly planned and evaluated before M18
 6. **Release decision.** Explicitly classify the candidate as CLI-only/headless or graphical-product-ready, based on completed UI tests and hands-on operator acceptance. M18F must not advertise an installed dashboard unless it is actually shipped and exercised through the product artifact. Physical listener/service proofs, external transport, credentials and publication remain separately authorized.
 
 **Dependency/order:** finish bounded M18D service integration first, then stage M18E-UX inventory → UX implementation/proof → M18E release candidate acceptance → M18F authorized staged release. If graphical UI is deferred, record a conscious CLI-only release decision and carry UI work as a separately tracked blocker for any GUI-product claim.
+
+## M18D1 — Reviewable service install previews — IMPLEMENTED, CI PENDING
+
+Added non-executing Windows/systemd service installation previews, with strict path, name, newline and systemd substitution guards. Linux emits a reviewable foreground unit and does not auto-start; Windows only previews a no-arguments verified service-host path and explicitly rejects wrapping the normal CLI as a Windows service. Credential provisioning remains out of scope. All previews are observation-only: no process spawning, service mutation, listener, credentials or task/release authority. Actual platform service execution is deferred to later M18D slices and requires disposable environments and fresh explicit authorization for any shared-host effect.
