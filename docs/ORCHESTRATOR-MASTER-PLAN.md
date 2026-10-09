@@ -1234,6 +1234,12 @@ Added non-executing Windows/systemd service installation previews, with strict p
 
 M18D1 exact-head verification: commit `b27cb451c4cdad3265220c7198ed0be5f7763d31`, GitHub-hosted [CI #1368](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37883358830) passed the full typecheck/test job and both Linux/Windows installed-artifact matrix jobs. This proves non-executing previews only; real service-manager adapters and installation remain M18D2 onward. Next slice: narrowly scoped platform adapter boundaries, with no implicit service-manager execution or user-machine mutation.
 
-## M18D2 — Platform service command plans — IMPLEMENTED; EXACT-HEAD CI PENDING
+## M18D2 — Platform service command plans — COMPLETE (CI #1370)
 
 Adds a pure, non-executing command planner for systemd and Windows SCM install/start/stop/status/uninstall actions, backed by the validated M18D1 preview contract. Linux install/uninstall only identifies daemon reload; actual unit-file placement and removal must be owned by a future narrowly scoped executor. Windows SCM create requires a dedicated service-host executable and never treats the ordinary CLI as a service binary. The planner runs no subprocesses, writes no files, provisions no credentials and grants no authority. Each plan records the requirement for explicit local confirmation; future action execution and disposable lifecycle acceptance remain separately gated.
+
+M18D2 verified: commit `8a08f6e4d0b649f3447b69e0d46da002254e5b6a`, [CI #1370](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37885107659), all three hosted jobs green. Planner remains non-executing and confers no service authority.
+
+## M18D3 — Composed service lifecycle acceptance — IMPLEMENTED; CI PENDING
+
+Added composed tests for both platform command plans and the pre-existing injected lifecycle service. Assertions cover install/start/status/stop/uninstall plan isolation, read-only status, precisely one action dispatch per request, sanitized driver failure without retry, and fail-closed invalid-spec handling. This is contract-level acceptance using injected fake drivers, not a proof of a physically installed Windows service or systemd unit. No system services, machine listener or credentials were touched. Physical disposable-environment lifecycle evidence remains necessary for release readiness.
