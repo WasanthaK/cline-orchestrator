@@ -1,0 +1,55 @@
+name: Windows SCM physical proof (manual, pinned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RUN_DISPOSABLE_WINDOWS_SCM to authorize temporary SCM service operations on the GitHub-hosted runner'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-scm-physical-proof
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    if: ${{ inputs.confirmation == 'RUN_DISPOSABLE_WINDOWS_SCM' }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout reviewed proof candidate (not untrusted dispatch ref)
+        uses: actions/checkout@v4
+        with:
+          ref: 561abb17c299e5f70bafc70a7460b190395167f8
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: dotnet build native/windows-scm-host/WindowsScmHost.csproj --configuration Release
+      - name: Review candidate identity
+        shell: pwsh
+        run: |
+          $actual = git rev-parse HEAD
+          if ($actual -ne '561abb17c299e5f70bafc70a7460b190395167f8') { throw 'Candidate SHA mismatch' }
+          Write-Output "Reviewed candidate: $actual"
+      - name: Execute temporary hosted-runner SCM lifecycle
+        shell: pwsh
+        env:
+          ORCH_TEMP_SCM_PROOF: I_AUTHORIZE_GITHUB_HOSTED_SCM
+        run: ./scripts/prove-github-windows-scm.ps1
+      - name: Verify temporary SCM cleanup
+        if: always()
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name cline-orchestrator -ErrorAction SilentlyContinue
+          if ($service) {
+            if ($service.Status -ne 'Stopped') { throw 'Temporary service remains running' }
+            throw 'Temporary service registration still present'
+          }
+          Write-Output 'No temporary SCM service registration visible'
