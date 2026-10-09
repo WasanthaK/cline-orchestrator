@@ -1268,6 +1268,8 @@ Added `scripts/prove-disposable-linux-systemd.sh`: an intentionally manual, guar
 
 M18D4b2 exact-head CI verification: `3e7f51a99a94e44b545d6903651885dcdc3ca291`, [CI #1383](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37908234535) passed typecheck/full tests and both packaged-artifact jobs on attempt 1. The CI checks syntax of the guarded systemd proof harness but does not execute its service-manager mutations. Do not close M18D4b or M18D until isolated Linux physical lifecycle proof, Windows SCM integration, ownership and recovery evidence are recorded.
 
-## M18D4b3 — Guarded physical-proof entry checks — IMPLEMENTED; CI PENDING
+## M18D4b3 — Guarded physical-proof entry checks — COMPLETE (CI #1387)
 
 Current repository and CI configuration has no specifically provisioned, disposable systemd-enabled guest with lifecycle evidence. The unprivileged CI gate now runs the M18D4b2 proof harness with its opt-in deliberately absent and asserts exit 64 before any service-manager action. This demonstrates default refusal only; it is not proof of physical lifecycle behavior, or an attestation of guest isolation. A separately authorized disposable Linux systemd guest, installed packaged candidate and captured start/status/stop/removal evidence are still required before M18D4b completes. No change was made to a real service manager.
+
+M18D4b3 exact-head verification: `3b519d21036bd17b4de201f2bdd7f3973b676988`, [CI #1387](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37909161143), all three jobs green. The Linux proof guard rejects unauthorized invocation; no system service was installed, started or modified. M18D4b physical integration remains blocked on an expressly authorized isolated systemd guest. The next independent implementation track is M18D4c Windows SCM host readiness, not claiming SCM interoperability from the installed CLI.
