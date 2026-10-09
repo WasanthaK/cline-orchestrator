@@ -1,7 +1,7 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-10-05
-Branch: `phase-1/bootstrap`
+Last updated: 2026-10-08
+Branch: `milestone-13/delegation`
 
 ## Canonical rules
 
@@ -45,12 +45,12 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 10 | Interactive operator control plane | Complete — capability contract + CI `#733` |
 | 11 | Secure remote ChatGPT control | Software complete through 11H; external/physical proof deferred and still gated |
 | 12 | Distributed / multi-machine orchestration | Complete — software complete through M12Z-H; M12X physical HTTPS/auth/no-work proof complete; M12Y acknowledgement/restart reconciliation complete; first real distributed writer physical proof passed on Windows run `#8`; M12Z-I two-process fresh-authority recovery physical proof passed on Windows run `#9` against orchestrator commit `ff2c1f7a` |
-| 13 | Safe multi-agent delegation | In progress — M13A bounded delegation envelope complete (`#1178`); M13B sibling isolation complete (`#1182` / `#1183`); M13C child-task materialization complete (`60d3e0b2`, CI `#1186` / `#1187`) |
-| 14 | Autonomous engineering loops | Planned |
-| 15 | GitHub delivery / release authority | Planned |
-| 16 | Production security / reliability / observability | Planned |
-| 17 | Productization / installer / first-run UX | Planned |
-| 18 | Production release | Planned |
+| 13 | Safe multi-agent delegation | Complete — M13A–M13Y; acceptance harness `26305244`, CI `#1240` green |
+| 14 | Autonomous engineering loops | Complete — M14A–M14P; phase-aware restart-safe bounded loop acceptance harness `4f276b95`, CI `#1283` green |
+| 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
+| 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
+| 17 | Productization / installer / first-run UX | Complete — M17A–M17H productization contracts and acceptance composition; harness `400ce861`, type correction `3aa7a573`, CI `#1346` green. Installer execution and physical service installation are not proven by the fake-driver harness. |
+| 18 | Production release | In progress — M18A–M18C complete; M18D real installation/service integration next, followed by M18E release candidate and M18F authorized staged release. M18C3 exact-head `f6d2bdd2`, CI `#1365` green. |
 
 ---
 
@@ -565,6 +565,28 @@ Evidence: harness `ff2c1f7a2f8d8cbfe6080222fd6024eeae168938`; hosted CI `#1172` 
 
 # Recent progress
 
+- 2026-10-07: M13X deferred-sibling progression gate completed at `4b8844bb`; PR #3 CI `#1238` attempt 2 green. Attempt 1 failed only the known unrelated M12N timing assertion. A deferred sibling can now become the next M13U candidate only after the previously selected sibling is terminal and the shared workspace has no active writer lease.
+- 2026-10-07: M13W selected-sibling runtime bridge completed at `24acda72` with test type correction `dd8f484c`; PR #3 CI `#1236` green. Only the current M13U/M13V-selected sibling can enter the existing M13G runtime starter; deferred siblings fail before runtime invocation and no second workspace writer is created.
+- 2026-10-07: M13V selected-sibling activation bridge completed at `0d78917d`; PR #3 CI `#1233` green. Only the single M13U-selected sibling can enter the existing M13F activation coordinator under the exact fresh scheduler-owned lease; deferred siblings fail closed and runtime start remains disabled at this boundary.
+- 2026-10-06: M13U sibling writer-lease compatibility gate completed at `6818a057`; PR #3 CI `#1231` green. The gate preserves the existing `maxActiveWritersPerWorkspace = 1` invariant: one M13T-prepared sibling is selected for the next lease-backed activation while any additional `parallel_disjoint` sibling is explicitly deferred; no lease or runtime is created.
+- 2026-10-06: Before M13U implementation, scheduler review confirmed `maxActiveWritersPerWorkspace = 1` and exclusive workspace-writer locking. Since all M13B siblings share one workspace, true same-workspace concurrent Cline writers are not yet safe; `parallel_disjoint` therefore remains logical/scope-level eligibility only until a separately reviewed path-scoped locking design exists.
+- 2026-10-06: M13T sibling durable-preparation batch completed at `4bc2f4f0`; PR #3 CI `#1228` green. The orchestrator now consumes only M13S-issued sibling tickets into M13D receipts and reuses the existing M13E durable preparation service for those exact children; blocked/terminal siblings cannot produce preparation state and no writer lease/runtime is acquired.
+- 2026-10-06: M13S sibling execution admission batch completed at `1d8b5bb4`; PR #3 CI `#1226` green. Only M13R-prepared siblings can receive fresh short-lived one-shot M13D tickets; blocked/terminal siblings remain ineligible, and the batch still creates no durable preparation, writer lease, fence, or runtime.
+- 2026-10-06: M13R sibling execution preparation set completed at `fd060594`; PR #3 CI `#1224` green. The orchestrator now maps only M13Q-admitted sibling identities back to their exact M13C descriptors and emits non-executable per-child preparation requests; blocked/terminal siblings fail closed and cannot advance.
+- 2026-10-06: M13Q sibling execution-set admission completed at `210b671b`; PR #3 CI `#1222` green. The orchestrator can now determine which already-materialized siblings are eligible at a given point: all pending siblings only for an M13B-proven `parallel_disjoint` set, or exactly one next child for `serialized`; this remains non-executing and creates no workers or leases.
+- 2026-10-06: M13P repair-child completion/review handoff completed at `de1afc0d`; PR #3 CI `#1220` green. Completed repair-child output is now bound to the exact repair attempt, fresh repair-child identity, prior child, original delegation/parent binding and narrowed scope while worker prose remains untrusted and independent validation/diff/checkpoint evidence remains authoritative.
+- 2026-10-06: M13O repair-child runtime-start adapter completed at `10f3aea0`; PR #3 CI `#1218` green. A repair child now starts only as a fresh TaskStore identity with zeroed session/run/recovery counters, bounded repair instruction, exact narrowed write scope and lease-aware runtime safety; prior-child task/session/checkpoint/lease identity reuse remains prohibited.
+- 2026-10-06: M13N repair-child activation gate completed at `a5db8d2d`; PR #3 CI `#1216` green. Activation now requires a fresh scheduler-owned lease for the new repair-child task ID, revalidates the exact inherited parent/Safety binding, emits only process-local runtime input with `runtimeStartAuthorized: false`, and rejects prior-child lease/runtime/session/checkpoint reuse.
+- 2026-10-06: M13M repair-child durable preparation completed at `5e242a39`; PR #3 CI `#1214` green. A consumed M13L admission can now persist one new non-executable repair-child preparation after fresh parent/Safety revalidation and proof the prior child remains terminal, while carrying no prior-child runtime/checkpoint/session state.
+- 2026-10-06: M13L repair-child execution admission completed at `9320d5ea` with test-import correction `4b22362b`; PR #3 CI `#1212` green. A fresh repair child can now receive only a short-lived single-use non-executing permit after full inherited parent/Safety revalidation and proof that the prior child remains terminal; prior child/session/lease reuse stays prohibited.
+- 2026-10-06: M13K fresh repair-child rematerialization completed at `beabe271`; PR #3 CI `#1209` passed on attempt 2 after the known unrelated M12N renewal timing flake. Consumed M13J repair admission now yields only a brand-new non-executable repair-child identity while preserving the exact prior delegation/Safety/worker/scope binding; the prior child is never resumed or mutated.
+- 2026-10-06: M13J bounded child repair admission completed at `b9b9eccc` with test-import correction `7ac59440`; PR #3 CI `#1207` green. Repair admission is short-lived, single-use, restart-safe through a durable per-child two-attempt budget, revalidates current parent/Safety scope, and still cannot schedule/resume/start the child or widen authority.
+- 2026-10-06: M13I supervisor child-review decision completed at `44836b42`; PR #3 CI `#1204` green. The supervisor can now return advisory `pass`, bounded `repair`, or `escalate` guidance against one child review handoff, while repair wording that attempts scope/tool/validation/Safety/release widening fails closed and no child scheduling or execution authority is granted.
+- 2026-10-06: M13H child completion/review handoff completed at `bffd4407`; PR #3 CI `#1202` green. Completed child output is now bound to its delegation/preparation identity and narrowed scope while worker prose remains explicitly untrusted; supervisor review sees independent validation/diff/Git/checkpoint/recovery evidence only and gains no scheduling/correction/release authority.
+- 2026-10-06: M13G single-child runtime-start adapter completed through `80430db6`; PR #3 CI `#1200` green. One local child may now start only through the existing ClineRunner + lease-aware Hub safety path using a fresh scheduler-owned child lease and exact narrowed child Safety scope; native subagents/teams/shell/network/MCP/plugins remain disabled, existing child state cannot be resumed/replayed, and lease loss triggers fail-safe abort.
+- 2026-10-06: M13F child execution activation gate completed at `1889fdf8`; PR #3 CI `#1196` green. Activation consumes only an already-fresh scheduler-owned local writer lease, revalidates the full current parent binding, proves exact child/workspace lease identity, and emits a narrowed process-local runtime input with runtime start still unauthorized.
+- 2026-10-06: M13E durable child execution preparation completed at `6d8c4c17` with syntax-only correction `b4a176ce`; PR #3 CI `#1194` green. The consumed M13D admission receipt is revalidated against current full parent execution binding and persisted once as non-executable child preparation outside `TaskStore`, preserving narrowed scope and trusted validation commands without worker/runtime authority.
+- 2026-10-06: M13D one-shot child execution admission merged via PR #1 at `43d43747`; push CI `#1190` and PR CI `#1191` green. The short-lived single-use permit revalidates current parent/Safety binding and delegation-set mode but remains non-executing and grants no worker/filesystem/release authority.
 - 2026-10-06: M13C child-task materialization completed at `60d3e0b2`; push CI `#1186` and PR CI `#1187` green. Validated child delegation is materialized only as a non-executable descriptor outside `TaskStore`, preserving exact parent/Safety binding and narrowed child scope while granting no worker/runtime authority.
 - 2026-10-06: M13B delegation-set validation / sibling isolation completed at `7c87296a`; push CI `#1182` and PR CI `#1183` green. Parallel sibling evidence is permitted only for conservatively disjoint write scopes; overlaps require explicit serialized coordination. The set remains evidence-only and creates no workers/runtime authority.
 - 2026-10-06: M13A bounded delegation envelope completed at `df0421d2` with type-only correction `eeb878ed`; CI `#1178` green. Delegation is evidence-only, exact-parent-scope selection only, non-recursive, and grants no execution/tool/release authority.
@@ -631,16 +653,659 @@ The descriptor is deliberately not an `OrchestratorTask` and is not persisted th
 
 Evidence: `60d3e0b2ce57c14a653816a67143bed64a0c40ba`; push CI `#1186` and PR CI `#1187` passed typecheck + full suite.
 
+## 13D — One-shot child execution admission — COMPLETE
+
+`src/multi-agent-child-execution-admission.ts` issues a short-lived, single-use admission token for exactly one M13C child descriptor only after revalidating the current parent task/Safety binding and exact M13B delegation-set membership/coordination mode. Terminal parents or pending human escalation fail closed.
+
+The permit remains `child_execution_admission_only`; issuing or consuming it does not create/start a worker, invoke Cline/runtime, acquire a local writer lease or distributed fence, create distributed dispatch/admission state, enable recursive delegation, or grant task/filesystem/Safety/credential/release authority.
+
+Evidence: `43d4374706928a5b639511a957875c26ce7baa5f`; push CI `#1190` and PR CI `#1191` passed before merge into `main` at `e749117ff4d795e0de0dad74ac09190eb186a5f1`.
+
+## 13E — Durable child execution preparation — COMPLETE
+
+`src/multi-agent-child-execution-preparation.ts` persists exactly one durable preparation per child after a consumed M13D admission receipt is presented and the full current parent execution binding is revalidated. The durable record carries the exact parent project/workspace/registry/Safety/profile/worker binding, current policy version, trusted validation commands, and the child’s narrowed allowed/protected path scope.
+
+The preparation remains outside `TaskStore`, is explicitly non-executable, and requires a later fresh parent-binding check plus fresh writer authority before any execution path can exist. It creates no worker, starts no Cline/runtime, acquires no local writer lease or distributed fence, creates no distributed dispatch/admission state, permits no subdelegation, and grants no task/filesystem/Safety/credential/release authority.
+
+M13D also gained a distinct consumed-admission receipt so M13E never infers consumption from permit shape alone.
+
+Evidence: consumed-receipt support `6d65edb28837d541c07c7f574b8a690b57738fb5`; M13E implementation `6d8c4c17ec25267d63f9620af61bb52b28732a0e`; syntax-only correction `b4a176ce48c94b0749064a311ad4781bbfa440d9`; PR #3 CI `#1194` passed typecheck + full suite.
+
+## 13F — Child execution activation gate — COMPLETE
+
+`src/multi-agent-child-execution-activation.ts` accepts one durable M13E preparation only inside an already-acquired scheduler-owned local writer lease. It revalidates the complete current parent project/workspace/registry/Safety policy/profile/worker/validation binding, then requires the live lease task ID to equal the child task ID and the lease workspace/owner/fence identity to remain unchanged across current-state validation.
+
+The output is a process-local narrowed child runtime input plus activation evidence. `runtimeStartAuthorized` remains false; the slice does not acquire the lease itself, start Cline/runtime, acquire a distributed fence, create distributed dispatch/admission state, permit subdelegation, or grant task/filesystem/Safety/credential/release authority.
+
+Evidence: `1889fdf89f2753decae4afa84ab99ce9709845f2`; PR #3 CI `#1196` passed typecheck + full suite.
+
+## 13G — Single child runtime-start adapter — COMPLETE
+
+`src/multi-agent-child-runtime-start.ts` starts exactly one local child only from a valid M13F process-local activation context. Immediately before start it revalidates the current parent execution binding, current child lease identity and registered workspace revision, resolves/preflights the configured worker profile, refuses any pre-existing child task state, then persists a fresh child `OrchestratorTask` whose approved write paths remain the narrowed child scope.
+
+Execution reuses the existing `ClineRunner` and `LeaseAwareHubRuntimeFactory`, so owner-targeted safe executors, durable checkpoints, validation, diff safety and human escalation remain the existing trusted mechanisms. The child authority provider maps current parent binding to the child’s narrowed allowed-path envelope on every write-capable revalidation. Native Cline subagents and agent teams stay disabled; model shell/network/MCP/plugins remain disabled; distributed child execution and release authority are absent. Local writer-lease loss aborts the child fail-safe.
+
+Evidence: implementation `84c257d5476ec989b607c0f0bb7dc68279e2fba2`; lease-loss abort correction `4157fe1c6f5cbb0781589b9082eb32dbcfa28ef5`; fail-safe coverage `80430db673a05c38564f1c75a31a544acdb8d581`; PR #3 CI `#1200` passed typecheck + full suite.
+
+## 13H — Child completion/review handoff — COMPLETE
+
+`src/multi-agent-child-review-handoff.ts` packages one review-ready M13G child completion packet together with the exact M13E preparation and M13B delegation-set identity. The handoff exposes the child objective, acceptance criteria, narrowed approved write scope, protected paths, status and sanitized worker report while preserving the worker report as `untrusted_worker_claims`.
+
+Independent orchestrator evidence is required: a checkpoint must exist, diff safety must be available and passing, and any available validation result must pass. Cross-bound task/project/workspace/delegation evidence fails closed. Aborted, rolled-back or in-progress child states cannot be presented as review-ready completion.
+
+M13H remains `child_review_evidence_only`: it schedules no sibling, starts no child/runtime, performs no automatic repair, permits no recursive delegation or distributed child execution, and grants no task/filesystem/Safety/credential/release authority.
+
+Evidence: `bffd44072bf1dc3851bc3571bdb0e416fcb9c590`; PR #3 CI `#1202` passed typecheck + full suite.
+
+## 13I — Supervisor child-review decision — COMPLETE
+
+`src/multi-agent-child-review-decision.ts` lets a supervisor/reviewer consume one M13H child handoff and emit only `pass`, `repair`, or `escalate` guidance using the existing bounded supervisor reviewer result contract. The decision stays bound to the exact child/delegation/parent identity and remains `child_review_decision_advisory_only`.
+
+Repair guidance is checked for attempts to widen scope or introduce forbidden shell/network/MCP/plugin/subagent/agent-team/validation/Safety/worker/release authority. The slice cannot schedule, resume or start a child, cannot create a new delegation, cannot mutate trusted validation/Safety identity, and grants no task/filesystem/Safety/credential/release authority.
+
+Evidence: `44836b42396828a5688b24d89d50eb903609cce5`; PR #3 CI `#1204` passed typecheck + full suite.
+
+## 13J — Bounded child repair admission — COMPLETE
+
+`src/multi-agent-child-repair-admission.ts` converts only an advisory M13I `repair` decision for one terminal/reviewed M13H child into a short-lived, single-use repair permit. Issuance revalidates the current parent task/Safety coverage of the exact reviewed child scope and fails closed on parent terminal state or pending escalation.
+
+A durable per-child repair-attempt ledger enforces a restart-safe maximum of two repair admissions. Runtime/watchdog retry counters are deliberately not reused. Consuming a repair permit returns evidence only; it does not schedule, resume or start the child, create a new delegation, alter validation/Safety/worker identity, enable distributed execution, or grant task/filesystem/Safety/credential/release authority.
+
+Evidence: implementation `b9b9ecccdf7694e4b9070295f0005d51faa16f2b`; test-import correction `7ac59440e5242da6a8fcdcb408167e7821d1e54b`; PR #3 CI `#1207` passed typecheck + full suite.
+
+## 13K — Fresh repair-child rematerialization — COMPLETE
+
+`src/multi-agent-repair-child.ts` converts one consumed M13J repair admission into a brand-new non-executable repair-child descriptor with a fresh child task ID. The descriptor remains bound to the original M13E preparation, M13H review handoff, M13I repair decision and M13J consumed receipt.
+
+The original delegation set/delegation/parent/project/workspace/registry/Safety policy/profile/worker binding, validation commands, protected paths and exact approved child write scope are preserved. Only the bounded repair instruction and repair-attempt number are added. Reusing the prior child task ID fails closed, and the descriptor explicitly forbids resuming or mutating the prior child.
+
+M13K remains materialization-only: no TaskStore persistence, worker/Cline/runtime start, lease/fence acquisition, distributed execution, recursive delegation, or task/filesystem/Safety/credential/release authority.
+
+Evidence: `beabe27133c1dfb69e87dcec51b48e2d6ea6a89a`; PR #3 CI `#1209` attempt 2 passed typecheck + full suite after an unchanged rerun of the known unrelated M12N timing flake.
+
+## 13L — Repair-child execution admission — COMPLETE
+
+`src/multi-agent-repair-child-execution-admission.ts` issues a fresh, short-lived, single-use execution admission for one M13K repair-child identity. Issuance requires the exact inherited current parent project/workspace/registry/Safety policy/profile/worker/validation/scope binding to remain current and independently proves that the prior child task still exists as the exact terminal task in the same project/workspace.
+
+The permit remains non-executing and does not start Cline/runtime, acquire a writer lease or distributed fence, create distributed execution state, resume/mutate the prior child, permit recursive delegation, or grant task/filesystem/Safety/credential/release authority.
+
+Evidence: implementation `9320d5ead8462eafca0370e2abf6bca6664314c4`; test-import correction `4b22362b3179a1962945426e58decebe84c5c1ff`; PR #3 CI `#1212` passed typecheck + full suite.
+
+## 13M — Repair-child durable preparation — COMPLETE
+
+`src/multi-agent-repair-child-preparation.ts` persists exactly one durable preparation per fresh M13K repair-child identity after a consumed M13L execution-admission receipt is presented. It revalidates the full current inherited parent project/workspace/registry/Safety policy/profile/worker/validation/scope binding and independently proves that the prior child remains the exact terminal task in the same project/workspace.
+
+The durable record carries the bounded repair instruction and attempt number but deliberately carries no prior-child runtime state, checkpoint state or session state. It remains outside `TaskStore`, non-executable, and requires later fresh parent-binding and fresh writer-lease checks before any runtime path may exist.
+
+Evidence: `5e242a390899d4cf519481ea2211b99b32681008`; PR #3 CI `#1214` passed typecheck + full suite.
+
+## 13N — Repair-child activation gate — COMPLETE
+
+`src/multi-agent-repair-child-activation.ts` mirrors the proven M13F activation boundary for a fresh M13M repair child. It revalidates the full current inherited parent project/workspace/registry/Safety policy/profile/worker/validation binding and requires the live scheduler-owned local writer lease to be bound to the new repair-child task ID and exact workspace.
+
+The prior child task ID is explicitly rejected as writer authority. Lease identity must remain unchanged across current-state validation. The resulting process-local repair runtime input carries the bounded repair instruction/attempt and exact narrowed scope, but `runtimeStartAuthorized` remains false. No Cline/runtime start, distributed execution, recursive delegation, or release authority occurs.
+
+Evidence: `a5db8d2d36c311621f2e9cbd45fcc62cb810159a`; PR #3 CI `#1216` passed typecheck + full suite.
+
+## 13O — Repair-child runtime-start adapter — COMPLETE
+
+`src/multi-agent-repair-child-runtime-start.ts` starts exactly one local repair child only from a valid M13N activation context. It performs one final parent/Safety/workspace/lease revalidation, resolves and preflights the existing worker profile, refuses any pre-existing repair-child TaskStore state, then creates a fresh repair-child task whose session/run/recovery/retry counters all begin from zero.
+
+The repair-child goal includes the bounded repair instruction and attempt number while preserving the original child objective, acceptance criteria, trusted validation commands and exact narrowed approved/protected path envelope. Execution reuses the existing `ClineRunner` + lease-aware Hub safety boundary. Prior-child task/session/checkpoint/runtime/lease identity is never reused; native subagents/teams, model shell/network/MCP/plugins, distributed repair execution and release authority remain disabled. Lease loss aborts fail-safe.
+
+Evidence: `10f3aea0b54ee1c350ca6ebfda5baa55bedb9dc9`; PR #3 CI `#1218` passed typecheck + full suite.
+
+## 13P — Repair-child completion/review handoff — COMPLETE
+
+`src/multi-agent-repair-child-review-handoff.ts` packages one review-ready M13O repair-child completion packet together with the exact M13M durable repair preparation. The supervisor-facing evidence is bound to the fresh repair-child task ID, prior child task ID, repair-attempt number, original delegation set/delegation/parent identity, objective, bounded repair instruction, acceptance criteria and exact narrowed write/protected scope.
+
+Independent orchestrator evidence is mandatory: checkpoint available, diff safety passing, and any available validation passing. Worker completion prose stays `untrusted_worker_claims`. Cross-bound task/project/workspace evidence fails closed, and aborted/rolled-back/in-progress repair children cannot be presented as review-ready completion.
+
+M13P remains review-only: it does not issue another repair admission, schedule/start any child, recurse delegation, distribute execution, widen scope, or grant release authority.
+
+Evidence: `de1afc0d95eafd1fe21ea03b26efc5246baa76b3`; PR #3 CI `#1220` passed typecheck + full suite.
+
+## 13Q — Sibling execution-set admission — COMPLETE
+
+`src/multi-agent-sibling-execution-set-admission.ts` consumes one already-validated M13B delegation set, the exact M13C materialized children for every delegation, and explicit current child-state evidence. It returns only which child identities are eligible now.
+
+For `parallel_disjoint`, all pending siblings may be admitted only when the M13B set carries no overlap evidence. For `serialized`, at most one next pending child is admitted and no second child is admitted while one sibling is already running. Cross-bound/missing/duplicate child or state evidence fails closed.
+
+M13Q remains `sibling_execution_set_admission_only`: no child execution admission token, worker start, local writer lease, distributed fence, runtime, recursive delegation, distributed child execution, or release authority is created.
+
+Evidence: `210b671b6e2aa02a5ee2f0db598a88ff1e99f4d8`; PR #3 CI `#1222` passed typecheck + full suite.
+
+## 13R — Sibling execution preparation set — COMPLETE
+
+`src/multi-agent-sibling-execution-preparation-set.ts` binds one M13Q sibling-admission result back to the exact M13C materialized child descriptors for the validated delegation set. Only admitted child identities produce per-child preparation requests; blocked or terminal siblings remain explicitly unable to advance.
+
+Each request preserves the original delegation set/mode, parent/project/workspace/registry/Safety profile/worker binding, objective, acceptance criteria, narrowed allowed paths and protected paths. The set does not create a child execution admission token, durable preparation, local writer lease, distributed fence, runtime, recursive delegation, distributed execution, or release authority.
+
+Evidence: `fd06059459d367a537c96a24d6ea95b6a57410dc`; PR #3 CI `#1224` passed typecheck + full suite.
+
+## 13S — Sibling execution admission batch — COMPLETE
+
+`src/multi-agent-sibling-execution-admission-batch.ts` reuses the existing M13D `MultiAgentChildExecutionAdmissionService` for siblings admitted by M13R. Each prepared sibling receives an independent short-lived, single-use child execution ticket only after the existing M13D parent/Safety/delegation-set revalidation succeeds.
+
+The batch refuses blocked or terminal siblings, rejects preparation requests that no longer exactly match their M13C materialized descriptor, and enforces serialized sets to at most one prepared child. It creates no durable M13E preparation, writer lease, distributed fence, runtime, recursive delegation, distributed child execution, or release authority.
+
+Evidence: `1d8b5bb461abd9e80929eafc69c753e4b1448c70`; PR #3 CI `#1226` passed typecheck + full suite.
+
+## 13T — Sibling durable-preparation batch — COMPLETE
+
+`src/multi-agent-sibling-durable-preparation-batch.ts` consumes only M13S-issued child tickets through the existing M13D `consumeForPreparation` path and feeds the resulting receipts into the existing M13E `MultiAgentChildExecutionPreparationService`. No parallel execution mechanism is invented; each sibling remains an independently prepared child with the original delegation/parent/Safety/worker/scope binding.
+
+For `parallel_disjoint`, multiple ticketed siblings may be prepared independently. For `serialized`, more than one ticket is rejected before consumption. Blocked or terminal siblings cannot produce durable preparation state. The batch creates no writer lease, distributed fence, runtime, recursive delegation, distributed execution, or release authority.
+
+Evidence: `4bc2f4f02cdc31d7b8454459601d560e5e386bfd`; PR #3 CI `#1228` passed typecheck + full suite.
+
+## 13U — Sibling writer-lease compatibility gate — COMPLETE
+
+`src/multi-agent-sibling-writer-compatibility.ts` reconciles one M13T sibling durable-preparation batch with the already-established exclusive workspace writer invariant. Because every M13B sibling shares one workspace and `maxActiveWritersPerWorkspace` is fixed at `1`, the gate selects at most one prepared sibling as the next lease-backed activation candidate and marks any additional prepared sibling as deferred.
+
+This does not weaken M13B `parallel_disjoint` scope isolation; it clarifies that disjoint logical eligibility does not override the current workspace-wide writer lock. True same-workspace parallel writers remain deferred to a separately reviewed path-scoped locking design. M13U acquires no lease, starts no worker/runtime, creates no distributed state, and grants no task/filesystem/Safety/credential/release authority.
+
+Evidence: `6818a057e7a05a28f8ad22f3ddf887b4fd985b89`; PR #3 CI `#1231` passed typecheck + full suite.
+
+## 13V — Selected-sibling activation bridge — COMPLETE
+
+`src/multi-agent-selected-sibling-activation-bridge.ts` binds the single M13U-selected sibling back to its exact M13T durable preparation and delegates activation to the already-proven M13F `MultiAgentChildExecutionActivationCoordinator`. The bridge itself acquires no lease; it requires an already-present fresh scheduler-owned writer lease bound to the selected child/workspace.
+
+Deferred, blocked or terminal siblings cannot enter the bridge. Candidate/preparation identity drift fails before M13F. The returned activation context remains `runtimeStartAuthorized: false`; no Cline/runtime start, second writer, distributed state, recursive delegation, or release authority is introduced.
+
+Evidence: `0d78917da76111637786f98d6b86e9d541e05aa9`; PR #3 CI `#1233` passed typecheck + full suite.
+
+## 13W — Selected-sibling runtime bridge — COMPLETE
+
+`src/multi-agent-selected-sibling-runtime-bridge.ts` accepts only an M13V activation context that exactly matches the current M13U-selected sibling and delegates runtime start to the already-proven M13G `MultiAgentChildRuntimeStarter`.
+
+Deferred, blocked or terminal sibling identities fail before M13G invocation. The bridge does not create or acquire a second writer lease, widen child scope, distribute execution, recurse delegation, or grant release authority.
+
+Evidence: implementation `24acda72807b3ba6eabf059da755c4ffd95a0356`; test-type correction `dd8f484c43af197f777edaccb23f47dde58dd9c3`; PR #3 CI `#1236` passed typecheck + full suite.
+
+## 13X — Deferred-sibling progression gate — COMPLETE
+
+`src/multi-agent-deferred-sibling-progression.ts` permits a previously deferred prepared sibling to become the next activation candidate only after two independent conditions are proven: the previously selected sibling has a terminal completion packet, and the shared workspace lock shows no active writer.
+
+The gate removes only the completed selected child from the prepared set, records it terminal, and reuses the existing M13U writer-compatibility selector over the remaining preparations. It acquires no lease, starts no worker/runtime, and introduces no new authority.
+
+Evidence: `4b8844bbf596d35c9675ba893cef000a792cd5e8`; PR #3 CI `#1238` attempt 2 passed typecheck + full suite. Attempt 1 failed only the known unrelated M12N lease-renewal timing assertion.
+
+## 13Y — Milestone 13 acceptance harness — COMPLETE
+
+`src/multi-agent-m13-acceptance.test.ts` provides the deterministic in-process Milestone 13 acceptance proof. It composes the existing M13A–M13X contracts to prove bounded child decomposition, sibling isolation, one-at-a-time same-workspace writer progression under the existing exclusive workspace-writer invariant, independent completion/review evidence, and one bounded repair cycle.
+
+The acceptance proof also verifies that repair cannot widen the original child authority envelope: the repair child retains the exact approved path scope, protected paths and trusted validation commands, receives a fresh child identity, cannot resume the prior child, cannot recurse delegation or agent teams, and receives no shell/network/MCP/plugin or release authority.
+
+M13Y adds no new runtime, writer-lease, filesystem, distributed, credential or release authority. It is acceptance evidence only.
+
+Evidence: `26305244eeeeeccc5c64eb1088c849f894a5be3a`; PR #3 CI `#1240` passed typecheck + full suite.
+
 ## M13 work queue
 
 1. **COMPLETE — M13A bounded delegation authority envelope.**
 2. **COMPLETE — M13B delegation set validation / sibling isolation contract.** CI `#1182` / `#1183` green.
 3. **COMPLETE — M13C child-task materialization contract.** CI `#1186` / `#1187` green.
-4. **NEXT — M13D child execution admission contract.** Convert a materialized child descriptor into a one-shot execution admission permit only after revalidating the current parent task/Safety binding and sibling coordination mode. The permit must remain non-executing and must not start Cline, acquire a writer lease/fence, or create distributed dispatch state.
+4. **COMPLETE — M13D child execution admission contract.** CI `#1190` / `#1191` green.
+5. **COMPLETE — M13E durable child execution preparation.** CI `#1194` green.
+6. **COMPLETE — M13F child execution activation gate.** CI `#1196` green.
+7. **COMPLETE — M13G child runtime-start adapter.** CI `#1200` green.
+8. **COMPLETE — M13H child completion/review handoff contract.** CI `#1202` green.
+9. **COMPLETE — M13I supervisor child-review decision contract.** CI `#1204` green.
+10. **COMPLETE — M13J bounded child repair admission.** CI `#1207` green.
+11. **COMPLETE — M13K fresh repair-child rematerialization.** CI `#1209` attempt 2 green after the known unrelated M12N timing flake.
+12. **COMPLETE — M13L repair-child execution admission.** CI `#1212` green.
+13. **COMPLETE — M13M repair-child durable preparation.** CI `#1214` green.
+14. **COMPLETE — M13N repair-child activation gate.** CI `#1216` green.
+15. **COMPLETE — M13O repair-child runtime-start adapter.** CI `#1218` green.
+16. **COMPLETE — M13P repair-child completion/review handoff.** CI `#1220` green.
+17. **COMPLETE — M13Q sibling execution-set admission.** CI `#1222` green.
+18. **COMPLETE — M13R sibling execution preparation set.** CI `#1224` green.
+19. **COMPLETE — M13S sibling execution admission batch.** CI `#1226` green.
+20. **COMPLETE — M13T sibling durable-preparation batch.** CI `#1228` green.
+21. **COMPLETE — M13U sibling writer-lease compatibility gate.** CI `#1231` green.
+22. **COMPLETE — M13V selected-sibling activation bridge.** CI `#1233` green.
+23. **COMPLETE — M13W selected-sibling runtime bridge.** CI `#1236` green.
+24. **COMPLETE — M13X deferred-sibling progression gate.** CI `#1238` attempt 2 green; attempt 1 failed only the known unrelated M12N timing flake.
+25. **COMPLETE — M13Y milestone acceptance harness.** Commit `26305244`; PR #3 CI `#1240` green.
 3. **DO NOT** add recursive delegation, dynamic agent-team formation, raw tool/shell/network authority, release authority, or unbounded fan-out.
 
 ---
 
+# Milestone 14 — Autonomous Engineering Loops
+
+Acceptance target: given one already-approved bounded engineering goal, the orchestrator can durably progress through implementation → independent completion evidence → supervisor review → bounded repair/continuation → repeat until the acceptance criteria are satisfied or a trusted stop condition requires human action. Autonomy must reuse the existing task/Safety, worker, validation, diff-safety, review, repair, lease/fence and escalation boundaries rather than creating a parallel authority path.
+
+Milestone 14 must remain bounded and fail closed: every iteration stays inside the current approved authority envelope; loop budgets and stop conditions are deterministic; stale or restarted loop state cannot resurrect authority; reviewer/model output remains advisory until admitted by trusted code; and commit/push/PR/merge/deploy/release authority remains outside this milestone unless separately introduced by Milestone 15.
+
+## 14A — Autonomous-loop contract + durable state model — COMPLETE
+
+`src/autonomous-engineering-loop.ts` defines a finite authority-free loop state machine bound exactly to one approved `SupervisorTaskV1`. The durable loop record preserves project/workspace/registry/Safety/worker/path bindings, explicit implementation/repair budgets, monotonic revisions and terminal stop reasons.
+
+The transition model permits only bounded implementation → evidence → review → bounded repair progression. Budget exhaustion fails closed to `waiting_for_human`; terminal state cannot resume. `FileAutonomousEngineeringLoopStore` persists loop state outside TaskStore and rejects stale revision replacement after reconstruction, so restart history cannot resurrect stale loop progression.
+
+M14A is non-executing: it starts no worker/Cline/runtime, acquires no local lease or distributed fence, creates no distributed dispatch, performs no Git delivery, uses no credentials and grants no task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `f3ce2bb6fc7e74805fc9e21a6d6eb79f1a435915`; proofs `e6237eb6a87dc220e32314336a17ca86f4b47d18`; CI `#1242` passed typecheck + full suite.
+
+## 14B — Trusted loop-transition admission gate — COMPLETE
+
+`src/autonomous-engineering-loop-transition-admission.ts` admits only one authority-free M14 loop transition after revalidating the exact current task/project/workspace/registry/Safety/worker/path binding captured by M14A. The admission object is short-lived evidence only and records the expected loop revision plus current task status/run count; it mutates neither loop state nor TaskStore.
+
+Implementation-start and repair-start admissions require an eligible current task state with no pending escalation. Completion transitions require a current exact completion packet with terminal state, matching run count, checkpoint evidence and passing diff safety; successful completion/review transitions additionally require passing independent validation. Reviewer transitions require an exact trusted `SupervisorDecisionV1` of the matching kind, so model/reviewer prose remains advisory until admitted through the existing trusted supervisor-decision boundary.
+
+M14B starts no worker/Cline/runtime, acquires no lease/fence, creates no distributed dispatch, performs no Git delivery, uses no credentials and grants no task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `cb0cf01cf03ee0f5876ca75f0005041f148456b8`; proofs `2f99533581e4a65aa67293d3e667cf7e1edb90ed`; CI `#1244` passed typecheck + full suite.
+
+## 14C — Durable admitted-transition application — COMPLETE
+
+`src/autonomous-engineering-loop-transition-apply.ts` consumes one still-fresh M14B transition admission only against the exact expected M14A loop revision, applies the already-admitted deterministic transition and persists the next revision through the M14A store. Admission expiry, wrong revision and replay fail closed.
+
+Admission consumption is persisted separately from loop state, so reconstructing the apply service cannot reuse an already-consumed admission. The applied receipt remains state evidence only and explicitly grants no task/filesystem/Safety/lease/credential/release authority.
+
+M14C mutates only the durable autonomous-loop record. It does not mutate TaskStore, start workers/Cline/runtime, acquire writer leases or distributed fences, create distributed state, perform Git delivery, or use credentials.
+
+Evidence: implementation `b8831841004c4c2f3de560dc8cb4f9e9711f23b5`; proofs `b123ee1d5a3002a37f9a4aeb7dde03825a3839aa`; CI `#1246` passed typecheck + full suite.
+
+## 14D — Execution-intent bridge — COMPLETE
+
+`src/autonomous-engineering-execution-intent.ts` derives a bounded non-executing execution-intent descriptor only from an `implementation_in_progress` M14A loop revision whose exact M14B transition admission has already been durably applied by M14C. The bridge revalidates the current task/project/workspace/registry/Safety/worker/path binding before emitting intent.
+
+Initial implementation intent uses only the already-approved supervisor objective, acceptance criteria and trusted validation commands. Repair intent additionally requires the exact trusted `review_repair` decision referenced by the admitted repair transition; stale or mismatched reviewer provenance fails closed. Loop state or model prose alone cannot create a repair instruction.
+
+M14D does not mutate TaskStore or loop state, start/continue Cline/runtime, acquire lease/fence authority, create distributed work, perform Git delivery, use credentials, or grant task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `8ed92fe9d88f901e1fd67f147312981df3925d22`; proofs `1f6275e518cd85d9960e6a9fe5244f6e764044a0`; CI `#1249` passed typecheck + full suite.
+
+## 14E — Execution admission permit — COMPLETE
+
+`src/autonomous-engineering-execution-admission.ts` issues a short-lived, single-use execution admission only for an exact M14D intent whose durable M14A loop remains at the same `implementation_in_progress` revision and whose current task/project/workspace/registry/Safety/worker/path binding still matches. Consumption repeats both checks and returns evidence only.
+
+The permit/receipt remains non-executing and carries no task/filesystem/Safety/lease/credential/release authority. It does not mutate TaskStore or loop state, start/continue Cline/runtime, acquire local/distributed writer authority, create distributed work, perform Git delivery or use credentials.
+
+Evidence: implementation `488723e44e12982b4b5e9f34a591ad0daab32b33`; proofs `000da7536a29fde598295e0c8d0b214861693b98`; CI `#1251` typechecked successfully and passed the full suite on rerun after the known unrelated M12N renewal timing flake.
+
+## 14F — Durable execution preparation — COMPLETE
+
+`src/autonomous-engineering-execution-preparation.ts` persists exactly one durable, non-executable preparation per M14D execution intent after a consumed M14E receipt is presented. Preparation revalidates the exact durable loop revision plus current task/project/workspace/registry/Safety/worker/path binding and preserves the approved objective, acceptance criteria, trusted validation commands and exact scope/protected-path envelope.
+
+For bounded repairs, the durable preparation also preserves the exact trusted repair instruction and reviewer decision identity. Reusing the same intent fails closed, and advancing the loop or drifting current Safety state invalidates preparation.
+
+M14F does not mutate TaskStore or loop state, start/continue Cline/runtime, acquire writer lease/fence authority, create distributed work, perform Git delivery, use credentials, or grant task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `edaadb25c485ad02cb1e0c40d2604d427e72abd9`; proofs `e2de6d628b6fbed527f533143c6278eddcc7d578`; CI `#1253` passed on rerun after an unrelated pre-existing M12I ProjectMemory read race.
+
+## 14G — Execution activation gate — COMPLETE
+
+`src/autonomous-engineering-execution-activation.ts` activates only an exact M14F durable preparation whose M14A loop remains on the same `implementation_in_progress` revision and whose current task/project/workspace/registry/Safety/worker/path binding still matches. Activation also requires a live scheduler-owned local writer lease bound to the exact task/workspace/owner; the lease is validated again and any identity change during validation fails closed.
+
+The activation result contains only process-local runtime input and activation evidence with `runtimeStartAuthorized: false`. The gate does not acquire the writer lease, mutate TaskStore/loop state, start/continue Cline, create distributed work, perform Git delivery, use credentials, or grant task/filesystem/Safety/lease/credential/release authority.
+
+Evidence: implementation `626eb660581df0dacbe49f5c564ec442023ddb18`; corrected identity-change proof `b5944221e4d76760ac422badbcc335ab6ee168a7`; CI `#1256` passed typecheck + full suite.
+
+## 14H — Trusted initial local runtime start — COMPLETE
+
+`src/autonomous-engineering-initial-runtime-start.ts` bridges only an exact M14G `initial_implementation` activation into the existing `ScheduledHubWriterAuthorityRunner` path. Before handoff it revalidates the runner's current approved task/workspace/owner binding, validates the same live scheduler-owned writer lease again, and rechecks that the M14G activation evidence still matches the current lease identity.
+
+M14H deliberately rejects `bounded_repair`. It does not weaken or bypass the scheduled runner's fresh-created-task invariant and therefore cannot silently reinterpret continuation as initial start. Runtime execution continues to inherit the scheduled runner's existing lease-aware Hub runtime, durable authority revalidation, provider preflight, validation/diff-safety behavior and fail-safe abort on lease loss.
+
+M14H adds no distributed execution, credentials, Git delivery or release authority.
+
+Evidence: implementation `d59f2ee85e377ad84611971c201cac9cd62ef6bd`; proofs `fb423e471873ea82a6d0cd603503434594dfe9a3`; CI `#1259` passed typecheck + full suite.
+
+## 14I — Trusted bounded-repair runtime continuation — COMPLETE
+
+`ScheduledHubWriterAuthorityRunner` now exposes a separate repair-specific revalidation/runtime path without changing `runApprovedTask()` or its fresh-created-task invariant. Bounded repair is allowed only for a completed task with existing orchestrator-owned session/run history, a usable rollback checkpoint, no pending escalation, current registered workspace/Safety authority and a non-empty trusted repair instruction.
+
+`src/autonomous-engineering-repair-runtime-continuation.ts` accepts only an exact M14G `bounded_repair` activation, revalidates the scheduled repair runner's task/workspace/owner binding, validates the same live scheduler-owned writer lease immediately before handoff, and passes only the exact reviewer-derived repair instruction preserved through M14D–M14G. The repair runtime remains lease-aware, reuses provider preflight, validation and diff-safety, and aborts fail-safe on lease loss.
+
+M14I adds no distributed execution, credentials, Git delivery or release authority.
+
+Evidence: scheduled runner repair path `b83dc2f04147150f6c09b4405d89374b7126e5ff`; bridge `c8ad12d4949b1395eec888d270d58094ed7e42b0`; proofs `90347cbe10f3b6c366a914571c523ace73131cba`; CI `#1263` passed typecheck + full suite.
+
+## M14 work queue
+
+1. **COMPLETE — M14A autonomous-loop contract + durable state model.** CI `#1242` green.
+2. **COMPLETE — M14B trusted loop-transition admission gate.** CI `#1244` green.
+3. **COMPLETE — M14C durable admitted-transition application.** CI `#1246` green.
+4. **COMPLETE — M14D execution-intent bridge.** CI `#1249` green.
+5. **COMPLETE — M14E execution admission permit.** CI `#1251` rerun green.
+6. **COMPLETE — M14F durable execution preparation.** CI `#1253` rerun green.
+7. **COMPLETE — M14G execution activation gate.** CI `#1256` green.
+8. **COMPLETE — M14H trusted initial local runtime start.** CI `#1259` green.
+9. **COMPLETE — M14I trusted bounded-repair runtime continuation.** CI `#1263` green.
+10. **COMPLETE — M14J post-runtime completion evidence bridge.** CI `#1265` green.
+11. **COMPLETE — M14K autonomous reviewer decision bridge.** CI `#1267` green.
+12. **COMPLETE — M14L completion/review progression composition.** CI `#1269` green.
+13. **COMPLETE — M14M bounded repair-cycle launch composition.** CI `#1274` green.
+14. **COMPLETE — M14N initial-cycle launch composition.** CI `#1276` green.
+15. **COMPLETE — M14O phase-aware autonomous step controller.** CI `#1281` green.
+16. **COMPLETE — M14P Milestone 14 acceptance harness.** CI `#1283` green.
+17. **MILESTONE 14 COMPLETE.** The bounded restart-safe autonomous loop acceptance target is satisfied without Git delivery, credentials or release authority.
+
+## 14P — Milestone 14 acceptance harness — COMPLETE
+
+`src/autonomous-engineering-m14-acceptance.test.ts` proves the M14A–M14O contracts compose into a bounded restart-safe loop using the actual durable M14 loop store/state machine across reconstructed controller instances. The acceptance path covers initial execution, independent completion evidence, trusted review repair, one bounded repair continuation, fresh evidence and eventual `succeeded` state.
+
+The harness also proves restart from `awaiting_review`, deterministic repair-budget exhaustion to `waiting_for_human`, stale supervisor/Safety binding rejection, terminal no-op behavior and continued absence of Git delivery, credential or release authority.
+
+Evidence: acceptance harness `4f276b959c88334f76d8ed62d4f5fcf4461bdfad`; CI `#1283` passed typecheck + full suite.
+
+---
+
+
+# Milestone 15 — GitHub Delivery / Release Authority
+
+Acceptance target: after a bounded engineering task has reached a trusted successful terminal state, the orchestrator may prepare and, only through separately admitted explicit authority, perform narrowly scoped Git/GitHub delivery actions without allowing edit authority, model output, CI status, credentials, prior confirmations or restart history to become release authority.
+
+Milestone 15 must keep each delivery capability distinct. Commit, push, pull-request creation/update, merge and deployment are separate authorities with separate evidence and confirmation requirements. Delivery authority is short-lived, single-purpose, bound to exact repository/workspace/task/evidence identity, replay-protected, and invalidated by repository/task/Safety drift. Merge, deploy, destructive Git and any external mutation continue to require explicit user authorization immediately before the authorized action.
+
+## M15 work queue
+
+1. **COMPLETE — M15A delivery proposal contract.** CI `#1286` green.
+2. **COMPLETE — M15B explicit delivery authority admission.** CI `#1288` green.
+3. **COMPLETE — M15C local commit preparation/execution boundary.** CI `#1290` green.
+4. **COMPLETE — M15D push + PR boundary.** M15D1 push-only (`b6d90dd9`, CI `#1292`) and M15D2 PR create/update (`df68b8fc`, CI `#1295`) complete.
+5. **COMPLETE — M15E merge authority boundary.** CI `#1298` green after correcting the merge-evidence boolean test contract.
+6. **COMPLETE — M15F deployment/release boundary.** CI `#1301` green.
+7. **COMPLETE — M15G release recovery/replay safety.** CI `#1303` green.
+8. **COMPLETE — M15H Milestone 15 acceptance harness.** CI `#1305` green.
+9. **MILESTONE 15 COMPLETE.** Delivery capability separation, explicit per-action authority, replay prevention, stale-evidence rejection and restart recovery are proven across commit → push → PR → merge → deploy.
+10. **DO NOT** allow model/planner/reviewer output, autonomous-loop success, CI success, possession of GitHub credentials, or a prior delivery permit to grant another delivery capability.
+
+## 15H — Milestone 15 acceptance harness — COMPLETE
+
+`src/github-delivery-m15-acceptance.test.ts` composes the real M15A–M15G proposal, authority-admission, commit, push, PR, merge, deployment and recovery boundaries while faking only the external Git/GitHub/deployment drivers. The acceptance path proves each mutation requires its own explicit single-use permit and that a successful earlier delivery result cannot authorize a later capability.
+
+The harness also proves stale evidence blocks mutation before side effects, consumed permits remain non-replayable across executor reconstruction/restart, recovery is observation-only, ambiguous outcomes cannot reuse a permit or mint retry authority, and no stage grants broad/general release authority.
+
+Evidence: acceptance harness `fcc3f52d1323d2c8363f8b3de86407e04ac11950`; CI `#1305` passed typecheck + full suite.
+
+---
+
+
+# Milestone 16 — Production Security / Reliability / Observability
+
+Acceptance target: the orchestrator can determine, before production use, whether its critical security, durability/recovery and observability controls are healthy enough for operation, expose only sanitized operator-facing diagnostics, and fail closed when required controls are unavailable or stale. Production hardening must not widen task, filesystem, network, credential, writer, Git delivery or release authority.
+
+Milestone 16 builds on existing controls already proven in earlier milestones: remote-session replay/rate/audit protection, restrictive local-operator transport/UI controls, durable task/recovery/checkpoint state, writer fencing, Sentinel incidents, operator visualization and run metrics.
+
+## M16 work queue
+
+1. **COMPLETE — M16A production readiness baseline/evaluator.** CI `#1308` green.
+2. **COMPLETE — M16B secret-safe structured operational events.** CI `#1310` green.
+3. **COMPLETE — M16C durable operational health history.** CI `#1312` green.
+4. **COMPLETE — M16D alert classification + escalation.** CI `#1314` green.
+5. **COMPLETE — M16E reliability fault injection.** CI `#1316` green.
+6. **COMPLETE — M16F resource/backpressure hardening.** CI `#1318` green.
+7. **COMPLETE — M16G observability/operator integration.** CI `#1321` green after readonly tuple type correction.
+8. **COMPLETE — M16H Milestone 16 acceptance harness.** CI `#1323` green.
+9. **MILESTONE 16 COMPLETE.** Security-control loss, reliability degradation, saturation, corruption and observability blindness are proven sanitized, bounded, operator-visible and fail closed without authority widening.
+10. **DO NOT** make readiness status itself an authorization source or allow health/recovery code to mutate task, Git, deployment or credential state.
+
+## 16H — Milestone 16 acceptance harness — COMPLETE
+
+`src/production-hardening-m16-acceptance.test.ts` composes the real M16A–M16G readiness, secret-safe event, durable history, alert-classification, backpressure and passive operator-status layers. The acceptance path proves healthy operation remains read-only and authority-free, while required-control loss, resource saturation, lease/fence/audit/recovery failures and observability blindness remain visible through bounded sanitized evidence.
+
+The harness also proves operational history survives reconstruction without authority, corrupt history fails closed, exception text/paths/tokens are not exposed, alert pressure is deterministically bounded, and no health/alert/status path can pause/abort/retry/repair tasks or grant authority.
+
+Evidence: acceptance harness `59a1170536e6de213933bdad7ca5afc25bc99964`; CI `#1323` passed typecheck + full suite.
+
+---
+
+
+# Milestone 17 — Productization / Installer / First-run UX
+
+Acceptance target: a new operator can install, inspect, configure and start the orchestrator through a coherent product surface without editing source code, guessing environment variables or bypassing the safety/authority boundaries established in Milestones 1–16.
+
+Productization must preserve local-first defaults, explicit workspace registration/Safety authority, loopback-by-default transports, provider preflight, secret isolation and the production readiness model. Installer/first-run UX must never silently enable write authority, remote listeners, credentials, delivery actions or deployment authority.
+
+## M17 work queue
+
+1. **COMPLETE — M17A first-run assessment + setup plan.** CI `#1326` green.
+2. **COMPLETE — M17B product configuration file.** CI `#1329` green after normalized URL expectation correction.
+3. **COMPLETE — M17C interactive first-run setup.** CI `#1331` green.
+4. **COMPLETE — M17D packaged CLI surface.** CI `#1334` green.
+5. **COMPLETE — M17E service lifecycle packaging.** CI `#1338` rerun green after known unrelated M12N renewal timing flake.
+6. **COMPLETE — M17F installer/uninstaller packaging.** CI `#1341` green after path-validator correction.
+7. **COMPLETE — M17G first-run operator UX/docs.** README/help/operator guidance aligned with actual product boundaries; commit `158a00f58d182c19f1f92e8894828e1d3fa2e310`, CI `#1344` green.
+8. **COMPLETE — M17H Milestone 17 acceptance harness.** Harness `400ce861c206df037e00e1a5ea8a649e2cac3ed3`, type correction `3aa7a573a556b2a4be7163bf56209ecaba46143f`; CI `#1346` passed typecheck + full suite.
+9. **MILESTONE 17 COMPLETE — software contracts and acceptance composition.** Install/uninstall remain non-mutating ownership plans, service lifecycle uses fake external drivers in acceptance, and CLI start delegates to the existing dispatcher. Physical installation/service deployment is not acceptance evidence here.
+10. **DO NOT** make installer convenience an authority source or silently turn on command/edit approval, remote listeners, delivery, merge or deploy capabilities.
+
+---
+
+
+## 17H — Milestone 17 acceptance harness — COMPLETE
+
+`src/productization-m17-acceptance.test.ts` composes the real M17 assessment, configuration, explicit setup confirmation, native CLI, service lifecycle and installer ownership boundaries. Windows and Linux specifications cover clean-state diagnosis, read-only setup/config/status, independently confirmed configuration/project/workspace actions, explicit service install/start/stop/status calls and deterministic install/uninstall plans preserving user-owned configuration, registry, secrets and task state.
+
+The harness also proves confirmation action/digest binding, replay rejection, expiry, reconstruction invalidation, consumption on execution failure, provider-preflight degradation, production-observability loss and rejection of remote listener/raw-secret/ownership widening before external effects. Only external drivers and observations are faked. No installer executor, service driver, new CLI command or setup authority path is added, and no shared local runtime or physical installation is exercised.
+
+Evidence: harness `400ce861c206df037e00e1a5ea8a649e2cac3ed3`; test type correction `3aa7a573a556b2a4be7163bf56209ecaba46143f`; GitHub-hosted CI [#1346](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37759190677) passed typecheck and the full suite for that exact branch head.
+
+---
+
+# Milestone 18 — Production release
+
+Acceptance target: a pinned, tested release candidate can be built, installed, configured, started, inspected, stopped and removed through shipped product paths with user-owned data preserved and the existing workspace/Safety, secret, transport and per-action release boundaries intact. Software-contract completion is not a substitute for artifact or physical proof.
+
+## M18A — Release-readiness source/evidence assessment — COMPLETE
+
+Assessment dated 2026-10-08 against branch head `b9c11722f9a8017bfa3f98f51100b5d5ab14f25f`. GitHub-hosted CI `#1347` is green for that head. M17H implementation acceptance remains `3aa7a573`, CI `#1346`. PR #3 is still open against `main`; its title describes older M13E work and must be aligned with the final scope before release review. No GitHub release is listed at assessment time.
+
+**Disposition: not ready for production release.** This is a read-only source/evidence assessment, not a runtime security certification or physical deployment result.
+
+| Area | Verified source/evidence | Release gap / required proof |
+|---|---|---|
+| Existing software boundaries | M13–M17 acceptance evidence recorded; current branch typecheck/full suite green | Preserve these proofs while closing product wiring gaps; CI success grants no release authority |
+| Product config loading | `resolveProductConfig` accepts a versioned input; native CLI calls it with only `{ schemaVersion: 1 }` plus environment | Ship explicit config-file loading/path/error handling; prove file → environment precedence through the actual CLI |
+| Execution/config consistency | Native product commands validate product config; `runLegacy` spawns `index.js` with the unchanged process environment; `index.ts` independently parses worker/daemon settings and raw `ORCH_API_KEY` | Make product execution consume the same validated config as diagnosis; prove loopback restrictions, safe defaults and named-secret handling at the real dispatch boundary without weakening task/Safety checks |
+| Confirmed setup | M17C provides per-action previews and single-use confirmation around injected driver calls; packaged `setup` remains plan-only | Ship narrowly scoped product adapters for config/project/workspace/loopback start through existing trusted boundaries, and expose a concrete operator confirmation flow; never treat a plan as confirmation |
+| Service lifecycle | Windows/systemd specifications and explicit lifecycle service around an injected driver; M17H uses fake drivers | Ship bounded platform drivers and prove actual install/start/status/stop behavior in disposable environments; no shared-host mutation is implied |
+| Installer ownership | Install/uninstall return non-mutating plans, preserving user-owned config/registry/secrets/tasks | Ship a bounded executor or explicitly choose a supported distribution method and prove its ownership/preservation behavior; plans alone cannot certify installation |
+| Built artifact | Package declares `dist/product-cli.js` binary and build script; TypeScript includes all source/tests; package remains `private: true`; no tracked npm lockfile, package file allowlist or release artifact workflow appears in tree | Define artifact contents, reproducible dependency resolution and distribution method; build/pack/install and exercise the binary from the artifact, not source; private flag requires an explicit distribution decision |
+| CI / supported platforms | Existing workflow runs `npm install`, typecheck and source tests on Ubuntu/Node 22 | Add build/artifact smoke proof and Windows/Linux matrix appropriate to the supported release; retain PostgreSQL safety proofs |
+| Remote scope | M11 external physical proof remains explicitly deferred; prior M12 Windows proofs cover their recorded scenarios | Exclude unproven external remote-control claims from initial release or complete a separately authorized proof; do not reopen listeners/credentials through onboarding |
+| Release/recovery | M15 proves separated commit/push/PR/merge/deploy authorities with fake external drivers | Prepare exact candidate evidence, rollback/support notes and staged release plan; publication/merge/deployment retain their existing explicit authorization |
+
+The assessment adds no runtime code, installer executor, service driver, credential resolution, listener, release mutation or new authority path. Legacy settings described above are a product consistency gap; this assessment does not establish that existing underlying transport or Safety controls are bypassed.
+
+## M18 work queue
+
+1. **COMPLETE — M18A release-readiness source/evidence assessment.** Reviewed head `b9c11722`, CI `#1347` green; gaps and bounded release sequence recorded here.
+2. **COMPLETE — M18B product config/execution integration.** B1 config-file loading, B2 shared execution settings, B3 daemon-local named credential and separately confirmed setup adapters, B4 composed acceptance; `303a111a`, exact-head CI `#1355` green. Completion is software integration evidence, not physical startup, artifact, service or release proof.
+3. **COMPLETE — M18C packaged artifact and CLI acceptance.** C1 private tarball/build/allowlist CI #1356; C2 disposable installed CLI/error/uninstall proof CI #1360; C3 hosted Windows/Linux installed-artifact matrix CI #1365, exact head `f6d2bdd2`. No package publication, physical service installation or production listener activation.
+4. **FOLLOW — M18D real installation/service integration.** Implement only narrowly scoped supported platform adapters through the existing explicit action boundaries. Prove install/start/status/stop/uninstall, failures and user-data preservation on disposable Windows/Linux environments; shared-host changes require separately authorized physical proof.
+5. **FOLLOW — M18E release candidate acceptance, UI/UX gate and operator handoff.** Compose B–D through actual shipped paths; add M18E-UX design, implementation and usability acceptance for first-run setup, operator dashboard and review/control flows before graphical-product readiness is claimed. Record supported/deferred features, exact artifact identity/checksums, provider/workspace/Safety prerequisites, operational readiness, backup/rollback and support instructions. Align PR metadata with the final change.
+6. **FOLLOW — M18F staged production release.** Prepare the exact reviewable candidate and release actions. Merge, tag/publication and deployment are distinct actions; perform only actions authorized for that concrete candidate through their existing boundaries. Record actual outcome and rollback evidence before closing Milestone 18.
+
+---
+
+## M18B1 — Explicit product config-file loading — COMPLETE
+
+Implementation `d16b8ff26b5764bccbb9b52e964a8f80e1fe60c4`; exact-head GitHub-hosted CI [#1349](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37783870570) passed typecheck and the full suite. Explicit file loading is bounded, read-only and sanitized; environment values override a valid selected file and an invalid requested file cannot silently fall back. M18B2 extends the same selected-file path to existing execution commands.
+
+## M18B2 — Shared validated configuration at execution dispatch — COMPLETE
+
+Implementation `a510f63c9b35cdde5149f017cc94846123ee9074`; exact-head GitHub-hosted CI [#1350](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37786452693) passed typecheck and the full suite. Product execution now uses the same selected-file/environment snapshot as native observation while preserving the existing dispatcher arguments, diff-safety restrictions and task/workspace/Safety controls. No shared local runtime was started for its validation.
+
+## M18B3a — Named provider credential runtime boundary — COMPLETE
+
+Implementation `ef75369e40aa4290956e4d19c0ac62f0d012346a`; exact-head GitHub-hosted CI [#1351](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37789892876) passed typecheck and the full suite. Named provider credential resolution is confined to the existing daemon-child WorkerConfig assembly. The product CLI forwards the validated reference only for daemon dispatch; it never sets raw ORCH_API_KEY from that reference. The runtime resolver looks up exactly the selected environment name once, rejects missing/empty/oversized/control-character-bearing values, and supplies the key only to the existing in-memory worker/provider/preflight consumers. Invalid/reserved references and lookup failures emit fixed sanitized errors without reference/value/cause exposure. No-reference behavior preserves existing low-level compatibility.
+
+No key is added to argv, config files, public resolver receipts, setup previews or task authority. Existing preflight exception messages redact exact matches of the runtime key. This is a provider-specific runtime value boundary, not general credential access, and it adds no task/filesystem/release authority or setup mutation. Product observation and task clients do not select credential resolution.
+
+Local validation: typecheck, whitespace check and 47 focused credential/preflight/product configuration/CLI/execution/M17 acceptance tests passed. Proofs use synthetic keys only: exact one-name lookup, unchanged settings, no lookup without a reference, invalid/unavailable-value rejection, existing metadata authorization header, redacted preflight exceptions and actual source CLI/daemon-child missing-key failure before binding or state writes. No successful daemon/listener activation or real credential provisioning occurred.
+
+## M18B3b — Confirmed create-only config setup — COMPLETE
+
+Implementation `250b3e30c4923f36be7727e088f0bba16e32e348`; exact-head GitHub-hosted CI [#1352](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37791474865) passed typecheck and the full suite. `setup-config <input.json> <new-output.json>` composes the existing FirstRunSetupService with a config-write-only filesystem adapter. A bounded input snapshot is strictly validated without environment overrides; the preview binds the canonical destination and exact document to the existing short-lived, single-use confirmation token. The CLI displays both and requires an interactive terminal and the exact phrase `WRITE CONFIG`. No token is exposed by the adapter review callback.
+
+The destination must be a new JSON file in an existing directory. A private temporary file is flushed and atomically published with a create-only hard link; existing files/symlinks and targets appearing during confirmation are never overwritten. Parent directory identity is checked before writing and publication. Temporary files are cleaned up on success/failure. This protects normal local setup against accidental replacement; it is not a claim of protection against privileged operating-system races. No directories are created, and registration/start drivers remain unavailable in this adapter.
+
+Config setup validation now uses the strict product schema, admitting named secret references and token-budget fields while rejecting raw keys, unknown fields, invalid types and non-loopback product settings. Other setup actions retain their existing payload checks. Confirmation does not confer task, workspace, service or delivery authority.
+
+Local validation: typecheck, whitespace check and 35 focused config-write/setup/product CLI/config-source/M17 acceptance tests passed. Real filesystem proofs use disposable directories: confirmation-only creation, immutable reviewed snapshot, decline/expiry no-write behavior, existing file/symlink refusal, competing destination preservation, private permissions and temporary cleanup. Single-use/reconstruction/concurrent replay proofs cover the existing setup service. An actual non-TTY CLI subprocess rejects piped confirmation without creating a file. Successful physical TTY interaction and installer/service deployment are not claimed by these tests.
+
+## M18B3c — Confirmed project/workspace registration — COMPLETE
+
+Implementation `e6dfd943c7957002c88c9576d59b8c4f57ede141`; exact-head GitHub-hosted CI [#1353](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37793229815) passed typecheck and the full suite. `setup-project <display-name>` and `setup-workspace <input.json>` wire independently confirmed registration actions through the real WorkspaceRegistry. The CLI requires a TTY and the action-specific exact phrases `REGISTER PROJECT` / `REGISTER WORKSPACE`. The preview binds the selected registry location, registry snapshot and immutable registration document; workspace previews additionally bind the canonical root and directory identity. Successful receipts return generated project/workspace IDs for subsequent explicit actions, never a setup token.
+
+Workspace input requires all existing Safety profile fields explicitly: allowed/protected paths, validation commands, worker profile, policy version and maximum changed files. Unknown fields, profile-ID/revision overrides, invalid types/control characters and omitted fields fail before confirmation. The existing secret-material checks remain in force. No permissive profile, project, workspace or command is inferred from product config/environment settings. Empty explicitly selected arrays retain the existing registry behavior and do not certify operational readiness.
+
+A read-only WorkspaceRegistry preflight shares the same profile/project/canonical-root/duplicate-root guards as the mutation method. The adapter rejects malformed/unreadable/oversized or symlink registry files, rechecks the registry snapshot and workspace root after confirmation, and delegates mutation only to the matching existing registration method. In-process adapter mutations are serialized with conflict rejection; this is not a cross-process transaction/lock guarantee for independent existing registry writers, nor protection against privileged OS races. The existing registry persistence behavior is retained.
+
+Local validation: typecheck, whitespace check and 45 focused registration/registry-Safety/setup/product CLI/config-write/M17 acceptance tests passed. Disposable real-registry proofs cover separately confirmed actions, exact immutable Safety fields, no workspace writes, decline/expiry, strict input/preflight guards, registry drift, root replacement/symlink retargeting, malformed/symlink registry refusal and concurrent in-process confirmations. Actual CLI dispatch with injected confirmation uses the real registry and never dispatches a task/daemon or contacts a listener; an actual non-TTY CLI subprocess rejects piped confirmation without registry creation. Existing Safety scope/drift/single-use tests pass. Successful physical TTY interaction, daemon startup and deployment are not claimed.
+
+## M18B3d — Confirmed loopback foreground daemon dispatch — COMPLETE
+
+Implementation `b7c7b1fccccec1980cecf10f9d7ec8b895d3e5e6`; exact-head GitHub-hosted CI [#1354](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37794773023) passed typecheck and the full suite. `setup-start <workspace-id>` supports the existing explicit config selector/environment precedence and composes FirstRunSetupService with the existing foreground daemon dispatch. It requires a registered opaque workspace ID, verifies the canonical root through WorkspaceRegistry, and previews the exact registered workspace/Safety profile and validated provider/runtime/loopback config. The interactive CLI requires the exact phrase `START DAEMON`; the existing short-lived, single-use setup confirmation binds workspace/config digests. Startup-only confirmation rejects automatic command/edit approval settings and reserved credential references.
+
+The adapter captures the inherited environment and resolved config once, preserving existing diff-safety restrictions. It revalidates the registered workspace, complete Safety snapshot and directory identity after confirmation before dispatching only `daemon <verified-canonical-root>`. Credential values are not selected by setup; only the named reference reaches the existing daemon-child assembly. Other setup drivers remain unavailable. It adds no service installation, registry/config mutation, task approval, per-task Safety binding or alternate execution implementation; existing task-client/runtime behavior remains unchanged. The rechecks are not a privileged OS-race protection claim.
+
+Foreground dispatch retains the existing child lifecycle. The setup call waits for child exit, and a receipt after successful dispatch completion is not an immediate listener-readiness or operational-readiness attestation. Actual successful binding/provider readiness/physical foreground interruption remains for disposable artifact/runtime proof.
+
+Local validation: typecheck, whitespace check and 59 focused daemon-setup/registration/registry-Safety/setup/CLI/execution/credential/M17 acceptance tests passed. Proofs cover immutable config/root/environment review, preservation of diff restrictions, decline/expiry, invalid/unregistered paths and IDs, remote hosts/raw secret fields/reserved references, automatic approvals, Safety drift, root replacement/retargeting, foreground wait semantics and sanitized dispatch failure. Source CLI route/dispatch tests prove one selected file read with environment precedence. An actual non-TTY CLI subprocess refuses piped startup confirmation; a confirmed source CLI using the real daemon child rejects a synthetic absent credential before listener binding or workspace state writes. No successful daemon/listener or shared runtime activation occurred.
+
+## M18B4 — Product integration acceptance — COMPLETE
+
+Implementation `303a111a17360695302dea4098007871f352ae85`; exact-head GitHub-hosted CI [#1355](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37797117885) passed typecheck and the full suite. `src/product-integration-m18b-acceptance.test.ts` composes the shipped product CLI, bounded config-file reader, real create-only config writer, real project/workspace registry and confirmed daemon adapter in disposable directories. Four acceptance scenarios cover initial diagnose/read-only plan, separately confirmed config/project/workspace/start actions, config-file/environment precedence through startup and task-client dispatch, status/diagnosis, decline at every action, invalid config rejection across observation/setup/execution, and reviewed Safety drift/degraded provider observation.
+
+The harness verifies exact persisted Safety fields, one config read for selected startup, preservation of existing diff restrictions, startup automatic approvals remaining disabled, provider reference handoff only for daemon dispatch, no raw key in the reserved raw-key slot, sanitized outputs/false authority flags, and unchanged operator-owned workspace/config/registry data where mutation was not selected. A setup plan or observation never substitutes for confirmation. The task-client check exercises the existing dispatch handoff without executing a task or introducing a new Safety binding.
+
+Only daemon dispatch and daemon/provider observations are simulated; confirmation callbacks are injected to exercise the same-session product adapters. Registry-backed workspace observations use the real registry. Actual listener readiness, successful provider/physical TTY interaction, packaged artifact execution, service installation and deployment are not claimed. The previously green B3d real daemon-child missing-credential negative proof remains independent evidence. This slice changes only acceptance tests and the canonical record: no product code, driver, installer, listener or authority path is added.
+
+Local validation: typecheck, whitespace check and 35 focused M18B acceptance/config-write/registration/daemon-setup/M17 acceptance tests passed, including all four new composed scenarios. With hosted CI green, M18B software integration is complete. Physical/runtime/release gaps remain governed by the M18C–M18F queue.
+
 # Current next step
 
-**M13D — child execution admission contract.** The next trusted slice should issue a bounded one-shot execution-admission permit from one M13C child descriptor only after revalidating the exact current parent task/project/workspace/Safety/worker binding and the M13B sibling coordination mode. The permit must still grant no execution authority by itself: no worker start, Cline/runtime, local lease, distributed fence, distributed dispatch/admission, recursive delegation, shell/network/MCP/plugin, or release authority.
+**M18C1 — COMPLETE (commit `8db5077a`, exact-head hosted CI #1356 green).** The supported initial distribution is a private local npm tarball; `private: true` remains set and no registry publication occurs. The committed lockfile-v3 pins source build dependencies with integrity metadata. CI now installs with `npm ci --ignore-scripts`, preserving the existing full source typecheck/tests and PostgreSQL service before a separate runtime build/package-content verification.
+
+`tsconfig.build.json` excludes source tests, live-proof programs and the developer CR3 preflight while retaining the full source configuration for typecheck/tests. The build script cleans the fixed repository dist directory and fails if excluded test/proof programs re-enter its compiled import graph. The package allowlist ships runtime JavaScript, README and distribution guide plus npm-required metadata; source/test/proof/build files, dependencies and operator config/registry/secret/task data are excluded. The prepack hook builds before a normal pack. The verification script checks required product/legacy/MCP entrypoints, prospective tarball contents and the product binary shebang.
+
+This pins the source build graph; it does not embed a consumer dependency lock, guarantee offline installation or certify byte-identical builds across arbitrary toolchains. Runtime dependencies remain declared, unbundled npm dependencies. The distribution guide documents user-owned disposable prefixes, disabled install scripts and package removal with external operator data retained. Consumer install/run/remove and supported-platform proof remain for subsequent slices.
+
+Local validation: clean locked dependency install, source typecheck, clean runtime build (including removal of a seeded stale test artifact), package-content allowlist verification and 9 focused Cline-runtime/M18B acceptance tests passed. A real `npm pack` produced `cline-orchestrator-0.1.0.tgz`: 182 allowed entries, 311394 bytes, SHA-256 `aeb0c4063b2ed68a4fe7c3e73cc01e5106865e8b46a143e7bf249dbf3d489eac`. Actual archive inspection verified the allowlist and shebang. The compiled CLI's default config and invalid raw-key config error passed in a disposable user-config environment without state creation or sentinel leakage. This is local build evidence, not an approved release artifact or consumer install proof. No service installation, listener, shared runtime, publication or release mutation is introduced.
+
+Local build environment: Linux, Node `v24.19.0`, npm `11.9.0`. Hosted CI retains Node 22 and remains the exact-head completion gate. Next after green: M18C2 disposable tarball install/packaged CLI/error/removal acceptance, then M18C3 supported Windows/Linux artifact CI. M18C remains in progress until its packaged-binary and platform evidence is complete.
+
+## M18C2 — Disposable installed-package acceptance — IMPLEMENTED; HOSTED CI PENDING
+
+`npm run verify:installed-package` creates a real allowlisted npm tarball and installs it with lifecycle scripts disabled into a fresh disposable Linux consumer prefix. It runs the installed npm CLI shim, checks read-only safe defaults, proves raw-secret-bearing configuration fails without leaking a unique sentinel or creating operator state, uninstalls the product using npm, verifies the product/shim are removed and four separately stored user-owned files remain byte-identical. CI runs the acceptance after runtime build and package allowlist verification. No service driver, daemon/listener startup, registry publication, machine authority or destructive operator cleanup is added. M18C3 remains the supported Windows/Linux CI matrix after M18C2 exact-head green; M18D–M18F remain separately gated.
+
+M18C2 CI #1357 initially failed at real consumer installation: unconstrained npm transitive resolution selected unavailable `@ai-sdk/openai@4.0.90` despite the source lock recording available `4.0.89` from `@cline/llms`. The repair pins `@ai-sdk/openai` to exact `4.0.89` as a runtime dependency and synchronizes the lockfile's root dependency declaration. This is a consumer dependency-resolution fix, not an acceptance bypass. Hosted exact-head verification remains required.
+
+M18C2 retry #1358 attempt 2 reached installed package execution but exposed a genuine npm-shim entrypoint defect: CLI main detection compared the real module location to the symlink path and returned successfully without running `config`. Entry detection now compares resolved real filesystem locations so the installed npm binary executes, while retaining the disposable consumer-install regression gate. Exact-head CI is still required.
+
+## M18C3 — Supported Windows/Linux artifact acceptance — COMPLETE (CI #1365)
+
+Adds a GitHub-hosted Node 22 Windows/Linux build-and-artifact matrix. Both platforms must perform the locked install, clean runtime build, archive allowlist check, disposable npm consumer install, platform-specific installed npm shim execution, sanitized invalid-config rejection, npm package uninstall and byte-identical preservation of four user-owned sentinels. Windows uses the installed `.cmd` shim and Windows global npm prefix structure; Linux retains the existing POSIX executable. The existing Linux full-suite/PostgreSQL gate remains intact. No user-machine physical proof, service registration, listener, credential, task authorization, publication or release mutation is performed. CI #1360 established M18C2 complete; exact-head M18C3 green remains mandatory before advancing.
+
+M18C3 initial CI #1361: Linux artifact and full test suite green; Windows consumer npm install exceeded the M18C2 harness's fixed 180-second subprocess timeout, before any installed CLI assertion. Corrective change permits a bounded 600-second timeout for npm pack/install/uninstall only, retaining a 180-second limit for CLI execution and every existing acceptance assertion. This does not claim Windows pass; exact-head CI must prove completion.
+
+M18C3 CI #1362: full suite and Linux packaged-artifact job passed. Windows consumer install completed within extended bound, but the installed `.cmd` shim invocation failed due to nested quote formatting in the acceptance harness (`cmd /s /c` received a double-quoted command). The correction calls the same installed `.cmd` shim using `cmd /d /c call` with a single quoted path. All actual installed-package, invalid-config and uninstall assertions remain in force; exact-head Windows/Linux hosted CI is still required.
+
+M18C3 CI #1363: full test suite and Linux artifact green; Windows consumer npm install succeeds, but the test's absolute-path `.cmd` invocation remains misquoted by cmd.exe. Correction launches the same installed npm-generated `cline-orchestrator.cmd` from the isolated npm prefix as working directory, avoiding fragile absolute batch-path quoting. Package existence, CLI output, sanitized invalid-config, uninstall and operator-data preservation checks remain unchanged; hosted CI must still pass on both platforms.
+
+M18C3 CI #1364: full suite and Linux package acceptance green. Windows installed npm shim now starts, but `cmd /c call` with nested quoted arguments yields CLI usage exit 2 on the read-only `config` check. Windows acceptance now passes the controlled test arguments directly to the installed `.cmd` command from its disposable npm prefix. No application behavior or acceptance assertions are removed. Both OS matrix jobs remain mandatory.
+
+## M18C closeout — VERIFIED
+
+Exact-head commit `f6d2bdd27822363af1ac07b9c698ae10cfbcf850`, hosted CI [#1365](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37881645585) succeeded in all three jobs: source typecheck/full tests, Ubuntu installed-artifact acceptance, and Windows installed-artifact acceptance. The supported private local npm tarball has verified disposable installation, real installed CLI execution, sanitized bad-config handling, npm removal, and external user-owned sentinel preservation on both platforms. No actual service installation, persistent listener activation, publication or deployment has been authorized or proven. M18D is now the first unfinished milestone slice.
+
+## M18E-UX — Graphical operator experience release gate — PLANNED
+
+Decision (2026-10-09): UI/UX must be explicitly planned and evaluated before M18F release. M18D remains the next implementation priority; its service lifecycle must not silently create a general-purpose browser listener or expand machine authority. M18E-UX has separate completion evidence; passing backend/CLI tests alone does not mark it complete.
+
+1. **UX inventory and interaction contract.** Audit existing M10 operator control-plane components and M17 product setup/CLI contracts. Produce a screen/route map, persona journeys, interaction states (unregistered, disconnected, running, blocked, degraded, aborted), accessibility requirements and a threat-boundary map before choosing UI implementation. Avoid duplicating already-shipped screens or backend authority paths.
+2. **Guided first-run setup.** Design an install-readiness checklist and stepwise model/provider configuration, connectivity diagnostics, project/workspace registration and Safety Preview. Read-only observation is the default. Each mutation must traverse the existing trusted confirmation path with explicit operator intent; configuration files and secret references are never displayed as raw credentials.
+3. **Operator dashboard.** Design tasks/agents/workspaces/machines views, current activity, evidence-backed progress, health and failures, human escalations, and history. Machine/lease/dispatch evidence stays observation-only; it never grants task or release authority.
+4. **Review and control.** Present bounded diff/validation/checkpoint evidence with clear source/provenance, Safety scope and approval consequences. Route approve/reject/abort/rollback and separately gated Git/release actions through their existing trusted services. No convenience action may bypass a second confirmation or widen scope.
+5. **Local-first delivery and validation.** Prefer a local-first browser dashboard using the existing trusted control plane, with loopback-only access unless a separate remote-security gate is explicitly approved. Add documented responsive layouts, keyboard navigation, accessible feedback, empty/error/recovery states, workflow-level acceptance tests and disposable packaged-app smoke tests for supported platforms.
+6. **Release decision.** Explicitly classify the candidate as CLI-only/headless or graphical-product-ready, based on completed UI tests and hands-on operator acceptance. M18F must not advertise an installed dashboard unless it is actually shipped and exercised through the product artifact. Physical listener/service proofs, external transport, credentials and publication remain separately authorized.
+
+**Dependency/order:** finish bounded M18D service integration first, then stage M18E-UX inventory → UX implementation/proof → M18E release candidate acceptance → M18F authorized staged release. If graphical UI is deferred, record a conscious CLI-only release decision and carry UI work as a separately tracked blocker for any GUI-product claim.
+
+## M18D1 — Reviewable service install previews — COMPLETE (CI #1368)
+
+Added non-executing Windows/systemd service installation previews, with strict path, name, newline and systemd substitution guards. Linux emits a reviewable foreground unit and does not auto-start; Windows only previews a no-arguments verified service-host path and explicitly rejects wrapping the normal CLI as a Windows service. Credential provisioning remains out of scope. All previews are observation-only: no process spawning, service mutation, listener, credentials or task/release authority. Actual platform service execution is deferred to later M18D slices and requires disposable environments and fresh explicit authorization for any shared-host effect.
+
+M18D1 exact-head verification: commit `b27cb451c4cdad3265220c7198ed0be5f7763d31`, GitHub-hosted [CI #1368](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37883358830) passed the full typecheck/test job and both Linux/Windows installed-artifact matrix jobs. This proves non-executing previews only; real service-manager adapters and installation remain M18D2 onward. Next slice: narrowly scoped platform adapter boundaries, with no implicit service-manager execution or user-machine mutation.
+
+## M18D2 — Platform service command plans — COMPLETE (CI #1370)
+
+Adds a pure, non-executing command planner for systemd and Windows SCM install/start/stop/status/uninstall actions, backed by the validated M18D1 preview contract. Linux install/uninstall only identifies daemon reload; actual unit-file placement and removal must be owned by a future narrowly scoped executor. Windows SCM create requires a dedicated service-host executable and never treats the ordinary CLI as a service binary. The planner runs no subprocesses, writes no files, provisions no credentials and grants no authority. Each plan records the requirement for explicit local confirmation; future action execution and disposable lifecycle acceptance remain separately gated.
+
+M18D2 verified: commit `8a08f6e4d0b649f3447b69e0d46da002254e5b6a`, [CI #1370](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37885107659), all three hosted jobs green. Planner remains non-executing and confers no service authority.
+
+## M18D3 — Composed service lifecycle acceptance — COMPLETE (CI #1371 attempt 2)
+
+Added composed tests for both platform command plans and the pre-existing injected lifecycle service. Assertions cover install/start/status/stop/uninstall plan isolation, read-only status, precisely one action dispatch per request, sanitized driver failure without retry, and fail-closed invalid-spec handling. This is contract-level acceptance using injected fake drivers, not a proof of a physically installed Windows service or systemd unit. No system services, machine listener or credentials were touched. Physical disposable-environment lifecycle evidence remains necessary for release readiness.
+
+M18D3 acceptance verification: commit `839cc58ba1d66b8bc124f4cdfaf6adbd1a51fd51`, [CI #1371](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37885654695) attempt 2 green for all three jobs. Attempt 1 had a single unrelated legacy machine-gateway assertion (task observed completed before a completed event appeared); retry passed unchanged. Timing hypothesis is not a confirmed root cause; retain the assertion and track the intermittent event-observation failure for investigation. No physical service install/start/stop/removal was proven. M18D4 must explicitly assess executable service-host support, unit/SCM ownership and disposable OS-level proof before closing M18D. Never reinterpret command plans or injected fake-driver acceptance as actual service-driver integration.
+
+## M18D4 — Physical service integration — READINESS GAPS CONFIRMED
+
+Source review at `7328ef59729b58cd494f0ba9e284f6baef828984` and CI [#1372](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37886573122): existing packaged Node CLI, M17E fake lifecycle driver, M18D1 previews and M18D2 command plans do not constitute real SCM/systemd integration. The actionable proof gates and M18D4a–d order are recorded in [M18D4 service integration readiness](M18D4-SERVICE-INTEGRATION-READINESS.md). Next code slice is capability assessment that fails closed where no real service host is shipped; platform mutation and physical proof remain separately gated. M18E-UX continues to follow M18D and must not be bypassed.
+
+## M18D4a — Fail-closed service-host readiness — COMPLETE (CI #1376)
+
+Source-only check: valid Windows SCM or Linux systemd installation preview is insufficient to claim an operational service host. The new readiness assessment deliberately returns not-ready with explicit missing service-host and disposable lifecycle evidence for either platform; invalid service specs are rejected. This is a non-executing safety baseline, not a physical test, service installer or authorization mechanism. GitHub CI #1373 passed on retry after an unrelated pre-existing intermittent lease-renewal assertion. M18D4b–d remain blocked until actual disposable OS-level proof exists.
+
+M18D4a acceptance: exact-head `60e94c52d8d799a15a2d0b9f2c9fa8163e116854`, [CI #1376](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37891126705) passed typecheck/full suite and both Linux and Windows packaged artifact jobs. This establishes fail-closed preview readiness behavior only; no physical systemd or Windows SCM proof. M18D4b is next and requires a disposable Linux environment capable of running systemd, with install/start/status/stop/uninstall, ownership and failure evidence. Ordinary GitHub ubuntu-latest runner checks do not establish systemd availability or authorize modifying its system service manager.
+
+## M18D4b1 — Linux packaged systemd unit static acceptance — COMPLETE (CI #1379)
+
+Adds Linux-only GitHub-hosted static verification using an actual disposable npm tarball consumer installation, checks the installed runtime entrypoint, and requires `systemd-analyze verify` to accept a generated foreground unit. The script explicitly does not invoke `systemctl`, use a privileged container, or register a service on the GitHub-hosted runner. This is preparatory artifact-level evidence, **not** M18D4b physical lifecycle proof. M18D4b remains open pending install/start/status/stop/uninstall within an isolated systemd-enabled VM/container whose service authority is explicitly authorized.
+
+M18D4b1 exact-head CI confirmation: `3e7543ebabcd475440237fde7471c862fd3bd310`, [CI #1379](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37900709574), all three jobs green. The Linux typecheck/test job additionally executed the packaged consumer install and `systemd-analyze verify` gate. This is static unit verification only; systemd service-manager install/start/status/stop/uninstall and ownership/rollback evidence are still required before M18D4b or M18D can close. Next work: prepare an isolated Linux systemd-enabled lifecycle harness and execute only in an explicitly disposable environment; no shared-host systemd mutations.
+
+## M18D4b2 — Isolated systemd lifecycle proof harness — CI VERIFIED; PHYSICAL PROOF PENDING
+
+Added `scripts/prove-disposable-linux-systemd.sh`: an intentionally manual, guarded systemd lifecycle proof requiring explicit opt-in, root within a marked disposable Linux guest, systemd as PID 1, and the actual installed package daemon entrypoint and temporary workspace. It writes an isolated runtime unit, validates it, starts the service, checks active status, stops it, verifies inactive status and removes its own unit. An EXIT cleanup trap handles partial failures. Existing GitHub CI only checks the script's shell syntax and **does not execute service mutations**. Physical execution and captured evidence remain mandatory; the guest marker and opt-in are operator-provided assertions, not a cryptographic isolation attestation. Never invoke this harness on a shared host. M18D4b/M18D remain open.
+
+M18D4b2 exact-head CI verification: `3e7f51a99a94e44b545d6903651885dcdc3ca291`, [CI #1383](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37908234535) passed typecheck/full tests and both packaged-artifact jobs on attempt 1. The CI checks syntax of the guarded systemd proof harness but does not execute its service-manager mutations. Do not close M18D4b or M18D until isolated Linux physical lifecycle proof, Windows SCM integration, ownership and recovery evidence are recorded.
+
+## M18D4b3 — Guarded physical-proof entry checks — COMPLETE (CI #1387)
+
+Current repository and CI configuration has no specifically provisioned, disposable systemd-enabled guest with lifecycle evidence. The unprivileged CI gate now runs the M18D4b2 proof harness with its opt-in deliberately absent and asserts exit 64 before any service-manager action. This demonstrates default refusal only; it is not proof of physical lifecycle behavior, or an attestation of guest isolation. A separately authorized disposable Linux systemd guest, installed packaged candidate and captured start/status/stop/removal evidence are still required before M18D4b completes. No change was made to a real service manager.
+
+M18D4b3 exact-head verification: `3b519d21036bd17b4de201f2bdd7f3973b676988`, [CI #1387](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37909161143), all three jobs green. The Linux proof guard rejects unauthorized invocation; no system service was installed, started or modified. M18D4b physical integration remains blocked on an expressly authorized isolated systemd guest. The next independent implementation track is M18D4c Windows SCM host readiness, not claiming SCM interoperability from the installed CLI.
+
+## M18D4c1 — Windows SCM host gap acceptance — COMPLETE (CI #1391)
+
+Adds a Windows-hosted packaging gate confirming the currently shipped npm executable is a Node product CLI, not a verified Windows SCM service-host executable. The check fails on changed package assumptions requiring review. This is a negative capability check, not a service-host implementation or physical SCM proof. M18D4c remains open: implement a genuine SCM-aware service host, prove controlled registration/start/status/stop/deletion in a disposable Windows environment and preserve all pre-existing authority and user-data boundaries. No Windows service registration is attempted by CI.
+
+M18D4c1 exact-head hosted CI verification: `780f8f4831fede4d7a04a44a35d99ecf9c4b406d`, [CI #1391](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37911454432) green across full suite, Linux packaged artifact and Windows packaged artifact/SCM gap test. Windows service-host implementation and disposable SCM install/start/status/stop/delete proof remain outstanding. Next bounded step: define a dedicated SCM-aware host process and explicit service control semantics; never point `sc.exe create` at the ordinary Node CLI.
+
+## M18D4c2 — Windows SCM host evidence and review boundary — COMPLETE (CI #1393)
+
+Adds a pure, non-executing pre-install review requiring an exact absolute Windows .exe host path, SHA-256-shaped artifact identity, scoped evidence identifier, claimed SCM ServiceMain/control-stop support, and claimed disposable lifecycle verification. Rejects mismatched executable, ordinary Node CLI, malformed evidence, and missing evidence. The review does **not** verify hashes from disk or authenticate evidence assertions, so it must not be used as sufficient authorization for installation; real native SCM host implementation, cryptographic provenance validation and physical disposable Windows lifecycle proof are still mandatory. Existing package does not ship an SCM host. No service-manager mutation or authority expansion.
+
+M18D4c2 verification: exact-head `16d0e33885cb340f2036727c831c0b49f8b99e8b`, [CI #1393](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37912419943), all three CI jobs passed. This completes the fail-closed, non-executing evidence-review slice only. The actual Windows SCM-aware service host and disposable physical lifecycle proof remain unresolved, as does the Linux systemd physical lifecycle gate. Next Windows engineering slice must implement SCM ServiceMain/control handling and package its executable before physical SCM acceptance can be claimed.
+
+## M18D4c3a — Native Windows SCM host source and compile gate — COMPLETE (CI #1399)
+
+Added a separate .NET 8 Windows-only SCM-host executable source with ServiceMain dispatcher registration, service status transitions, stop control handling, and a loopback-only Node daemon child using configured absolute paths. The Windows CI matrix compiles this host; it does **not** install, register, start, stop or publish the service binary. This is an initial native-host implementation, **not** SCM interoperability acceptance. Before it may be shipped, address robust graceful shutdown, working directory and environment trust, signed/pinned binary identity, configured service-name consistency, start readiness and errors, durable logging, package inclusion and install ownership. Windows disposable SCM lifecycle proof and Linux physical systemd proof remain blocked. No user machine service was modified.
+
+M18D4c3a exact-head verification: `5f724c74da632742cdc2ec591cf62951b9617032`, [CI #1399](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37916279588), all three jobs green, including Windows .NET native SCM host build. Compilation does not prove correct SCM start/stop/control handling, child readiness, graceful shutdown, identity, provenance or packaging. M18D4c3b must address these requirements before disposable Windows physical lifecycle proof; Linux physical systemd lifecycle remains unverified. No machine services were modified.
+
+## M18D4 hosted physical acceptance workflow — IMPLEMENTED; EXECUTION PENDING
+
+Added manually dispatched `.github/workflows/physical-service-acceptance.yml` with two independent ephemeral GitHub-hosted jobs. Windows builds the native .NET host and uses a temporary SCM registration with guarded cleanup; Linux builds a disposable systemd Docker guest, installs an actual npm tarball and runs the guarded lifecycle harness inside the guest. This is a proposed test setup, not successful physical evidence. Both jobs must actually complete and produce logs; failures in SCM startup, service termination, cgroups or nested/container systemd support require correction. Windows host config/readiness and identity hardening remain outstanding. The workflow is deliberately manual-only and not part of regular PR CI. **GitHub workflow_dispatch normally requires the workflow file on the default branch**; the feature branch cannot be assumed directly dispatchable until the workflow is safely brought to the default branch, or an explicitly authorized alternate trigger is established. Do not merge merely to enable testing without reviewing the authority and privilege implications. No local user machine was modified.
+
+M18D4 hosted physical workflow CI checkpoint: exact-head `58d037b5377e269ae96ad88c14664e6ff16ba477`, [CI #1404](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37938470817), all existing jobs green. This did not execute `physical-service-acceptance.yml`. GitHub manual dispatch requires default-branch workflow registration. Do not merge the broad development branch or imply physical proof from normal CI. Before an authorized narrow default-branch workflow registration, review Windows SCM privilege/cleanup, Linux privileged-container/cgroup behavior, and exact artifact provenance; manual run and captured output remain required for M18D closure.
+
+## M18D hosted physical workflow pre-dispatch review — BLOCKED ON ISOLATION HARDENING
+
+Exact-head `52d5acb677082ca189db33a4bdc2d0e0358ebbfc`, [CI #1405](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37942724492) passed normal CI; no physical workflow was dispatched. Default branch is `main`, while the physical workflow is only on `milestone-13/delegation`. PR #3 contains broad milestone changes and must not be merged solely to register a manual workflow.
+
+Review findings: (1) Linux `docker run --privileged` plus writable `/sys/fs/cgroup` bind mount widens the host-runner impact; first use a less privileged isolated VM/container strategy and prove cgroup compatibility rather than accepting this default; (2) Windows uses fixed `cline-orchestrator` SCM name, so prove no unrelated installation can be impacted and strengthen unique per-run identity/cleanup; (3) service-host startup/shutdown and package identity remain unproven; (4) manual dispatch must be registered with a narrow reviewed workflow on `main`, not by merging unrelated features. Do not turn on privileged physical workflow execution or close M18D until these are resolved and real lifecycle logs are captured.
+
+M18D hosted runner hardening checkpoint: exact-head `b88e93f6`, [CI #1406](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37947806530) green across full suite and Windows/Linux package jobs. Added Windows SCM preflight refusal when either a named service OR its registry configuration already exists, plus mandatory GitHub run/temp context, before any registration action. This reduces name-collision risk but does not eliminate fixed-name design or confer permission to execute the workflow. Linux privileged container/cgroup isolation and default-branch manual-dispatch reviews remain blockers. New CI required for this preflight change.
+
+M18D GitHub physical-proof isolation hardening: removed `--privileged` and the writable `/sys/fs/cgroup` host bind from the manual Linux workflow. The disposable guest now drops Linux capabilities, enables no-new-privileges and mounts host cgroups read-only. This is a safety-first compatibility experiment: systemd may not start with these limitations, in which case the manual job must fail closed and an independently isolated VM-based proof is required. Neither Linux nor Windows physical lifecycle proof has run; the workflow remains manual-only and is not registered on `main`. CI #1408 for prior Windows SCM preflight was still running when inspected; the newly pushed workflow change requires separate verification.
+
+M18D hosted proof isolation CI closeout: exact-head `fd7b6647ddf7f7f07d97a2da660ac46f2a49b659`, [CI #1410](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37949562928), all three normal jobs green. This does not execute the separate manually dispatched physical-service workflow, and the reduced-privilege Linux systemd container may still fail to launch. Release gate remains blocked on a reviewed, narrowly registered manual workflow and genuine captured lifecycle proof on both operating systems. Broad PR #3 must not be merged simply to register the workflow.

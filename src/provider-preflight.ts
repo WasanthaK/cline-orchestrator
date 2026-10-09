@@ -13,9 +13,9 @@ function boundedModels(models: string[]): string[] {
   return Array.from(new Set(models.filter(Boolean))).slice(0, 50);
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+function errorMessage(error: unknown, credential?: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return credential ? message.replaceAll(credential, "[REDACTED]") : message;
 }
 
 async function fetchJson(
@@ -131,7 +131,7 @@ export async function preflightProvider(
         providerId: worker.providerId,
         modelId: worker.modelId,
         code: "provider_unreachable",
-        message: errorMessage(error),
+        message: errorMessage(error, worker.apiKey),
         endpoint,
       };
     }
@@ -214,7 +214,7 @@ export async function preflightProvider(
         providerId: worker.providerId,
         modelId: worker.modelId,
         code: "provider_unreachable",
-        message: errorMessage(error),
+        message: errorMessage(error, worker.apiKey),
         endpoint,
       };
     }
