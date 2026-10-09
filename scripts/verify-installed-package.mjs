@@ -42,7 +42,7 @@ try {
  const modulePath=windows ? path.join(prefix,"node_modules","cline-orchestrator") : path.join(prefix,"lib","node_modules","cline-orchestrator");
  const shim=windows ? path.join(prefix,"cline-orchestrator.cmd") : path.join(prefix,"bin","cline-orchestrator");
  const runInstalled = args => windows
-  ? run(process.env.ComSpec || "cmd.exe", ["/d","/c", `call cline-orchestrator.cmd ${args.map(a=>`"${a}"`).join(" ")}`], prefix)
+  ? run(process.env.ComSpec || "cmd.exe", ["/d","/c", `cline-orchestrator.cmd ${args.join(" ")}`], prefix)
   : run(shim,args);
  assert.ok(await exists(modulePath)); assert.ok(await exists(shim));
  assert.ok(await exists(path.join(modulePath,"dist","product-cli.js")));
