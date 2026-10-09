@@ -55,3 +55,6 @@ jobs:
       - run: npm run verify:installed-package
       - if: matrix.os == 'windows-latest'
         run: node scripts/verify-windows-scm-host-gap.mjs
+      - if: matrix.os == 'windows-latest'
+        run: dotnet build native/windows-scm-host/WindowsScmHost.csproj --configuration Release
+
