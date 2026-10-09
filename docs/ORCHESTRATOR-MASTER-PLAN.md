@@ -50,7 +50,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
 | 17 | Productization / installer / first-run UX | Complete — M17A–M17H productization contracts and acceptance composition; harness `400ce861`, type correction `3aa7a573`, CI `#1346` green. Installer execution and physical service installation are not proven by the fake-driver harness. |
-| 18 | Production release | In progress — M18A source/evidence readiness assessment complete; production release blocked pending M18B–M18F. Current reviewed head `b9c11722`, CI `#1347` green. |
+| 18 | Production release | In progress — M18A–M18C complete; M18D real installation/service integration next, followed by M18E release candidate and M18F authorized staged release. M18C3 exact-head `f6d2bdd2`, CI `#1365` green. |
 
 ---
 
@@ -1116,7 +1116,7 @@ The assessment adds no runtime code, installer executor, service driver, credent
 
 1. **COMPLETE — M18A release-readiness source/evidence assessment.** Reviewed head `b9c11722`, CI `#1347` green; gaps and bounded release sequence recorded here.
 2. **COMPLETE — M18B product config/execution integration.** B1 config-file loading, B2 shared execution settings, B3 daemon-local named credential and separately confirmed setup adapters, B4 composed acceptance; `303a111a`, exact-head CI `#1355` green. Completion is software integration evidence, not physical startup, artifact, service or release proof.
-3. **IN PROGRESS — M18C reproducible release artifact and packaged CLI proof.** C1 defines private local tarball distribution, dependency lock and runtime build/package allowlist; C2 will build/pack/install in a disposable directory and run artifact-level diagnose/config/setup/status/error/removal smoke tests, followed by supported-platform CI. No publication or production listener activation.
+3. **COMPLETE — M18C packaged artifact and CLI acceptance.** C1 private tarball/build/allowlist CI #1356; C2 disposable installed CLI/error/uninstall proof CI #1360; C3 hosted Windows/Linux installed-artifact matrix CI #1365, exact head `f6d2bdd2`. No package publication, physical service installation or production listener activation.
 4. **FOLLOW — M18D real installation/service integration.** Implement only narrowly scoped supported platform adapters through the existing explicit action boundaries. Prove install/start/status/stop/uninstall, failures and user-data preservation on disposable Windows/Linux environments; shared-host changes require separately authorized physical proof.
 5. **FOLLOW — M18E release candidate acceptance and operator handoff.** Compose B–D through actual shipped paths, record supported/deferred features, exact artifact identity/checksums, provider/workspace/Safety prerequisites, operational readiness, backup/rollback and support instructions. Align PR metadata with the final change.
 6. **FOLLOW — M18F staged production release.** Prepare the exact reviewable candidate and release actions. Merge, tag/publication and deployment are distinct actions; perform only actions authorized for that concrete candidate through their existing boundaries. Record actual outcome and rollback evidence before closing Milestone 18.
@@ -1199,7 +1199,7 @@ M18C2 CI #1357 initially failed at real consumer installation: unconstrained npm
 
 M18C2 retry #1358 attempt 2 reached installed package execution but exposed a genuine npm-shim entrypoint defect: CLI main detection compared the real module location to the symlink path and returned successfully without running `config`. Entry detection now compares resolved real filesystem locations so the installed npm binary executes, while retaining the disposable consumer-install regression gate. Exact-head CI is still required.
 
-## M18C3 — Supported Windows/Linux artifact acceptance — IMPLEMENTED; EXACT-HEAD CI PENDING
+## M18C3 — Supported Windows/Linux artifact acceptance — COMPLETE (CI #1365)
 
 Adds a GitHub-hosted Node 22 Windows/Linux build-and-artifact matrix. Both platforms must perform the locked install, clean runtime build, archive allowlist check, disposable npm consumer install, platform-specific installed npm shim execution, sanitized invalid-config rejection, npm package uninstall and byte-identical preservation of four user-owned sentinels. Windows uses the installed `.cmd` shim and Windows global npm prefix structure; Linux retains the existing POSIX executable. The existing Linux full-suite/PostgreSQL gate remains intact. No user-machine physical proof, service registration, listener, credential, task authorization, publication or release mutation is performed. CI #1360 established M18C2 complete; exact-head M18C3 green remains mandatory before advancing.
 
@@ -1210,3 +1210,7 @@ M18C3 CI #1362: full suite and Linux packaged-artifact job passed. Windows consu
 M18C3 CI #1363: full test suite and Linux artifact green; Windows consumer npm install succeeds, but the test's absolute-path `.cmd` invocation remains misquoted by cmd.exe. Correction launches the same installed npm-generated `cline-orchestrator.cmd` from the isolated npm prefix as working directory, avoiding fragile absolute batch-path quoting. Package existence, CLI output, sanitized invalid-config, uninstall and operator-data preservation checks remain unchanged; hosted CI must still pass on both platforms.
 
 M18C3 CI #1364: full suite and Linux package acceptance green. Windows installed npm shim now starts, but `cmd /c call` with nested quoted arguments yields CLI usage exit 2 on the read-only `config` check. Windows acceptance now passes the controlled test arguments directly to the installed `.cmd` command from its disposable npm prefix. No application behavior or acceptance assertions are removed. Both OS matrix jobs remain mandatory.
+
+## M18C closeout — VERIFIED
+
+Exact-head commit `f6d2bdd27822363af1ac07b9c698ae10cfbcf850`, hosted CI [#1365](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37881645585) succeeded in all three jobs: source typecheck/full tests, Ubuntu installed-artifact acceptance, and Windows installed-artifact acceptance. The supported private local npm tarball has verified disposable installation, real installed CLI execution, sanitized bad-config handling, npm removal, and external user-owned sentinel preservation on both platforms. No actual service installation, persistent listener activation, publication or deployment has been authorized or proven. M18D is now the first unfinished milestone slice.
