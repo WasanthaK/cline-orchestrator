@@ -1240,6 +1240,8 @@ Adds a pure, non-executing command planner for systemd and Windows SCM install/s
 
 M18D2 verified: commit `8a08f6e4d0b649f3447b69e0d46da002254e5b6a`, [CI #1370](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37885107659), all three hosted jobs green. Planner remains non-executing and confers no service authority.
 
-## M18D3 — Composed service lifecycle acceptance — IMPLEMENTED; CI PENDING
+## M18D3 — Composed service lifecycle acceptance — COMPLETE (CI #1371 attempt 2)
 
 Added composed tests for both platform command plans and the pre-existing injected lifecycle service. Assertions cover install/start/status/stop/uninstall plan isolation, read-only status, precisely one action dispatch per request, sanitized driver failure without retry, and fail-closed invalid-spec handling. This is contract-level acceptance using injected fake drivers, not a proof of a physically installed Windows service or systemd unit. No system services, machine listener or credentials were touched. Physical disposable-environment lifecycle evidence remains necessary for release readiness.
+
+M18D3 acceptance verification: commit `839cc58ba1d66b8bc124f4cdfaf6adbd1a51fd51`, [CI #1371](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37885654695) attempt 2 green for all three jobs. Attempt 1 had a single unrelated legacy machine-gateway assertion (task observed completed before a completed event appeared); retry passed unchanged. Timing hypothesis is not a confirmed root cause; retain the assertion and track the intermittent event-observation failure for investigation. No physical service install/start/stop/removal was proven. M18D4 must explicitly assess executable service-host support, unit/SCM ownership and disposable OS-level proof before closing M18D. Never reinterpret command plans or injected fake-driver acceptance as actual service-driver integration.
