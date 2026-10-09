@@ -22,8 +22,8 @@ internal static class Program
     [StructLayout(LayoutKind.Sequential)]
     private struct ServiceTableEntry
     {
-        [MarshalAs(UnmanagedType.LPWStr)] public string ServiceName;
-        public ServiceMainDelegate ServiceProc;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? ServiceName;
+        public ServiceMainDelegate? ServiceProc;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -52,7 +52,7 @@ internal static class Program
         if (!OperatingSystem.IsWindows()) return 1;
         var table = new[] {
             new ServiceTableEntry { ServiceName = "cline-orchestrator", ServiceProc = MainDelegate },
-            new ServiceTableEntry { ServiceName = "", ServiceProc = MainDelegate }
+            new ServiceTableEntry { ServiceName = null, ServiceProc = null }
         };
         return StartDispatcher(table) ? 0 : Marshal.GetLastWin32Error();
     }
