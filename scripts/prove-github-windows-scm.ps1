@@ -12,7 +12,7 @@ $workspace = Join-Path $env:RUNNER_TEMP 'cline-orch-scm-workspace'
 New-Item -ItemType Directory -Force $workspace | Out-Null
 $registered = $false
 try {
-  & sc.exe create $name "binPath= `"$hostExe`"" 'start= demand' 'type= own'
+  & sc.exe create $name 'binPath=' $hostExe 'start=' 'demand' 'type=' 'own'
   if ($LASTEXITCODE -ne 0) { throw 'SCM create failed' }
   $registered = $true
   New-ItemProperty -Path $serviceKey -Name Environment -PropertyType MultiString -Value @(
