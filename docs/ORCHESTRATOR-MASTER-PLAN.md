@@ -1228,6 +1228,8 @@ Decision (2026-10-09): UI/UX must be explicitly planned and evaluated before M18
 
 **Dependency/order:** finish bounded M18D service integration first, then stage M18E-UX inventory → UX implementation/proof → M18E release candidate acceptance → M18F authorized staged release. If graphical UI is deferred, record a conscious CLI-only release decision and carry UI work as a separately tracked blocker for any GUI-product claim.
 
-## M18D1 — Reviewable service install previews — IMPLEMENTED, CI PENDING
+## M18D1 — Reviewable service install previews — COMPLETE (CI #1368)
 
 Added non-executing Windows/systemd service installation previews, with strict path, name, newline and systemd substitution guards. Linux emits a reviewable foreground unit and does not auto-start; Windows only previews a no-arguments verified service-host path and explicitly rejects wrapping the normal CLI as a Windows service. Credential provisioning remains out of scope. All previews are observation-only: no process spawning, service mutation, listener, credentials or task/release authority. Actual platform service execution is deferred to later M18D slices and requires disposable environments and fresh explicit authorization for any shared-host effect.
+
+M18D1 exact-head verification: commit `b27cb451c4cdad3265220c7198ed0be5f7763d31`, GitHub-hosted [CI #1368](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37883358830) passed the full typecheck/test job and both Linux/Windows installed-artifact matrix jobs. This proves non-executing previews only; real service-manager adapters and installation remain M18D2 onward. Next slice: narrowly scoped platform adapter boundaries, with no implicit service-manager execution or user-machine mutation.
