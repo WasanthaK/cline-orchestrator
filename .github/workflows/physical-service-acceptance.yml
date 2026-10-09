@@ -45,8 +45,8 @@ jobs:
         run: docker build -t cline-systemd-proof -f scripts/disposable-systemd/Dockerfile .
       - name: Run isolated systemd guest
         run: |
-          docker run -d --name cline-systemd-proof-guest --privileged --cgroupns=private \
-            --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+          docker run -d --name cline-systemd-proof-guest --cap-drop=ALL --security-opt=no-new-privileges --cgroupns=private \
+            --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
             cline-systemd-proof
       - name: Prove packaged daemon lifecycle inside guest
         run: |
