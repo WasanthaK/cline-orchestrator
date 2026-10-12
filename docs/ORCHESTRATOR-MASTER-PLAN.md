@@ -1309,3 +1309,103 @@ M18D hosted runner hardening checkpoint: exact-head `b88e93f6`, [CI #1406](https
 M18D GitHub physical-proof isolation hardening: removed `--privileged` and the writable `/sys/fs/cgroup` host bind from the manual Linux workflow. The disposable guest now drops Linux capabilities, enables no-new-privileges and mounts host cgroups read-only. This is a safety-first compatibility experiment: systemd may not start with these limitations, in which case the manual job must fail closed and an independently isolated VM-based proof is required. Neither Linux nor Windows physical lifecycle proof has run; the workflow remains manual-only and is not registered on `main`. CI #1408 for prior Windows SCM preflight was still running when inspected; the newly pushed workflow change requires separate verification.
 
 M18D hosted proof isolation CI closeout: exact-head `fd7b6647ddf7f7f07d97a2da660ac46f2a49b659`, [CI #1410](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37949562928), all three normal jobs green. This does not execute the separate manually dispatched physical-service workflow, and the reduced-privilege Linux systemd container may still fail to launch. Release gate remains blocked on a reviewed, narrowly registered manual workflow and genuine captured lifecycle proof on both operating systems. Broad PR #3 must not be merged simply to register the workflow.
+
+
+## M18E-UX-A — Graphical operator experience inventory / interaction contract — PROPOSED
+
+On 2026-10-12, a review of the current `milestone-13/delegation` operator visualization, existing loopback rejection page, M10 capability manifest, M17/M18 provider/first-run setup, and packaged CLI identified the reusable UI contracts and the unimplemented adapters. See [M18E UX operator experience contract](M18E-UX-OPERATOR-EXPERIENCE-CONTRACT.md) for the proposed persona journeys, screen/navigation map, state matrix, accessibility targets, source-freshness behavior, and security/authority boundaries.
+
+This is a **design/inventory deliverable only**. No graphical product, new route, service driver, browser action capability, physical lifecycle proof, or release readiness is claimed. The existing GUI is a passive read-only visualization plus a separately opt-in browser flow limited to escalation rejection; installed CLI/package validation is **not** installed GUI validation. UX-B read-only dashboard composition is a separately gated future implementation slice.
+
+**Parallel queue only:** M18D hosted Windows SCM and Linux systemd physical proof remains the immediate release-blocking work. The corrected Windows SCM `sc.exe` argument code and manually pinned proof workflow on `main` passed regular CI, but the previously attempted physical proof failed and must be rerun under a separately authorized manual action. Linux systemd physical lifecycle remains unproven. Do not call M18D complete, merge PR #3 solely for manual proof, or proceed to M18F on the strength of UX inventory alone.
+
+
+## M18E-UX-B — Responsive passive operator dashboard — IMPLEMENTED; CI PENDING
+
+A bounded change to the existing `renderOperatorVisualizationHtml` adds semantic in-page section navigation, skip navigation, focus-visible keyboard treatment, narrow-screen layout, source-quality notices, and source-aware empty task/workflow/incident states. All displayed dynamic data still comes only from the existing sanitized `OperatorVisualizationV1`; no new endpoint, fetch, browser script, mutation form, privileged control, task authority or action capability is added.
+
+The previous universal anchor ban is narrowed to fixed local fragment identifiers. Tests require every navigation target to remain an in-page anchor and continue to reject scripts, forms, buttons, inputs, active callbacks and unescaped dynamic content. UX-B is a **passive rendering improvement only**; provider setup, full graphical operator features, installed-product GUI proof and human acceptance are not complete.
+
+M18D physical service-manager proof and M18F separately authorized release remain open. Hosted exact-head CI must pass before this UX-B slice can be marked complete.
+
+
+## M18E-UX-C1 — Guided first-run readiness visualization — IMPLEMENTED; CI PENDING
+
+Adds a new bounded, read-only composition from the existing trusted M17 first-run assessment and a standalone passive HTML checklist. The renderer presents Node/runtime, provider preflight, workspace/Safety, loopback daemon and production readiness states with clear required/optional next steps. No operator configuration, endpoint, raw credential, workspace root, browser script, action callback, form, network listener or mutation path is accepted or emitted. Negative tests reject widened authority, inconsistent readiness, duplicate/unknown steps and injected private fields.
+
+This is **UX-C1 only**: no installable UI entrypoint, automatic provider connectivity check, confirmation controls or task action authority. UX-C2 requires a separate reviewed interface to the existing confirmed setup services, with cancel/expiry/replay and credential-leakage proofs. M18D physical service proof, UX-E installed GUI acceptance and M18F release authorization remain independent blockers.
+
+
+## M18E-UX-C2 — Trusted local guided setup adapter — IMPLEMENTED; CI PENDING
+
+Introduced `first-run-guided-action.ts` as an **in-process trusted-host bridge only**, connecting eligible read-only M17 assessment steps with the existing M18B3b create-only configuration, M18B3c project/workspace registration, and M18B3d loopback daemon start adapters. These existing services retain actual config/registry/daemon revalidation, expiry, one-shot confirmation consumption and Safety/loopback restrictions.
+
+The new guided confirmation view exposes only action, static scope, pre-existing confirmation text and expiry; never forwards path, full config/registration, raw credential, digest or confirmation token. Cancellation makes no mutation, adapter failure returns a sanitized non-retryable error, and an assessment alone does not become authority. This **does not create a browser route**, trust an unverified web callback, open a listener, run a task, or install a service; a browser-facing confirmation surface would require a distinct auth/session/origin/CSRF design review.
+
+Focused tests exercise the real config and registry adapters and cover no-host confirmation, decline, expiry, action eligibility, sensitive review suppression and error redaction. Local typecheck/hosted exact-head CI remain required to complete this slice. M18D physical verification and M18F release gating stay open.
+
+
+## M18E-UX-D1 — Bounded independent task review projection — IMPLEMENTED; HOSTED CI PENDING
+
+Adds a pure read-only task review projection over the existing trusted task completion packet, plus a wrapper calling the existing service-backed task/Safety/workspace validation before projection. The model includes terminal review disposition, validation/diff-safety states, counts, capture timestamps, Git snapshot availability, checkpoint availability and recovery counters. Worker completion narrative, raw diff summary, Git branch/head, workspace paths, checkpoint references, raw instructions and credentials are never copied to the operator projection. A completed task is labelled inspection-required, **not** automatically reviewer-approved or releasable. Consistency and source checks fail closed; tests cover missing evidence, active/aborted states and contradictory success evidence.
+
+This slice creates no browser route or action, no new machine/credential/release authority, and no installed-UI claim. UX-D2 can separately render a passive task review from this sanitized model; reviewed operator actions remain subject to the existing independent confirmation services and browser exposure restrictions. M18D physical service acceptance and M18F release authorization are unresolved.
+
+
+## M18E-UX-D2 — Passive task-review page — IMPLEMENTED; HOSTED CI PENDING
+
+A standalone static, accessible and responsive HTML view now renders exclusively the M18E-UX-D1 sanitized task-review projection. It presents task identity, inspection status, independent validation and diff-safety outcomes, Git/checkpoint availability, recovery counts, and an explicit warning that worker testimony is untrusted and hidden. Completed tasks remain inspection-required, not approved. Missing evidence is shown as unavailable, never passed. It uses a restrictive CSP, fixed local skip link, semantic landmarks, no scripts/forms/mutation controls, and no external assets or network calls. Runtime checks fail closed on inconsistent/malformed projections, with focused XSS/authority/unavailability regressions. This is not an HTTP endpoint or installed GUI claim. UX-D3 could add separately reviewed service confirmation flows, but browser exposure remains gated; M18D physical service proof and M18F release authority remain unresolved.
+
+
+## M18E-UX-D3 — Trusted local review action bridge — IMPLEMENTED; HOSTED CI PENDING
+
+An in-process trusted-host adapter delegates exactly one selected reject-escalation, approve-escalation, task-abort or checkpoint-rollback request through the existing M10 `OperatorActionService` preview/confirm API. It does not confer task/Safety/release authority: exact current task/workspace eligibility, short-lived one-shot confirmation and replay/drift rejection remain enforced by the pre-existing service. A sanitised local review shows only action identity, opaque task/workspace/checkpoint selectors, consequence and expiry; it does not expose service confirmation tokens, goals, raw Safety fields, credentials or instructions. Cancellation is nonmutating and ambiguous failures are not retried. Tests cover cancellation, expiry, drift, action selection, approval requiring a new Safety preview, and credential/token omission.
+
+**Browser exposure remains none**. UX-D2's passive page does not acquire buttons, a listener or a trusted browser session from this adapter. Any browser-facing approval/rollback/abort requires a separate origin/session/CSRF/local-confirmation security gate and exact service eligibility proof. This is not physical service verification or a production GUI release. M18D and M18F remain gated.
+
+
+## M18E-UX-E1 — Installed passive renderer acceptance — IMPLEMENTED; CI PENDING
+
+The packaged-artifact allowlist now requires compiled operator/dashboard, guided-setup, and task-review HTML renderers. The existing disposable Windows/Linux npm consumer-install harness imports **actual installed JavaScript** and renders three bounded synthetic snapshots. It checks strict passive CSP, no scripts/forms/buttons/remote links, omitted private canaries, explicit missing-evidence warning, and rejection of authority-widened inputs before uninstalling. Operator-owned data preservation remains required. No browser was launched, no UI listener installed or opened, no service manager touched, and no deployment or release authorization granted. E1 is an installed static renderer proof, not E2 interactive graphical/browser acceptance. M18D physical service proof and M18F release remain outstanding.
+
+
+## M18E-UX-E2a — Offline browser-viewable setup snapshot — IMPLEMENTED; CI PENDING
+
+The installed CLI now supports `setup-view <workspace> <new-output.html>`. It reuses the first-run diagnostic assessment and existing sanitized guided setup renderer, publishing a standalone CSP-restricted HTML document by create-only, same-directory atomic link. It does **not** start a listener, run a daemon, open a browser, dispatch tasks, install services, or grant authority. The configured loopback health/preflight observation follows the already available read-only diagnosis path. Existing targets and symlinks win; invalid paths fail closed; tests guard omitted credentials and non-replacement. E2a provides an offline browser-viewable setup artifact, not a live UI, task dashboard or complete graphical acceptance. Real GUI delivery, accessibility/browser compatibility, and UX-E2b remain pending. M18D physical service manager acceptance and M18F release authorization remain outstanding.
+
+
+## M18E-UX-E2b1 — Opt-in loopback passive viewer host — IMPLEMENTED; CI PENDING
+
+Adds a separately invoked, in-process `startPassiveOperatorViewer` host bound strictly to 127.0.0.1, with a separately provisioned token, ephemeral HttpOnly/SameSite=Strict viewing session, Origin and Host checks, and no-store/strict-CSP output. It accepts only a trusted callback producing the existing sanitized `OperatorVisualizationV1`, then delegates HTML generation to the existing passive renderer. A refresh asks that callback for a new snapshot; it does not independently read task files, connect to a daemon or presume that unavailable sources are healthy. Unknown routes and mutation methods are denied. Tests exercise login, noninterference with /operator, withheld snapshots and disabled actions. **This is host infrastructure only, with no installed CLI startup route or real production snapshot adapter**. Windows/Linux installed viewer, actual browser a11y, trust wiring and service lifecycle evidence remain unproved. There is no new task, Safety, credential or release authority; M18D and M18F remain blocked.
+
+
+## M18E-UX-E2b2 — Trusted machine dashboard read adapter — IMPLEMENTED; CI PENDING
+
+An in-process adapter now calls only the existing machine service's `listProjects`, `listWorkspaces`, and bounded `findTasks({limit:100})`, then reuses the existing sanitized dashboard/visualization builders for the passive viewer. Each source is settled separately; unavailable sources and a saturated task listing are marked explicitly unknown. Workflow, incident and supervisor integrations remain disconnected/unavailable. No work or controller process is launched, no raw task goal, Safety profile, checkpoint reference or model output is projected. Writer and handoff collections are not connected yet and should not be interpreted as verified zero activity. The passive viewer host still requires explicit opt-in and a separately trusted in-process snapshot reader; this adapter creates no production CLI entrypoint or service installation. Exact-head CI is required. M18D physical lifecycle and M18F release remain unproven.
+
+
+## M18E-UX-E2b3 — Installed CLI entry to foreground passive viewer — IMPLEMENTED; CI PENDING
+
+Adds an explicit `cline-orchestrator viewer` command that requires `ORCH_VIEWER_TOKEN` (32–4096 safe characters) before binding localhost, takes optional validated `ORCH_VIEWER_PORT`, and starts the existing authenticated passive viewer on 127.0.0.1 only. Its in-process snapshot source uses only `listProjects`, `listWorkspaces`, and bounded `findTasks` from a machine service configured to reject worker-profile resolution. No daemon or model process is started; no task mutation routes or service installation are enabled. The browser must be opened manually, and its session stays separate from the existing escalation-rejection page. Tests verify routing and config rejection. Full installed-CLI live browser proof, port lifecycle, browser accessibility and clean uninstall require a later E2c acceptance gate. M18D physical service-manager proof and M18F release authority remain open.
+
+
+## M18E-UX-E2c1 — Installed foreground viewer HTTP lifecycle acceptance — IMPLEMENTED; CI PENDING
+
+The disposable npm-installed acceptance harness now launches the **actual installed** product CLI JavaScript on Windows and Linux with a disposable token, 127.0.0.1-only allocated port and temporary consumer environment. It verifies HTTP readiness, anonymous sign-in, denied forged Origin/missing Origin/wrong credentials, short-lived HttpOnly SameSite cookie, authenticated sanitized read-only dashboard, no-script/no-connect CSP, rejected task-action routes/methods, token redaction, foreground child termination and port release before uninstall. The viewer is not installed as a persistent service and no model/daemon, task or production service is started. A successful CI run is installed HTTP lifecycle acceptance **only**, not manual/browser-driven visual accessibility verification or M18D Windows SCM/Linux systemd physical lifecycle proof. M18F remains separately authorized.
+
+
+## M18E-UX-E2c2 — Browser semantic and responsive smoke acceptance — IMPLEMENTED; CI PENDING
+
+A separate hosted Ubuntu browser workflow installs the actual npm tarball into an isolated consumer, launches its installed `viewer` command, authenticates through headless Chrome (ChromeDriver/W3C WebDriver), and checks read-only HTML, accessible page landmarks, keyboard-focus semantics, labelled login, explicit missing-data labels, desktop/mobile viewport overflow, and screenshot capture at desktop, mobile and simulated 2x page scale. Chrome accessibility-tree landmarks and screenshots plus a structured acceptance report are uploaded as review artifacts. A fully rendered page and an actual browser login are required; HTTP-only tests cannot satisfy this slice.
+
+This is an **automated browser smoke** gate, not a complete WCAG 2.2 AA audit, screen-reader certification, cross-browser compatibility proof, or human visual signoff. These remain open even if CI passes. Tests run only in disposable CI against an explicit foreground localhost viewer, without Cline execution, Git merge/deploy or OS service installation. M18D physical Windows/Linux service manager lifecycle evidence and M18F release authorization remain separate blockers.
+
+
+## M18E-UX-E2c3 — Visual evidence correction for disconnected sources — IMPLEMENTED; CI PENDING
+
+UX-E2c2 exact-head `e1009e64` passed normal CI #38311112299 and installed Chrome acceptance #38311112307; screenshots and a structured report were captured for desktop, mobile and simulated 2x page scale. Review identified a misleading zero-count display for disconnected workflow/incident/writer feeds. This slice displays **Unknown** for unavailable or stale task/workflow/incident totals and for writer activity without explicit trusted feed availability; disconnected/unverified handoff and writer empty states no longer claim zero activity. It carries only boolean provenance to the sanitized rendering model and does not infer runtime authority or turn on browser actions. Unit tests cover unknown and genuinely connected-empty states. UX-E2c3 requires exact-head CI and renewed browser acceptance; human visual signoff, comprehensive accessibility evaluation and cross-browser checks remain separately pending. M18D physical service proof and M18F release remain blocked.
+
+
+## M18E-UX-E2c4 — Keyboard navigation and clean visual evidence — IMPLEMENTED; CI PENDING
+
+PR #20 exact-head `25e41e8` passed standard CI #38312464126 and installed Chrome acceptance #38312464229. The actual screen evidence confirms unknown-source metrics are differentiated from verified zeros. A review found the Chrome script screenshots contained an intentionally keyboard-focused skip link, obscuring part of the title. E2c4 separates the focus-state screenshot from clean desktop/mobile/2x screenshots, tests activation of the skip link into `#main-content`, and asserts disconnected workflow, incident and writer metrics render `Unknown` rather than zero. It makes no service, product action or release change. The automated Chrome smoke remains distinct from human visual signoff, complete WCAG audit, and cross-browser acceptance. M18D physical service proof and M18F release remain open.

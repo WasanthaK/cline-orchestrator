@@ -305,3 +305,23 @@ docs/ORCHESTRATOR-MASTER-PLAN.md
 ```
 
 Do not infer current authority or milestone status from older milestone/phase documents.
+
+## Offline graphical setup snapshot (UX-E2a)
+
+Generate a **read-only local HTML snapshot** from the same first-run diagnosis used by the CLI:
+
+```bash
+cline-orchestrator setup-view /path/to/workspace /path/to/new-setup-view.html
+```
+
+Open the resulting file manually in a browser. This command makes an observation request to the configured loopback daemon for health/preflight, but never installs or starts a service, opens a listener, launches a browser, approves work or grants authority. The destination directory must exist. It atomically creates a **new** HTML file; existing files and symlinks are never overwritten. The snapshot may become stale; regenerate to a different filename for fresh status. This is **not** the live operator dashboard or production UI.
+
+## Local read-only operator viewer (UX-E2b3)
+
+Start explicitly in a foreground terminal after separately provisioning a strong local viewing token:
+
+```bash
+ORCH_VIEWER_TOKEN=<your-private-token-of-at-least-32-characters> cline-orchestrator viewer
+```
+
+The viewer binds to `127.0.0.1:4321` by default (`ORCH_VIEWER_PORT` selects a different local port). Open `http://127.0.0.1:4321/viewer` manually and sign in with that local token. No credentials are included in the URL. Stopping the foreground process closes the viewing port. This does **not** launch or install a daemon, enable task actions, or establish remote access. Only projects, workspaces and bounded task observations are currently connected; other sources appear unavailable, not healthy. Browser/UI acceptance and installed-runtime proof are not complete.

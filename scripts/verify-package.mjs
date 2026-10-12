@@ -13,12 +13,13 @@ if (result.error) throw result.error;
 assert.equal(result.status, 0, "npm pack inspection failed");
 const [pack] = JSON.parse(result.stdout);
 const paths = new Set(pack.files.map(file => file.path));
-for (const required of ["package.json", "README.md", "docs/PRODUCT-DISTRIBUTION.md",
-  "dist/product-cli.js", "dist/index.js", "dist/mcp-main.js"]) {
+for (const required of ["package.json", "npm-shrinkwrap.json", "README.md", "docs/PRODUCT-DISTRIBUTION.md",
+  "dist/product-cli.js", "dist/index.js", "dist/mcp-main.js",
+  "dist/operator-visualization-html.js", "dist/first-run-guided-html.js", "dist/task-review-html.js"]) {
   assert.ok(paths.has(required), `Package is missing ${required}`);
 }
 for (const entry of paths) {
-  const allowed = ["package.json", "README.md", "docs/PRODUCT-DISTRIBUTION.md"].includes(entry)
+  const allowed = ["package.json", "npm-shrinkwrap.json", "README.md", "docs/PRODUCT-DISTRIBUTION.md"].includes(entry)
     || /^licen[cs]e(?:\.[^/]*)?$/i.test(entry)
     || /^dist\/(?:[^/]+\/)*[^/]+\.js$/.test(entry);
   assert.ok(allowed, `Unexpected package entry: ${entry}`);

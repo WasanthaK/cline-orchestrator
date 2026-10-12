@@ -46,6 +46,26 @@ try {
   : run(shim,args);
  assert.ok(await exists(modulePath)); assert.ok(await exists(shim));
  assert.ok(await exists(path.join(modulePath,"dist","product-cli.js")));
+ for (const renderer of ["operator-visualization-html.js", "first-run-guided-html.js", "task-review-html.js"]) {
+  assert.ok(await exists(path.join(modulePath,"dist",renderer)), "Installed UI renderer missing: "+renderer);
+ }
+ const uiProof=run(process.execPath,
+  [path.join(root,"scripts","verify-installed-ui-renderers.mjs"),modulePath]);
+ ok(uiProof,"installed passive UI renderer proof");
+ const uiEvidence=JSON.parse(uiProof.stdout.trim());
+ assert.equal(uiEvidence.staticRenderingPassed,true);
+ assert.equal(uiEvidence.browserLaunched,false);
+ assert.equal(uiEvidence.listenerStarted,false);
+ assert.equal(uiEvidence.serviceInstalled,false);
+ const viewerProof=run(process.execPath,
+  [path.join(root,"scripts","verify-installed-viewer-http.mjs"),modulePath],tmp,90000);
+ ok(viewerProof,"installed viewer HTTP acceptance");
+ const viewerEvidence=JSON.parse(viewerProof.stdout.trim());
+ assert.equal(viewerEvidence.authenticatedReadOnlySnapshot,true);
+ assert.equal(viewerEvidence.portReleased,true);
+ assert.equal(viewerEvidence.serviceInstalled,false);
+ assert.equal(viewerEvidence.daemonStarted,false);
+ assert.equal(viewerEvidence.browserAutomationDone,false);
  const config=runInstalled(["config"]); ok(config,"installed config");
  const output=JSON.parse(config.stdout);
  assert.equal(output.command,"config"); assert.equal(output.grantsAuthority,false);
