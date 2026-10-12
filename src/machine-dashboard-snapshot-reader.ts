@@ -116,21 +116,11 @@ export function createMachineDashboardSnapshotReader(
         writerLocks: [],
       }, { now });
 
-      // The existing dashboard has no registered handoff/writer source feeds.
-      // Explicitly expose these absences so an empty table is not "zero work".
-      const additionalNotices: OperatorVisualizationV1["sourceNotices"] = [
-        { source: "active_writers", stale: true, available: false, truncated: false, errorCode: "source_not_connected" },
-        { source: "specialist_handoffs", stale: true, available: false, truncated: false, errorCode: "source_not_connected" },
-      ];
+      // Other source adapters are deliberately disconnected and reflected
+      // as unavailable in the dashboard's typed source notices.
       return {
         ...projected,
-        header: {
-          ...projected.header,
-          health: "unknown",
-          staleSources: projected.header.staleSources + additionalNotices.length,
-          unavailableSources: projected.header.unavailableSources + additionalNotices.length,
-        },
-        sourceNotices: [...projected.sourceNotices, ...additionalNotices],
+        header: { ...projected.header, health: "unknown" },
       };
     },
   };
