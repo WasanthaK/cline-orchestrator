@@ -37,7 +37,9 @@ test("UX-E2b opt-in localhost viewer requires sign-in; shows only trusted passiv
     const signin = await fetch(host.origin + "/viewer/login", { method: "POST",
       headers: { Origin: host.origin, "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ token }) });
-    assert.equal(signin.status, 200);
+    assert.equal(signin.status, 303);
+    assert.equal(signin.headers.get("location"), "/viewer");
+    assert.doesNotMatch(await signin.text(), /Signed in|token/i);
     const cookie = signin.headers.get("set-cookie")?.split(";")[0];
     assert.ok(cookie?.startsWith("orch_viewer="));
     assert.match(signin.headers.get("set-cookie") ?? "", /HttpOnly; SameSite=Strict/);
