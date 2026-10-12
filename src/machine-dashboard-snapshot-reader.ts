@@ -114,6 +114,7 @@ export function createMachineDashboardSnapshotReader(
         dashboard: dash,
         handoffs: [],
         writerLocks: [],
+        supplementalFeedAvailability: { writers: false, handoffs: false },
       }, { now });
 
       // Other source adapters are deliberately disconnected and reflected

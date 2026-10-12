@@ -195,3 +195,33 @@ test("UX-B passive dashboard escapes source error and identifiers", () => {
   assert.match(html, /<th scope="col">/);
   assert.match(html, /No actions available/);
 });
+
+test("UX-E2c3 unknown or unconnected sources never display reassuring zero metrics", () => {
+  const input: OperatorVisualizationV1 = {
+    ...view(),
+    header: { ...view().header, activeTasks: 0, activeWorkflows: 0, activeWriters: 0,
+      openIncidents: 0, waitingForHuman: 0, health: "unknown" },
+    sourceNotices: [
+      { source: "tasks", available: false, stale: true, truncated: false },
+      { source: "workflows", available: false, stale: true, truncated: false },
+      { source: "incidents", available: false, stale: true, truncated: false },
+    ],
+    taskBoard: [], workflows: [], incidents: [], activeWriters: [], specialistTimeline: [],
+    supplementalFeedAvailability: { writers: false, handoffs: false },
+  };
+  const html = renderOperatorVisualizationHtml(input);
+  for (const label of ["Active tasks", "Active workflows", "Active writers", "Open incidents", "Waiting for human"]) {
+    assert.ok(html.includes(`<span>${label}</span><strong>Unknown</strong>`), label);
+  }
+  assert.match(html, /Writer source not connected or unverified/);
+  assert.match(html, /Specialist handoff source not connected or unverified/);
+  assert.match(html, /Source unavailable; no current results can be confirmed/);
+});
+
+test("UX-E2c3 connected empty supplemental feeds can state none observed", () => {
+  const input = { ...view(), activeWriters: [], specialistTimeline: [],
+    supplementalFeedAvailability: { writers: true, handoffs: true } };
+  const html = renderOperatorVisualizationHtml(input);
+  assert.match(html, /No active workspace writers/);
+  assert.match(html, /No specialist handoffs in the current bounded snapshot/);
+});
