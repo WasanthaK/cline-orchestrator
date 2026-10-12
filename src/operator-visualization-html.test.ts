@@ -225,3 +225,15 @@ test("UX-E2c3 connected empty supplemental feeds can state none observed", () =>
   assert.match(html, /No active workspace writers/);
   assert.match(html, /No specialist handoffs in the current bounded snapshot/);
 });
+
+test("Console-1 read-only task evidence and accessible tables", () => {
+  const html = renderOperatorVisualizationHtml(view());
+  assert.match(html, /<th scope="col">Project<\/th>/);
+  assert.match(html, /Passed/);
+  assert.match(html, /Failed/);
+  assert.match(html, /role="region" aria-label="Task records" tabindex="0"/);
+  assert.match(html, /Refresh this page to capture a new bounded snapshot/);
+  assert.match(html, /not a complete audit trail/);
+  assert.match(html, /not agent\/model health/);
+  assert.doesNotMatch(html, /<script|<form|<button|<input|onclick=/i);
+});
