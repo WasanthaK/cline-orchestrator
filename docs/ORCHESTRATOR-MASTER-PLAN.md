@@ -1318,3 +1318,12 @@ On 2026-10-12, a review of the current `milestone-13/delegation` operator visual
 This is a **design/inventory deliverable only**. No graphical product, new route, service driver, browser action capability, physical lifecycle proof, or release readiness is claimed. The existing GUI is a passive read-only visualization plus a separately opt-in browser flow limited to escalation rejection; installed CLI/package validation is **not** installed GUI validation. UX-B read-only dashboard composition is a separately gated future implementation slice.
 
 **Parallel queue only:** M18D hosted Windows SCM and Linux systemd physical proof remains the immediate release-blocking work. The corrected Windows SCM `sc.exe` argument code and manually pinned proof workflow on `main` passed regular CI, but the previously attempted physical proof failed and must be rerun under a separately authorized manual action. Linux systemd physical lifecycle remains unproven. Do not call M18D complete, merge PR #3 solely for manual proof, or proceed to M18F on the strength of UX inventory alone.
+
+
+## M18E-UX-B — Responsive passive operator dashboard — IMPLEMENTED; CI PENDING
+
+A bounded change to the existing `renderOperatorVisualizationHtml` adds semantic in-page section navigation, skip navigation, focus-visible keyboard treatment, narrow-screen layout, source-quality notices, and source-aware empty task/workflow/incident states. All displayed dynamic data still comes only from the existing sanitized `OperatorVisualizationV1`; no new endpoint, fetch, browser script, mutation form, privileged control, task authority or action capability is added.
+
+The previous universal anchor ban is narrowed to fixed local fragment identifiers. Tests require every navigation target to remain an in-page anchor and continue to reject scripts, forms, buttons, inputs, active callbacks and unescaped dynamic content. UX-B is a **passive rendering improvement only**; provider setup, full graphical operator features, installed-product GUI proof and human acceptance are not complete.
+
+M18D physical service-manager proof and M18F separately authorized release remain open. Hosted exact-head CI must pass before this UX-B slice can be marked complete.

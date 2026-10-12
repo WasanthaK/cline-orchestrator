@@ -120,8 +120,6 @@ test("renderer has no interactive or executable surface", () => {
     "<input",
     "<select",
     "<textarea",
-    "<a ",
-    "href=",
     "onclick=",
     "onload=",
     "fetch(",
@@ -148,4 +146,52 @@ test("renderer rejects a view that advertises any action capability", () => {
 test("renderer output is deterministic for the same sanitized view", () => {
   const input = view();
   assert.equal(renderOperatorVisualizationHtml(input), renderOperatorVisualizationHtml(input));
+});
+
+
+test("UX-B static section navigation is local, accessible and inert", () => {
+  const html = renderOperatorVisualizationHtml(view());
+  assert.match(html, /<nav class="contents" aria-label="Dashboard sections">/);
+  assert.match(html, /<a class="skip" href="#main-content">Skip to dashboard<\/a>/);
+  assert.match(html, /<main id="main-content" class="content" tabindex="-1">/);
+  for (const section of ["overview", "attention", "writers", "tasks", "workflows", "incidents", "handoffs", "sources"]) {
+    assert.ok(html.includes(`href="#${section}"`));
+    assert.ok(html.includes(`<section id="${section}"`));
+  }
+  const anchors = [...html.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(anchors.length > 0);
+  assert.ok(anchors.every((href) => /^#[a-z-]+$/.test(href!)));
+  assert.doesNotMatch(html, /<form|<script|<button|<input|onclick=|fetch\(|<iframe/i);
+  assert.match(html, /@media\(max-width:800px\)/);
+  assert.match(html, /:focus-visible/);
+});
+
+test("UX-B keeps stale and unavailable empty task lists distinguishable from genuinely empty lists", () => {
+  const unavailable: OperatorVisualizationV1 = {
+    ...view(),
+    taskBoard: [],
+    sourceNotices: [{ source: "tasks", available: false, stale: true, truncated: false }],
+  };
+  const html = renderOperatorVisualizationHtml(unavailable);
+  assert.match(html, /Source unavailable; no current results can be confirmed/);
+  assert.match(html, /Source unavailable — these rows are not a current, complete result/);
+  assert.doesNotMatch(html, /No tasks in the current bounded snapshot/);
+  const ready: OperatorVisualizationV1 = {
+    ...unavailable,
+    sourceNotices: [],
+    header: { ...unavailable.header, staleSources: 0, unavailableSources: 0 },
+  };
+  assert.match(renderOperatorVisualizationHtml(ready), /No tasks in the current bounded snapshot/);
+});
+
+test("UX-B passive dashboard escapes source error and identifiers", () => {
+  const input: OperatorVisualizationV1 = {
+    ...view(),
+    sourceNotices: [{ source: "tasks", available: true, stale: false, truncated: false, errorCode: "<script>alert(1)</script>" }],
+  };
+  const html = renderOperatorVisualizationHtml(input);
+  assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  assert.equal(html.includes("<script>alert(1)</script>"), false);
+  assert.match(html, /<th scope="col">/);
+  assert.match(html, /No actions available/);
 });
