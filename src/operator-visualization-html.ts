@@ -23,6 +23,12 @@ function table(headers: string[], rows: string[][], emptyMessage: string): strin
 }
 
 
+function metricValue(view: OperatorVisualizationV1, source: string, value: number): string {
+  const record = view.sourceNotices.find(item => item.source === source);
+  return record && (!record.available || record.stale || record.errorCode)
+    ? "Unknown" : String(value);
+}
+
 function sourceWarning(view: OperatorVisualizationV1, source: string): string {
   const record = view.sourceNotices.find((item) => item.source === source);
   if (!record) return "";
@@ -80,7 +86,8 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
       escapeHtml(writer.acquiredAt),
       escapeHtml(writer.expiresAt),
     ]),
-    "No active workspace writers.",
+    view.supplementalFeedAvailability?.writers === true
+      ? "No active workspace writers." : "Writer source not connected or unverified; activity unknown.",
   );
 
   const tasks = table(
@@ -139,7 +146,9 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
       escapeHtml(handoff.evidenceCount),
       escapeHtml(handoff.createdAt),
     ]),
-    "No specialist handoffs in the current bounded snapshot.",
+    view.supplementalFeedAvailability?.handoffs === true
+      ? "No specialist handoffs in the current bounded snapshot."
+      : "Specialist handoff source not connected or unverified; activity unknown.",
   );
 
   const sources = table(
@@ -156,11 +165,11 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
 
   const cards = [
     ["Health", view.header.health],
-    ["Active tasks", view.header.activeTasks],
-    ["Active workflows", view.header.activeWorkflows],
-    ["Active writers", view.header.activeWriters],
-    ["Open incidents", view.header.openIncidents],
-    ["Waiting for human", view.header.waitingForHuman],
+    ["Active tasks", metricValue(view, "tasks", view.header.activeTasks)],
+    ["Active workflows", metricValue(view, "workflows", view.header.activeWorkflows)],
+    ["Active writers", view.supplementalFeedAvailability?.writers === true ? view.header.activeWriters : "Unknown"],
+    ["Open incidents", metricValue(view, "incidents", view.header.openIncidents)],
+    ["Waiting for human", metricValue(view, "tasks", view.header.waitingForHuman)],
     ["Stale sources", view.header.staleSources],
     ["Unavailable sources", view.header.unavailableSources],
   ].map(([label, value]) => `<div class="card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
