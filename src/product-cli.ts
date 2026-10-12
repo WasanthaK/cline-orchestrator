@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { exportOfflineSetupView } from "./offline-setup-view-export.js";
+import { startInstalledPassiveViewer } from "./installed-passive-viewer.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -30,6 +31,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "config",
     "setup",
     "setup-view",
+    "viewer",
     "setup-config",
     "setup-project",
     "setup-workspace",
@@ -52,6 +54,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 });
 
 export type ProductCliRoute =
+  | { kind: "viewer" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
   | { kind: "setup_project"; displayName: string; configPath?: never }
@@ -116,6 +119,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator diagnose <workspace>",
     "  cline-orchestrator config",
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
+    "  cline-orchestrator viewer  # explicit foreground, localhost-only read-only dashboard",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
     "  cline-orchestrator setup-project <display-name>  # interactive project registration",
@@ -153,6 +157,10 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   }
   const [command, ...rest] = argv;
   if (!command) throw new ProductCliError(productCliUsage(), "usage_invalid");
+  if (command === "viewer") {
+    if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "viewer" };
+  }
   if (command === "setup-view") {
     if (rest.length !== 2 || !rest[0]?.trim() || !rest[1]?.trim()) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "setup_view", workspace: rest[0], outputFile: rest[1] };
@@ -408,6 +416,14 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "viewer") {
+    const viewer = await startInstalledPassiveViewer(deps.env);
+    process.stdout.write(JSON.stringify({ command: "viewer", origin: viewer.origin,
+      readOnly: true, grantsAuthority: false, browserAutoOpened: false,
+      daemonStarted: false, serviceInstalled: false }, null, 2) + "\n");
+    // Foreground listener: process exit/signals release the listening socket.
+    return undefined;
+  }
   if (route.kind === "setup_view") {
     const result = await runNativeProductCommand({ kind: "native", command: "diagnose", args: [route.workspace], configPath: route.configPath }, deps);
     const receipt = await exportOfflineSetupView(result.payload as FirstRunAssessmentV1, route.outputFile);
