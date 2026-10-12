@@ -196,7 +196,7 @@ try {
   for (let attempt = 0; attempt < 60; attempt++) {
     const state = await evaluate("return {url:location.pathname,"
       + "body:document.body.innerText.slice(0,600),"
-      + "loginForm:document.querySelector('form[action=\\\"/viewer/login\\\"]')!==null};");
+      + "loginForm:document.querySelector('form')!==null};");
     if (state.body.includes("Signed in")) {
       acknowledged = true;
       break;
@@ -305,7 +305,7 @@ try {
       const state = await evaluate("return {path:location.pathname,"
         + "title:document.title,"
         + "main:!!document.querySelector('main'),"
-        + "loginForm:!!document.querySelector('form[action=\\\"/viewer/login\\\"]'),"
+        + "loginForm:!!document.querySelector('form'),"
         + "passwordFieldLength:document.querySelector('#local-token')?.value?.length??0};");
       Object.assign(diagnostic, { page: state });
       await screenshot("browser-failure");
@@ -314,7 +314,7 @@ try {
     }
   }
   await writeFile(path.join(artifacts, "failure-diagnostic.json"),
-    JSON.stringify(diagnostic, null, 2) + "\\n");
+    JSON.stringify(diagnostic, null, 2) + "\n");
   throw error;
 } finally {
   if (session) {
