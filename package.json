@@ -6,6 +6,7 @@
   "description": "Local-first orchestration and supervision for long-running Cline coding sessions.",
   "files": [
     "dist/**/*.js",
+    "npm-shrinkwrap.json",
     "README.md",
     "docs/PRODUCT-DISTRIBUTION.md"
   ],

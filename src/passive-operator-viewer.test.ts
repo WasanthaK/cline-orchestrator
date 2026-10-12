@@ -23,8 +23,13 @@ test("UX-E2b opt-in localhost viewer requires sign-in; shows only trusted passiv
     assert.equal(new URL(host.origin).hostname, "127.0.0.1");
     const anonymous = await fetch(host.origin + "/viewer");
     assert.equal(anonymous.status, 200);
+    assert.equal(anonymous.headers.get("referrer-policy"), "same-origin");
     assert.match(await anonymous.text(), /Sign in/);
     assert.equal(calls, 0);
+    const nullOrigin = await fetch(host.origin + "/viewer/login", { method: "POST",
+      headers: { Origin: "null", "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token }) });
+    assert.equal(nullOrigin.status, 403);
     const wrong = await fetch(host.origin + "/viewer/login", { method: "POST",
       headers: { Origin: host.origin, "Content-Type": "application/x-www-form-urlencoded" },
       body: "token=incorrect" });
@@ -38,6 +43,7 @@ test("UX-E2b opt-in localhost viewer requires sign-in; shows only trusted passiv
     assert.match(signin.headers.get("set-cookie") ?? "", /HttpOnly; SameSite=Strict/);
     const loaded = await fetch(host.origin + "/viewer", { headers: { Cookie: cookie! } });
     assert.equal(loaded.status, 200);
+    assert.equal(loaded.headers.get("referrer-policy"), "no-referrer");
     const html = await loaded.text();
     assert.match(html, /Read-only operator dashboard/);
     assert.match(html, /Source unavailable/);
