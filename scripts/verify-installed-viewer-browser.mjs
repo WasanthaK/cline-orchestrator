@@ -131,13 +131,16 @@ async function screenshot(name) {
 }
 
 const result = {
-  slice: "M18E-UX-E2c2",
+  slice: "M18E-UX-E2c4",
   platform: process.platform,
   installedCliUsed: true,
   chromeHeadless: false,
   realBrowserLogin: false,
   accessibleLandmarks: false,
   keyboardFocus: false,
+  skipLinkNavigation: false,
+  cleanVisualScreenshots: false,
+  unavailableMetricsNotZero: false,
   desktopResponsive: false,
   mobileResponsive: false,
   evidenceUnavailabilityLabeled: false,
@@ -227,7 +230,8 @@ try {
     + "remoteLinks:[...document.querySelectorAll('a[href]')].filter(x=>!x.getAttribute('href').startsWith('#')).length,"
     + "passwordVisible:document.body.innerText.includes('" + token + "'),"
     + "csp:document.querySelector('meta[http-equiv=\"Content-Security-Policy\"]')?.content,"
-    + "focusable:[...document.querySelectorAll('a[href]')].length"
+    + "focusable:[...document.querySelectorAll('a[href]')].length,"
+    + "cards:[...document.querySelectorAll('.card')].map(c=>({label:c.querySelector('span')?.innerText,value:c.querySelector('strong')?.innerText}))"
     + "};");
   assert.match(semantic.title, /Cline Orchestrator/);
   assert.deepEqual(semantic.headings, ["Cline Orchestrator"]);
@@ -240,6 +244,11 @@ try {
   assert.equal(semantic.passwordVisible, false);
   assert.match(semantic.csp, /script-src 'none'/);
   assert.ok(semantic.focusable > 2);
+  for (const label of ["Active workflows", "Active writers", "Open incidents"]) {
+    assert.equal(semantic.cards.find(card => card.label === label)?.value, "Unknown",
+      label + " must never appear as zero when its source is disconnected");
+  }
+  result.unavailableMetricsNotZero = true;
   result.evidenceUnavailabilityLabeled = true;
   result.passiveContentOnly = true;
 
@@ -260,6 +269,34 @@ try {
   assert.ok(focused.href?.startsWith("#"), "Keyboard must reach a local fragment link");
   assert.equal(focused.focusVisible, true);
   result.keyboardFocus = true;
+  // Keep keyboard-focus proof separate: its deliberately visible skip link
+  // overlays the page title if reused as a clean visual screenshot.
+  await screenshot("keyboard-skip-link-focused");
+  result.screenshots.push("keyboard-skip-link-focused.png");
+
+  await chromeCommand("Input.dispatchKeyEvent",
+    { type: "rawKeyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await chromeCommand("Input.dispatchKeyEvent",
+    { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await delay(120);
+  const skipDestination = await evaluate("return {hash:location.hash,"
+    + "target:document.querySelector(':target')?.id,"
+    + "mainKeyboardFocusable:document.querySelector('main')?.getAttribute('tabindex')};");
+  assert.equal(skipDestination.hash, "#main-content");
+  assert.equal(skipDestination.target, "main-content");
+  assert.equal(skipDestination.mainKeyboardFocusable, "-1");
+  result.skipLinkNavigation = true;
+
+  // Fresh document navigation removes the keyboard focus overlay before
+  // taking visual-review snapshots at desktop and mobile sizes.
+  await navigate(origin + "/viewer");
+  const clean = await evaluate("return {hash:location.hash,"
+    + "skipTop:document.querySelector('.skip')?.getBoundingClientRect().top,"
+    + "focusOnSkip:document.activeElement?.classList.contains('skip')};");
+  assert.equal(clean.hash, "");
+  assert.equal(clean.focusOnSkip, false);
+  assert.ok(clean.skipTop < 0, "Focused skip link must not obscure clean screenshots");
+  result.cleanVisualScreenshots = true;
 
   async function viewport(width, height, name) {
     await chromeCommand("Emulation.setDeviceMetricsOverride",
@@ -328,4 +365,7 @@ assert.equal(result.realBrowserLogin, true);
 assert.equal(result.desktopResponsive, true);
 assert.equal(result.mobileResponsive, true);
 assert.equal(result.passiveContentOnly, true);
+assert.equal(result.unavailableMetricsNotZero, true);
+assert.equal(result.skipLinkNavigation, true);
+assert.equal(result.cleanVisualScreenshots, true);
 console.log(JSON.stringify(result));
