@@ -191,28 +191,23 @@ try {
   const button = await api("POST", "/element", { using: "css selector", value: "button" });
   const buttonId = button.value["element-6066-11e4-a52e-4f735466cecf"];
   await api("POST", "/element/" + buttonId + "/click", {});
-  // A genuine browser form POST can navigate asynchronously after WebDriver
-  // click returns. Await the exact server success page and HttpOnly cookie;
-  // the previous immediate body assertion raced page navigation in Chrome 155.
+  // PRG: successful login now navigates directly to the authenticated dashboard.
   let acknowledged = false;
   let observedPage = "login";
   for (let attempt = 0; attempt < 60; attempt++) {
     const state = await evaluate("return {url:location.pathname,"
       + "body:document.body.innerText.slice(0,600),"
       + "loginForm:document.querySelector('form')!==null};");
-    if (state.body.includes("Signed in")) {
+    if (state.url === "/viewer" && state.body.includes("Read-only operator dashboard")) {
       acknowledged = true;
       break;
     }
     observedPage = state.loginForm ? "login_form" : String(state.url);
-    if (!state.loginForm && /Sign in failed|Forbidden|Action unavailable/.test(state.body)) {
-      observedPage = "authentication_rejected";
-      break;
-    }
+    if (state.body.includes("Sign in failed")) break;
     await delay(100);
   }
   assert.ok(acknowledged,
-    "Browser did not reach signed-in response after form submission; last page class: " + observedPage);
+    "Browser did not reach dashboard after successful sign-in; last page class: " + observedPage);
   const cookies = (await api("GET", "/cookie")).value;
   const sessionCookie = cookies.find(c => c.name === "orch_viewer");
   assert.ok(sessionCookie && sessionCookie.httpOnly && sessionCookie.sameSite === "Strict");
