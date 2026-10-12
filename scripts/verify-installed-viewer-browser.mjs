@@ -183,11 +183,33 @@ try {
   const element = found.value["element-6066-11e4-a52e-4f735466cecf"];
   assert.ok(element);
   await api("POST", "/element/" + element + "/value", { text: token });
+  const typed = await evaluate("return document.querySelector('#local-token')?.value?.length;");
+  assert.equal(typed, token.length, "ChromeDriver did not enter the complete local viewing token");
   const button = await api("POST", "/element", { using: "css selector", value: "button" });
   const buttonId = button.value["element-6066-11e4-a52e-4f735466cecf"];
   await api("POST", "/element/" + buttonId + "/click", {});
-  const acknowledged = await evaluate("return document.body.innerText;");
-  assert.match(acknowledged, /Signed in/);
+  // A genuine browser form POST can navigate asynchronously after WebDriver
+  // click returns. Await the exact server success page and HttpOnly cookie;
+  // the previous immediate body assertion raced page navigation in Chrome 155.
+  let acknowledged = false;
+  let observedPage = "login";
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const state = await evaluate("return {url:location.pathname,"
+      + "body:document.body.innerText.slice(0,600),"
+      + "loginForm:document.querySelector('form[action=\\\"/viewer/login\\\"]')!==null};");
+    if (state.body.includes("Signed in")) {
+      acknowledged = true;
+      break;
+    }
+    observedPage = state.loginForm ? "login_form" : String(state.url);
+    if (!state.loginForm && /Sign in failed|Forbidden|Action unavailable/.test(state.body)) {
+      observedPage = "authentication_rejected";
+      break;
+    }
+    await delay(100);
+  }
+  assert.ok(acknowledged,
+    "Browser did not reach signed-in response after form submission; last page class: " + observedPage);
   const cookies = (await api("GET", "/cookie")).value;
   const sessionCookie = cookies.find(c => c.name === "orch_viewer");
   assert.ok(sessionCookie && sessionCookie.httpOnly && sessionCookie.sameSite === "Strict");
@@ -269,6 +291,31 @@ try {
   await chromeCommand("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });
   await screenshot("dashboard-pagescale-2x");
   result.screenshots.push("dashboard-pagescale-2x.png");
+} catch (error) {
+  // Persist diagnostics even on browser failure. Never persist the viewing
+  // token, session cookie, raw input value, daemon state or full page HTML.
+  const diagnostic = {
+    stage: "browser_acceptance",
+    error: error instanceof Error ? error.message.replaceAll(token, "[redacted]") : "unknown",
+    browserSessionCreated: Boolean(session),
+    viewerExitedUnexpectedly: viewer.exitCode !== null,
+  };
+  if (session) {
+    try {
+      const state = await evaluate("return {path:location.pathname,"
+        + "title:document.title,"
+        + "main:!!document.querySelector('main'),"
+        + "loginForm:!!document.querySelector('form[action=\\\"/viewer/login\\\"]'),"
+        + "passwordFieldLength:document.querySelector('#local-token')?.value?.length??0};");
+      Object.assign(diagnostic, { page: state });
+      await screenshot("browser-failure");
+    } catch {
+      diagnostic.browserStateUnavailable = true;
+    }
+  }
+  await writeFile(path.join(artifacts, "failure-diagnostic.json"),
+    JSON.stringify(diagnostic, null, 2) + "\\n");
+  throw error;
 } finally {
   if (session) {
     try { await api("DELETE", ""); } catch {}
