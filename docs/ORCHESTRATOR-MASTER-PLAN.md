@@ -1327,3 +1327,10 @@ A bounded change to the existing `renderOperatorVisualizationHtml` adds semantic
 The previous universal anchor ban is narrowed to fixed local fragment identifiers. Tests require every navigation target to remain an in-page anchor and continue to reject scripts, forms, buttons, inputs, active callbacks and unescaped dynamic content. UX-B is a **passive rendering improvement only**; provider setup, full graphical operator features, installed-product GUI proof and human acceptance are not complete.
 
 M18D physical service-manager proof and M18F separately authorized release remain open. Hosted exact-head CI must pass before this UX-B slice can be marked complete.
+
+
+## M18E-UX-C1 — Guided first-run readiness visualization — IMPLEMENTED; CI PENDING
+
+Adds a new bounded, read-only composition from the existing trusted M17 first-run assessment and a standalone passive HTML checklist. The renderer presents Node/runtime, provider preflight, workspace/Safety, loopback daemon and production readiness states with clear required/optional next steps. No operator configuration, endpoint, raw credential, workspace root, browser script, action callback, form, network listener or mutation path is accepted or emitted. Negative tests reject widened authority, inconsistent readiness, duplicate/unknown steps and injected private fields.
+
+This is **UX-C1 only**: no installable UI entrypoint, automatic provider connectivity check, confirmation controls or task action authority. UX-C2 requires a separate reviewed interface to the existing confirmed setup services, with cancel/expiry/replay and credential-leakage proofs. M18D physical service proof, UX-E installed GUI acceptance and M18F release authorization remain independent blockers.
