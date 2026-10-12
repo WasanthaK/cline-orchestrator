@@ -46,6 +46,17 @@ try {
   : run(shim,args);
  assert.ok(await exists(modulePath)); assert.ok(await exists(shim));
  assert.ok(await exists(path.join(modulePath,"dist","product-cli.js")));
+ for (const renderer of ["operator-visualization-html.js", "first-run-guided-html.js", "task-review-html.js"]) {
+  assert.ok(await exists(path.join(modulePath,"dist",renderer)), "Installed UI renderer missing: "+renderer);
+ }
+ const uiProof=run(process.execPath,
+  [path.join(root,"scripts","verify-installed-ui-renderers.mjs"),modulePath]);
+ ok(uiProof,"installed passive UI renderer proof");
+ const uiEvidence=JSON.parse(uiProof.stdout.trim());
+ assert.equal(uiEvidence.staticRenderingPassed,true);
+ assert.equal(uiEvidence.browserLaunched,false);
+ assert.equal(uiEvidence.listenerStarted,false);
+ assert.equal(uiEvidence.serviceInstalled,false);
  const config=runInstalled(["config"]); ok(config,"installed config");
  const output=JSON.parse(config.stdout);
  assert.equal(output.command,"config"); assert.equal(output.grantsAuthority,false);
