@@ -105,7 +105,9 @@ try {
     method: "POST", headers: { Origin: origin, "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ token }),
   });
-  assert.equal(login.status, 200);
+  assert.equal(login.status, 303);
+  assert.equal(login.headers.get("location"), "/viewer");
+  assert.doesNotMatch(await login.text(), /token|Signed in/i);
   const setCookie = login.headers.get("set-cookie") ?? "";
   assert.match(setCookie, /HttpOnly; SameSite=Strict; Path=\/viewer/);
   const cookie = setCookie.split(";")[0];

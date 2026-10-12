@@ -208,7 +208,10 @@ export async function startPassiveOperatorViewer(
         sessions.set(session, Date.now() + SESSION_MS);
         const cookie = COOKIE + "=" + session
           + "; HttpOnly; SameSite=Strict; Path=/viewer; Max-Age=600";
-        send(res, 200, statusPage("Signed in — refresh /viewer to read a snapshot"), VIEW_CSP, cookie);
+        // Post/Redirect/Get: load the authenticated snapshot immediately without
+        // sending a success page or leaking the viewing token into a URL/body.
+        res.writeHead(303, { ...headers(VIEW_CSP), "Location": "/viewer", "Set-Cookie": cookie });
+        res.end();
         return;
       }
       send(res, 405, statusPage("Method not allowed"), VIEW_CSP);
