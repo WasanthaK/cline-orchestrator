@@ -21,6 +21,8 @@ export interface OperatorVisualizationInputV1 {
   dashboard: OrchestrationDashboardV1;
   handoffs: SpecialistHandoffV1[];
   writerLocks: WorkspaceLockStateV1[];
+  /** Set only when an upstream source is confirmed connected or disconnected. */
+  supplementalFeedAvailability?: { writers: boolean; handoffs: boolean };
 }
 
 export interface OperatorVisualizationV1 {
@@ -56,6 +58,8 @@ export interface OperatorVisualizationV1 {
   taskBoard: OrchestrationDashboardV1["tasks"];
   workflows: OrchestrationDashboardV1["workflows"];
   incidents: OrchestrationDashboardV1["incidents"];
+  /** Optional provenance, not authority: absent means source status unverified. */
+  supplementalFeedAvailability?: { writers: boolean; handoffs: boolean };
   specialistTimeline: Array<{
     handoffId: string;
     taskId: string;
@@ -250,6 +254,12 @@ export function buildOperatorVisualization(
     },
     sourceNotices: notices,
     attention,
+    ...(input.supplementalFeedAvailability ? {
+      supplementalFeedAvailability: {
+        writers: input.supplementalFeedAvailability.writers === true,
+        handoffs: input.supplementalFeedAvailability.handoffs === true,
+      },
+    } : {}),
     taskBoard: structuredClone(input.dashboard.tasks),
     workflows: structuredClone(input.dashboard.workflows),
     incidents: structuredClone(input.dashboard.incidents),
