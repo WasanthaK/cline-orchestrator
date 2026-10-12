@@ -1334,3 +1334,12 @@ M18D physical service-manager proof and M18F separately authorized release remai
 Adds a new bounded, read-only composition from the existing trusted M17 first-run assessment and a standalone passive HTML checklist. The renderer presents Node/runtime, provider preflight, workspace/Safety, loopback daemon and production readiness states with clear required/optional next steps. No operator configuration, endpoint, raw credential, workspace root, browser script, action callback, form, network listener or mutation path is accepted or emitted. Negative tests reject widened authority, inconsistent readiness, duplicate/unknown steps and injected private fields.
 
 This is **UX-C1 only**: no installable UI entrypoint, automatic provider connectivity check, confirmation controls or task action authority. UX-C2 requires a separate reviewed interface to the existing confirmed setup services, with cancel/expiry/replay and credential-leakage proofs. M18D physical service proof, UX-E installed GUI acceptance and M18F release authorization remain independent blockers.
+
+
+## M18E-UX-C2 — Trusted local guided setup adapter — IMPLEMENTED; CI PENDING
+
+Introduced `first-run-guided-action.ts` as an **in-process trusted-host bridge only**, connecting eligible read-only M17 assessment steps with the existing M18B3b create-only configuration, M18B3c project/workspace registration, and M18B3d loopback daemon start adapters. These existing services retain actual config/registry/daemon revalidation, expiry, one-shot confirmation consumption and Safety/loopback restrictions.
+
+The new guided confirmation view exposes only action, static scope, pre-existing confirmation text and expiry; never forwards path, full config/registration, raw credential, digest or confirmation token. Cancellation makes no mutation, adapter failure returns a sanitized non-retryable error, and an assessment alone does not become authority. This **does not create a browser route**, trust an unverified web callback, open a listener, run a task, or install a service; a browser-facing confirmation surface would require a distinct auth/session/origin/CSRF design review.
+
+Focused tests exercise the real config and registry adapters and cover no-host confirmation, decline, expiry, action eligibility, sensitive review suppression and error redaction. Local typecheck/hosted exact-head CI remain required to complete this slice. M18D physical verification and M18F release gating stay open.
