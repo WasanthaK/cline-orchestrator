@@ -17,9 +17,9 @@ function empty(message: string): string {
   return `<p class="empty">${escapeHtml(message)}</p>`;
 }
 
-function table(headers: string[], rows: string[][], emptyMessage: string): string {
+function table(headers: string[], rows: string[][], emptyMessage: string, label: string): string {
   if (rows.length === 0) return empty(emptyMessage);
-  return `<div class="table-wrap"><table><thead><tr>${headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap" role="region" aria-label="${escapeHtml(label)}" tabindex="0"><table><thead><tr>${headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
 
@@ -74,7 +74,7 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
       item.workspaceId ? `<code>${escapeHtml(item.workspaceId)}</code>` : "—",
       item.at ? escapeHtml(item.at) : "—",
     ]),
-    "No operator attention items.",
+    "No operator attention items.", "Operator attention records",
   );
 
   const writers = table(
@@ -87,22 +87,23 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
       escapeHtml(writer.expiresAt),
     ]),
     view.supplementalFeedAvailability?.writers === true
-      ? "No active workspace writers." : "Writer source not connected or unverified; activity unknown.",
+      ? "No active workspace writers." : "Writer source not connected or unverified; activity unknown.", "Active writer records",
   );
 
   const tasks = table(
-    ["Task", "Workspace", "Status", "Runs", "Recoveries", "Validation", "Diff safety", "Updated"],
+    ["Task", "Project", "Workspace", "Status", "Runs", "Recoveries", "Validation", "Diff safety", "Updated"],
     view.taskBoard.map((task) => [
       `<code>${escapeHtml(task.taskId)}</code>`,
+      `<code>${escapeHtml(task.projectId)}</code>`,
       `<code>${escapeHtml(task.workspaceId)}</code>`,
       badge(task.status),
       escapeHtml(task.runCount),
       escapeHtml(task.recoveryCount),
-      task.validationPassed === undefined ? "—" : escapeHtml(task.validationPassed),
-      task.diffSafetyPassed === undefined ? "—" : escapeHtml(task.diffSafetyPassed),
+      task.validationPassed === undefined ? "Not available" : task.validationPassed ? "Passed" : "Failed",
+      task.diffSafetyPassed === undefined ? "Not available" : task.diffSafetyPassed ? "Passed" : "Failed",
       escapeHtml(task.updatedAt),
     ]),
-    sourceEmpty(view, "tasks", "No tasks in the current bounded snapshot."),
+    sourceEmpty(view, "tasks", "No tasks in the current bounded snapshot."), "Task records",
   );
 
   const workflows = table(
@@ -117,7 +118,7 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
       `${escapeHtml(workflow.openIncidents)} open / ${escapeHtml(workflow.criticalIncidents)} critical`,
       escapeHtml(workflow.generatedAt),
     ]),
-    sourceEmpty(view, "workflows", "No workflows in the current bounded snapshot."),
+    sourceEmpty(view, "workflows", "No workflows in the current bounded snapshot."), "Workflow records",
   );
 
   const incidents = table(
@@ -132,7 +133,7 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
       escapeHtml(incident.humanActionRequired),
       escapeHtml(incident.lastSeenAt),
     ]),
-    sourceEmpty(view, "incidents", "No incidents in the current bounded snapshot."),
+    sourceEmpty(view, "incidents", "No incidents in the current bounded snapshot."), "Incident records",
   );
 
   const handoffs = table(
@@ -148,7 +149,7 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
     ]),
     view.supplementalFeedAvailability?.handoffs === true
       ? "No specialist handoffs in the current bounded snapshot."
-      : "Specialist handoff source not connected or unverified; activity unknown.",
+      : "Specialist handoff source not connected or unverified; activity unknown.", "Specialist handoff records",
   );
 
   const sources = table(
@@ -160,7 +161,7 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
       escapeHtml(notice.truncated),
       notice.errorCode ? escapeHtml(notice.errorCode) : "—",
     ]),
-    view.header.staleSources > 0 || view.header.unavailableSources > 0 ? "Source quality is uncertain; review source counts and freshness." : "All dashboard sources are current and available.",
+    view.header.staleSources > 0 || view.header.unavailableSources > 0 ? "Source quality is uncertain; review source counts and freshness." : "All dashboard sources are current and available.", "Data source quality records",
   );
 
   const cards = [
@@ -206,6 +207,8 @@ section h2{font-size:clamp(1.1rem,1.7vw,1.4rem);margin:0 0 10px}
 .card span{display:block;font-size:.84rem;opacity:.85}
 .card strong{display:block;font-size:1.6rem;overflow-wrap:anywhere}
 .table-wrap{overflow-x:auto;max-width:100%;border:1px solid color-mix(in srgb,CanvasText 25%,transparent);border-radius:9px}
+ .table-wrap:focus-visible{outline:3px solid Highlight;outline-offset:2px}
+section:target{border-left:3px solid Highlight;padding-left:10px}
 table{border-collapse:collapse;width:100%;min-width:720px}
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid color-mix(in srgb,CanvasText 15%,transparent);vertical-align:top}
 th{font-size:.79rem;letter-spacing:.02em;opacity:.85}
@@ -229,6 +232,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem;ov
 <header class="header">
 <h1>Cline Orchestrator</h1>
 <p class="subtitle">Read-only operator dashboard · Snapshot generated ${escapeHtml(view.generatedAt)} · No actions available</p>
+<p class="minor">Refresh this page to capture a new bounded snapshot. Sign-in sessions expire after 10 minutes; historical rows are not a complete audit trail.</p>
 </header>
 <div class="shell">
 <nav class="contents" aria-label="Dashboard sections">
@@ -247,15 +251,15 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem;ov
 <main id="main-content" class="content" tabindex="-1">
 <section id="overview" aria-labelledby="overview-heading">
 <h2 id="overview-heading">Overview</h2>
-<p class="snapshot-notice" role="status">Snapshot health: <strong>${escapeHtml(view.header.health)}</strong>. ${escapeHtml(view.header.staleSources)} stale and ${escapeHtml(view.header.unavailableSources)} unavailable data sources. Counts are from the captured snapshot, not a live availability guarantee.</p>
+<p class="snapshot-notice" role="status">Snapshot health: <strong>${escapeHtml(view.header.health)}</strong>. ${escapeHtml(view.header.staleSources)} stale and ${escapeHtml(view.header.unavailableSources)} unavailable data sources. Counts are from the captured snapshot, not a live availability guarantee. Metrics may represent partial task history (up to 100 records), not all work.</p>
 <div class="cards">${cards}</div>
 </section>
 <section id="attention" aria-labelledby="attention-heading"><h2 id="attention-heading">Attention</h2>${attention}</section>
-<section id="writers" aria-labelledby="writers-heading"><h2 id="writers-heading">Active writers</h2>${writers}</section>
+<section id="writers" aria-labelledby="writers-heading"><h2 id="writers-heading">Active writers</h2><p class="minor">Writer leases indicate coordination, not agent/model health or permission to execute.</p>${writers}</section>
 <section id="tasks" aria-labelledby="tasks-heading"><h2 id="tasks-heading">Tasks</h2>${sourceWarning(view, "tasks")}${tasks}</section>
 <section id="workflows" aria-labelledby="workflows-heading"><h2 id="workflows-heading">Workflows</h2>${sourceWarning(view, "workflows")}${workflows}</section>
 <section id="incidents" aria-labelledby="incidents-heading"><h2 id="incidents-heading">Incidents</h2>${sourceWarning(view, "incidents")}${incidents}</section>
-<section id="handoffs" aria-labelledby="handoffs-heading"><h2 id="handoffs-heading">Specialist handoffs</h2>${handoffs}</section>
+<section id="handoffs" aria-labelledby="handoffs-heading"><h2 id="handoffs-heading">Specialist handoffs</h2><p class="minor">A bounded timeline is not an audit log; disconnected sources cannot confirm no activity.</p>${handoffs}</section>
 <section id="sources" aria-labelledby="sources-heading"><h2 id="sources-heading">Data quality and source notices</h2>${sources}</section>
 <p class="footer">Read-only snapshot. Section links stay inside this document. No machine, task, credential, installation, Git or release controls are exposed.</p>
 </main>
