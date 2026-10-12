@@ -63,7 +63,11 @@ function headers(csp: string): Record<string, string> {
     "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": csp,
     "Cache-Control": "no-store, max-age=0", "Pragma": "no-cache",
     "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    // Chrome can send Origin: null for normal HTML form POSTs when the
+    // originating page has Referrer-Policy: no-referrer. Keep same-origin
+    // form navigation functional WITHOUT relaxing the strict Host/Origin gate.
+    // The authenticated passive dashboard continues to send no-referrer.
+    "Referrer-Policy": csp === LOGIN_CSP ? "same-origin" : "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Vary": "Cookie",
   };
