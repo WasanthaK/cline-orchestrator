@@ -20,7 +20,8 @@ test("UX-E2a offline snapshot is standalone, inert and contains no raw private f
   const dir = await mkdtemp(path.join(os.tmpdir(), "orch-view-"));
   try {
     const file = path.join(dir, "review.html");
-    const receipt = await exportOfflineSetupView({ ...assessment(), privateCredential: "SECRET_PRIVATE_CANARY" }, file);
+    const poisonedAssessment = { ...assessment(), privateCredential: "SECRET_PRIVATE_CANARY" };
+    const receipt = await exportOfflineSetupView(poisonedAssessment, file);
     assert.equal(receipt.created, true);
     assert.equal(receipt.opensListener, false);
     assert.equal(receipt.grantsAuthority, false);
