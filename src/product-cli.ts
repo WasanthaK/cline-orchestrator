@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { exportOfflineSetupView } from "./offline-setup-view-export.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -28,6 +29,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "diagnose",
     "config",
     "setup",
+    "setup-view",
     "setup-config",
     "setup-project",
     "setup-workspace",
@@ -50,6 +52,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 });
 
 export type ProductCliRoute =
+  | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
   | { kind: "setup_project"; displayName: string; configPath?: never }
   | { kind: "setup_workspace"; inputPath: string; configPath?: never }
@@ -113,6 +116,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator diagnose <workspace>",
     "  cline-orchestrator config",
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
+    "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
     "  cline-orchestrator setup-project <display-name>  # interactive project registration",
     "  cline-orchestrator setup-workspace <input.json>  # interactive workspace/Safety registration",
@@ -142,13 +146,17 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     const route = routeProductCli(argv.slice(2));
-    if ((route.kind !== "native" && route.kind !== "legacy" && route.kind !== "setup_start") || route.configPath !== undefined) {
+    if ((route.kind !== "native" && route.kind !== "legacy" && route.kind !== "setup_start" && route.kind !== "setup_view") || route.configPath !== undefined) {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     return { ...route, configPath: filePath };
   }
   const [command, ...rest] = argv;
   if (!command) throw new ProductCliError(productCliUsage(), "usage_invalid");
+  if (command === "setup-view") {
+    if (rest.length !== 2 || !rest[0]?.trim() || !rest[1]?.trim()) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "setup_view", workspace: rest[0], outputFile: rest[1] };
+  }
   if (command === "setup-start") {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "setup_start", workspaceId: rest[0]! };
@@ -400,6 +408,12 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "setup_view") {
+    const result = await runNativeProductCommand({ kind: "native", command: "diagnose", args: [route.workspace], configPath: route.configPath }, deps);
+    const receipt = await exportOfflineSetupView(result.payload as FirstRunAssessmentV1, route.outputFile);
+    process.stdout.write(JSON.stringify(receipt, null, 2) + "\n");
+    return undefined;
+  }
   if (route.kind === "setup_start") {
     const inherited = { ...deps.env };
     const config = await resolveProductConfigSource(route.configPath ?? inherited.ORCH_CONFIG_FILE,
