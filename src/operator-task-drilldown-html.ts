@@ -21,10 +21,12 @@ function sourceWarning(view: OperatorVisualizationV1): string {
   return n && (!n.available || n.stale || n.truncated || n.errorCode)
     ? '<p class="notice">Task source is unavailable, stale or incomplete. Records shown may not represent a complete current list.</p>' : '';
 }
+function projectName(t: Task): string { return t.projectDisplayName ? esc(t.projectDisplayName) : esc(t.projectId); }
+function workspaceName(t: Task): string { return t.workspaceDisplayName ? esc(t.workspaceDisplayName) : esc(t.workspaceId); }
 function taskRow(t: Task): string {
   const href = safeTaskHref(t.taskId);
   return '<tr><td>' + (href ? '<a href="' + href + '">Task …' + esc(t.taskId.slice(-8)) + ' →</a>' : '<code>' + esc(t.taskId) + '</code>')
-    + '</td><td><code>' + esc(t.projectId) + '</code></td><td>' + esc(t.status) + '</td><td>' + esc(t.updatedAt) + '</td></tr>';
+    + '</td><td>' + projectName(t) + '</td><td>' + esc(t.status) + '</td><td>' + esc(t.updatedAt) + '</td></tr>';
 }
 export function renderTaskGroupHtml(view: OperatorVisualizationV1, slug: string): string {
   const g = taskGroup(slug);
@@ -42,13 +44,13 @@ export function renderTaskDetailHtml(view: OperatorVisualizationV1, id: string):
   const t = matches[0]!;
   const field = (name: string, value: unknown) => '<div><dt>' + esc(name) + '</dt><dd>' + esc(value) + '</dd></div>';
   const body = '<section><h2>Task summary</h2>' + sourceWarning(view) + '<dl>'
-    + field('Status', t.status) + field('Project ID', t.projectId) + field('Workspace ID', t.workspaceId)
+    + field('Status', t.status) + field('Project', t.projectDisplayName ?? 'Name unavailable') + field('Workspace', t.workspaceDisplayName ?? 'Name unavailable')
     + field('Last updated', t.updatedAt) + field('Run count', t.runCount)
     + field('Recovery count', t.recoveryCount) + '</dl></section>'
     + '<section><h2>Independent evidence</h2><dl>' + field('Validation', evidence(t.validationPassed))
     + field('Diff safety', evidence(t.diffSafetyPassed)) + '</dl><p class="notice">Completed does not imply independently approved or released. Worker testimony is not proof.</p></section>'
     + '<section><h2>Run-by-run history</h2><p class="minor">Not available from this sanitized dashboard reader. Run and recovery counts are aggregate evidence, not a verified timeline.</p></section>'
-    + '<section><h2>Technical identifiers</h2><dl>' + field('Task ID', t.taskId) + '</dl></section>'
+    + '<section><h2>Technical identifiers</h2><dl>' + field('Task ID', t.taskId) + field('Project ID', t.projectId) + field('Workspace ID', t.workspaceId) + '</dl></section>'
     + '<p><a href="/viewer/status/' + esc(taskStatusGroup(t.status)) + '">← Status-filtered tasks</a></p>';
   return shell('Task …' + t.taskId.slice(-8), 'Read-only task details and available evidence', body, view.generatedAt);
 }
