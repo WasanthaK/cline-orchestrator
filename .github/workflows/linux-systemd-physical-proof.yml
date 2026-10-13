@@ -1,0 +1,105 @@
+name: Linux systemd physical proof (manual, pinned)
+
+# M18D4b: register only this Linux proof on main, not the combined
+# development-branch physical workflow. The confirmation gates any mutation
+# inside the disposable guest, and the source is pinned independently of
+# whichever ref was selected for dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RUN_DISPOSABLE_LINUX_SYSTEMD to authorize temporary systemd operations inside the isolated GitHub-hosted Docker guest'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-systemd-physical-proof
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    if: ${{ inputs.confirmation == 'RUN_DISPOSABLE_LINUX_SYSTEMD' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact reviewed proof candidate
+        uses: actions/checkout@v4
+        with:
+          ref: d598341467fac86a2e5161a0613a17a0b91665d4
+          persist-credentials: false
+      - name: Verify immutable candidate identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'd598341467fac86a2e5161a0613a17a0b91665d4'
+          echo "Reviewed proof candidate: $(git rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pinned source dependencies
+        run: npm ci --ignore-scripts
+      - name: Build product
+        run: npm run build
+      - name: Pack actual consumer artifact
+        run: npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+      - name: Build disposable Linux systemd guest
+        run: docker build -t cline-systemd-proof -f scripts/disposable-systemd/Dockerfile .
+      - name: Boot guest with reduced host impact
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No privileged container, host network, writable host cgroup bind,
+          # device passthrough or host service-manager invocation.
+          docker run -d --name cline-systemd-proof-guest \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --cgroupns=private --tmpfs /run --tmpfs /run/lock \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
+            cline-systemd-proof
+          sleep 5
+          docker inspect -f '{{.State.Status}}' cline-systemd-proof-guest | grep -Fx running
+      - name: Preflight systemd manager inside isolated guest
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec cline-systemd-proof-guest bash -euc '
+            test "$(cat /proc/1/comm)" = systemd
+            test -d /run/systemd/system
+            systemctl list-unit-files --no-pager >/dev/null
+          '
+          # If reduced-privilege boot is impossible, fail closed. Do not
+          # expand privileges on the GitHub runner as an automatic fallback.
+      - name: Prove packaged Linux service lifecycle in guest only
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec cline-systemd-proof-guest bash -euc '
+            mkdir -p /opt/consumer /opt/workspace
+            touch /run/cline-orchestrator-disposable-guest
+          '
+          docker cp "$RUNNER_TEMP/cline-orchestrator-0.1.0.tgz" cline-systemd-proof-guest:/tmp/package.tgz
+          docker cp scripts/prove-disposable-linux-systemd.sh cline-systemd-proof-guest:/tmp/prove.sh
+          docker exec cline-systemd-proof-guest npm install --global --prefix /opt/consumer --ignore-scripts --no-audit --no-fund /tmp/package.tgz
+          docker exec \
+            -e ORCH_DISPOSABLE_SYSTEMD_PROOF=I_AUTHORIZE_DISPOSABLE_SYSTEMD \
+            -e ORCH_PACKAGED_INDEX=/opt/consumer/lib/node_modules/cline-orchestrator/dist/index.js \
+            -e ORCH_DISPOSABLE_WORKSPACE=/opt/workspace \
+            cline-systemd-proof-guest bash /tmp/prove.sh
+      - name: Capture disposable guest diagnostics
+        if: always()
+        shell: bash
+        run: |
+          docker logs cline-systemd-proof-guest 2>&1 | tail -100 || true
+          docker exec cline-systemd-proof-guest journalctl --no-pager -n 100 || true
+      - name: Always remove disposable guest
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f cline-systemd-proof-guest || true
+          if docker container inspect cline-systemd-proof-guest >/dev/null 2>&1; then
+            echo 'FAIL: disposable guest remains registered'
+            exit 1
+          fi
+          echo 'Disposable guest removed'
