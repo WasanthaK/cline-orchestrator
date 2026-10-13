@@ -422,7 +422,7 @@ code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.78rem
 <div class="topbar"><span class="topbar-label"><span class="local-dot" aria-hidden="true"></span>Local operator console</span><span class="mode-pill">Read-only snapshot</span></div>
 <section id="overview" aria-labelledby="overview-heading">
 <div class="section-head"><div><p class="eyebrow">Your workspace at a glance</p><h2 id="overview-heading">Overview</h2><p class="section-intro">The work, decisions and source coverage that matter right now.</p></div><div class="capture"><strong>Snapshot captured</strong><time datetime="${escapeHtml(view.generatedAt)}">${escapeHtml(view.generatedAt)}</time></div></div>
-<div class="pulse-banner" role="status">
+<div class="pulse-banner" role="status" aria-label="Snapshot health: ${escapeHtml(view.header.health)}">
 <div class="pulse-left"><span class="status-light ${healthTone}" aria-hidden="true"></span><div><strong>${escapeHtml(view.header.health === "healthy" ? "Observed sources healthy" : view.header.health === "attention" ? "Some work needs attention" : view.header.health === "critical" ? "Critical observations detected" : "System visibility incomplete")}</strong><p>${escapeHtml(view.header.unavailableSources)} unavailable · ${escapeHtml(view.header.staleSources)} stale · ${escapeHtml(sourceConcerns)} sources with notices</p></div></div>
 <a href="#sources" class="pulse-link">See source status →</a>
 </div>
