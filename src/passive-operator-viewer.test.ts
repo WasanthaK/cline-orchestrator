@@ -115,7 +115,7 @@ test("UX-2 read-only status and task drilldown require a session and expose only
    assert.equal(detail.status,200);
    const html=await detail.text();
    assert.match(html,/Independent evidence/);
-   assert.match(html,/Run-by-run history/);
+   assert.match(html,/Execution timeline/);
    assert.match(html,/Not available/);
    assert.doesNotMatch(html,/<script|<form|<button|<input|goal|credential/i);
    const missing=await fetch(viewer.origin + "/viewer/task/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",{headers:{Cookie:cookie}});
@@ -127,4 +127,39 @@ test("UX-2 read-only status and task drilldown require a session and expose only
    const post=await fetch(viewer.origin + "/viewer/status/failed",{method:"POST",headers:{Cookie:cookie,Origin:viewer.origin}});
    assert.equal(post.status,403);
  } finally {await viewer.close();}
+});
+
+test("UX-2C signed-in detail shows allowlisted timeline without leaking raw event messages", async () => {
+  const id = "11111111-2222-3333-4444-555555555555";
+  const state = snapshot();
+  state.taskBoard = [{ taskId:id, projectId:"p1",workspaceId:"w1",status:"completed",
+    updatedAt:"2026-10-13T01:00:00.000Z",runCount:1,recoveryCount:0,waitingForHuman:false }];
+  let timelineCalls=0;
+  const viewer=await startPassiveOperatorViewer({
+    readSnapshot: async()=>state,
+    readTaskTimeline: async(identity)=> {
+      timelineCalls++;
+      assert.equal(identity.taskId,id);
+      return {schemaVersion:1,readOnly:true,availability:"available",truncated:false,totalObserved:1,
+        capturedAt:"2026-10-13T01:00:00.000Z",
+        events:[{type:"run_started",label:"Run started",at:"2026-10-13T00:59:00.000Z"}]};
+    },
+  }, {host:"127.0.0.1",port:0,token,testOnlyEphemeralPort:true});
+  try {
+    await fetch(viewer.origin+"/viewer/task/"+id);
+    assert.equal(timelineCalls,0);
+    const sign=await fetch(viewer.origin+"/viewer/login",{method:"POST",redirect:"manual",
+      headers:{Origin:viewer.origin,"Content-Type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({token})});
+    const cookie=sign.headers.get("set-cookie")!.split(";")[0]!;
+    await fetch(viewer.origin+"/viewer",{headers:{Cookie:cookie}});
+    assert.equal(timelineCalls,0);
+    const detail=await fetch(viewer.origin+"/viewer/task/"+id,{headers:{Cookie:cookie}});
+    assert.equal(detail.status,200);
+    assert.equal(timelineCalls,1);
+    const html=await detail.text();
+    assert.match(html,/Run started/);
+    assert.match(html,/2026-10-13T00:59:00.000Z/);
+    assert.doesNotMatch(html,/<script|<button|<form/);
+  } finally {await viewer.close();}
 });
