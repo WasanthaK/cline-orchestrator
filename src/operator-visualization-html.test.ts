@@ -246,7 +246,7 @@ test("Console-2 renders a real visual console shell with bounded overview previe
   assert.match(html, /Recent work/);
   assert.match(html, /Work outcomes/);
   assert.match(html, /Task records/);
-  assert.match(html, /Project <code>project<\/code>/);
+  assert.match(html, /Project <code title="Project name unavailable">project<\/code>/);
   assert.match(html, /@media\(max-width:800px\)/);
   assert.match(html, /@media\(max-width:480px\)/);
   assert.doesNotMatch(html, /<form|<script|<button|<input|onclick=/i);
@@ -348,8 +348,8 @@ test("UX-2B project and workspace names are escaped, IDs remain fallback", () =>
  const html = renderOperatorVisualizationHtml(v);
  assert.match(html,/Acme &amp; Partners/);
  assert.match(html,/Frontend/);
- assert.match(html,/Project <span class="entity-name">Acme &amp; Partners<\\/span>/);
+ assert.match(html,/Project <span class="entity-name">Acme &amp; Partners<\/span>/);
  delete v.taskBoard[0]!.projectDisplayName;
  const fallback=renderOperatorVisualizationHtml(v);
- assert.match(fallback, /Project <code title="Project name unavailable">project<\\/code>/);
+ assert.match(fallback, /Project <code title="Project name unavailable">project<\/code>/);
 });
