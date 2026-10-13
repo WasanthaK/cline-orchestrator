@@ -444,7 +444,7 @@ ${attentionPreview}
 <div class="preview-head"><h3>Recent work</h3><a href="#tasks">See all shown tasks →</a></div>
 <p class="preview-caption">Latest five rows in the current task snapshot, not a chronological audit trail.</p>
 ${taskPreview}</div>
-<p class="snapshot-notice">Counts are from a bounded, manually refreshed snapshot, not a live guarantee. Up to 100 tasks may be returned, and missing monitoring feeds are not shown as zeros. Refresh this page for a new snapshot. Sign-in sessions expire after 10 minutes; historical rows are not a complete audit trail.</p>
+<p class="snapshot-notice">Counts are from a bounded, manually refreshed snapshot, not a live guarantee. Up to 100 tasks may be returned, and missing monitoring feeds are not shown as zeros. Refresh this page to capture a new bounded snapshot. Sign-in sessions expire after 10 minutes; historical rows are not a complete audit trail.</p>
 </section>
 <section id="attention" aria-labelledby="attention-heading"><div class="section-hdr"><div><h2 id="attention-heading">Attention</h2><p>Items identified from the currently available sanitized evidence.</p></div><span class="section-index">02 / 08</span></div><div class="panel">${attention}</div></section>
 <section id="tasks" aria-labelledby="tasks-heading"><div class="section-hdr"><div><h2 id="tasks-heading">Tasks</h2><p>Bounded task records and independent validation indicators.</p></div><span class="section-index">03 / 08</span></div><div class="panel">${sourceWarning(view, "tasks")}${tasks}</div></section>
