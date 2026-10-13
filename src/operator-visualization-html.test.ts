@@ -273,3 +273,52 @@ test("Console-2 status and previews do not turn missing or truncated feeds into 
   assert.match(html, /Source coverage/);
   assert.match(html, /not a complete audit trail/);
 });
+
+test("UX-1 operator-first overview displays measured task status breakdown, not a decorative gauge", () => {
+  const sample = view();
+  const html = renderOperatorVisualizationHtml(sample);
+  assert.match(html, /Work outcomes/);
+  assert.match(html, /Task status distribution in the observed sample/);
+  assert.match(html, /Needs review: 1/);
+  assert.match(html, /<svg class="meter"/);
+  assert.match(html, /<desc id="work-meter-description">/);
+  assert.match(html, /\b1<\/text>/);
+  assert.match(html, /bounded sample, not an all-time success rate/);
+  assert.match(html, /Needs attention/);
+  assert.match(html, /Recent work/);
+  assert.match(html, /href="#tasks"/);
+  assert.match(html, /href="#sources"/);
+  assert.doesNotMatch(html, /<script|<form|<button|<input|onclick=/i);
+});
+
+test("UX-1 missing task feed never draws success, failure or false empty current-state indicators", () => {
+  const missing: OperatorVisualizationV1 = {
+    ...view(),
+    taskBoard: [],
+    header: { ...view().header, health: "unknown", activeTasks: 0 },
+    sourceNotices: [{ source: "tasks", stale: true, available: false, truncated: false }],
+  };
+  const html = renderOperatorVisualizationHtml(missing);
+  assert.match(html, /Incomplete or stale sample/);
+  assert.match(html, /Attention status cannot be confirmed/);
+  assert.match(html, /No task status breakdown is available/);
+  assert.match(html, /Source unavailable; no current results can be confirmed/);
+  assert.match(html, /Health: unknown/);
+  assert.doesNotMatch(html, /NaN|Infinity/);
+});
+
+test("UX-1 task outcome meter accounts for every sampled status, including unexpected statuses", () => {
+  const sample = view();
+  sample.taskBoard.push({
+    ...sample.taskBoard[0]!, taskId: "other-task", status: "failed",
+    waitingForHuman: false, validationPassed: undefined, diffSafetyPassed: undefined,
+  });
+  sample.taskBoard.push({
+    ...sample.taskBoard[0]!, taskId: "completed-task", status: "completed",
+    waitingForHuman: false, validationPassed: true, diffSafetyPassed: true,
+  });
+  const html = renderOperatorVisualizationHtml(sample);
+  assert.match(html, /Needs review: 1, Completed: 1|Completed: 1, Needs review: 1/);
+  assert.match(html, /Failed: 1/);
+  assert.match(html, /3<\/text>/);
+});
