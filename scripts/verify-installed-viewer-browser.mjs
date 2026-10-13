@@ -197,8 +197,10 @@ try {
   for (let attempt = 0; attempt < 60; attempt++) {
     const state = await evaluate("return {url:location.pathname,"
       + "body:document.body.innerText.slice(0,600),"
-      + "loginForm:document.querySelector('form')!==null};");
-    if (state.url === "/viewer" && state.body.includes("Read-only operator dashboard")) {
+      + "loginForm:document.querySelector('form')!==null,"
+      + "consoleMain:document.querySelector('main#main-content')!==null,"
+      + "overview:document.querySelector('section#overview[aria-labelledby=overview-heading]')!==null};");
+    if (state.url === "/viewer" && state.consoleMain && state.overview && !state.loginForm) {
       acknowledged = true;
       break;
     }
