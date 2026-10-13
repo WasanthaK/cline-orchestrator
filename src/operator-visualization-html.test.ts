@@ -340,3 +340,16 @@ test("UX-2 task meter links to fixed read-only status routes", () => {
  assert.match(html, /aria-label="Needs review: 1 tasks"/);
  assert.doesNotMatch(html, /href="https?:\/\//);
 });
+
+test("UX-2B project and workspace names are escaped, IDs remain fallback", () => {
+ const v = view();
+ v.taskBoard[0]!.projectDisplayName = 'Acme & Partners';
+ v.taskBoard[0]!.workspaceDisplayName = 'Frontend';
+ const html = renderOperatorVisualizationHtml(v);
+ assert.match(html,/Acme &amp; Partners/);
+ assert.match(html,/Frontend/);
+ assert.match(html,/Project <span class="entity-name">Acme &amp; Partners<\\/span>/);
+ delete v.taskBoard[0]!.projectDisplayName;
+ const fallback=renderOperatorVisualizationHtml(v);
+ assert.match(fallback, /Project <code title="Project name unavailable">project<\\/code>/);
+});
