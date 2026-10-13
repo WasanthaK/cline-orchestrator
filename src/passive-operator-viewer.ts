@@ -6,6 +6,7 @@ import { renderOperatorVisualizationHtml } from "./operator-visualization-html.j
 import type { OperatorVisualizationV1 } from "./operator-visualization.js";
 import { renderTaskGroupHtml, renderTaskDetailHtml } from "./operator-task-drilldown-html.js";
 import { taskGroup, safeTaskHref } from "./operator-task-groups.js";
+import { unavailableTaskTimeline, type SanitizedTaskTimelineV1 } from "./operator-task-timeline.js";
 
 const COOKIE = "orch_viewer";
 const SESSION_MS = 10 * 60_000;
@@ -40,6 +41,10 @@ export interface PassiveViewerConfig {
 export interface TrustedPassiveSnapshotReader {
   /** Already-sanitized bounded view from trusted in-process code only. */
   readSnapshot(): Promise<OperatorVisualizationV1>;
+  /** Explicit opt-in read-only timeline, queried on an authenticated detail request only. */
+  readTaskTimeline?(identity: {
+    taskId: string; projectId: string; workspaceId: string; updatedAt: string;
+  }): Promise<SanitizedTaskTimelineV1>;
 }
 export class PassiveViewerError extends Error {
   constructor(public readonly code: "config_invalid" | "snapshot_invalid") {
@@ -186,9 +191,29 @@ export async function startPassiveOperatorViewer(
           }
           let html: string;
           try {
-            html = statusSlug ? renderTaskGroupHtml(view, statusSlug)
-              : detailId ? renderTaskDetailHtml(view, detailId)
-              : renderOperatorVisualizationHtml(view);
+            if (detailId) {
+              const matches = view.taskBoard.filter(task => task.taskId === detailId);
+              if (matches.length !== 1) {
+                send(res, 404, statusPage("Task not found in current snapshot"), VIEW_CSP);
+                return;
+              }
+              const task = matches[0]!;
+              let timeline = unavailableTaskTimeline("not_connected");
+              if (reader.readTaskTimeline) {
+                try {
+                  timeline = await reader.readTaskTimeline({
+                    taskId: task.taskId, projectId: task.projectId,
+                    workspaceId: task.workspaceId, updatedAt: task.updatedAt,
+                  });
+                } catch {
+                  timeline = unavailableTaskTimeline("read_failed");
+                }
+              }
+              html = renderTaskDetailHtml(view, detailId, timeline);
+            } else {
+              html = statusSlug ? renderTaskGroupHtml(view, statusSlug)
+                : renderOperatorVisualizationHtml(view);
+            }
           } catch {
             send(res, 404, statusPage("Task not found in current snapshot"), VIEW_CSP);
             return;

@@ -120,6 +120,12 @@ test("M12N lifecycle renews same candidate before same-generation fence and rema
   lifecycle.start();
   assert.ok(scheduled);
 
+  // Candidate renewal uses the real process clock, unlike the injected
+  // fence clock. A zero-delay simulated timer can otherwise renew inside the
+  // exact same millisecond as assignment issuance, producing an identical
+  // expiry despite a successful renewal. Make passage of process time explicit
+  // while retaining the strict extension assertion below.
+  await settle(() => Date.now() > Date.parse(beforeAssignment.issuedAt));
   value.advance(5_000);
   scheduled!();
   await settle(() => lifecycle.currentClaim().issuedAt !== beforeClaim.issuedAt);
