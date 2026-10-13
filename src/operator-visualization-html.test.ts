@@ -283,7 +283,7 @@ test("UX-1 operator-first overview displays measured task status breakdown, not 
   assert.match(html, /<svg class="meter"/);
   assert.match(html, /<desc id="work-meter-description">/);
   assert.match(html, /\b1<\/text>/);
-  assert.match(html, /bounded sample, not an all-time success rate/);
+  assert.match(html, /Incomplete or stale sample/);
   assert.match(html, /Needs attention/);
   assert.match(html, /Recent work/);
   assert.match(html, /href="#tasks"/);
@@ -322,4 +322,14 @@ test("UX-1 task outcome meter accounts for every sampled status, including unexp
   assert.match(html, /Needs review: 1/);
   assert.match(html, /Failed: 1/);
   assert.match(html, /3<\/text>/);
+});
+
+test("UX-1 current task sample remains labelled as bounded, never a lifetime rate", () => {
+  const current: OperatorVisualizationV1 = {
+    ...view(),
+    sourceNotices: [],
+  };
+  const html = renderOperatorVisualizationHtml(current);
+  assert.match(html, /bounded sample, not an all-time success rate/);
+  assert.match(html, /Task status distribution in the observed sample/);
 });
