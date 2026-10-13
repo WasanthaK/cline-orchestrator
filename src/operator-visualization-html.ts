@@ -201,38 +201,38 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
   let usedLength = 0;
   const arcs = taskSampleSize === 0 ? "" : segments.filter(group => group.count > 0).map(group => {
     const length = group.count / taskSampleSize * circumference;
-    const html = \`<circle cx="88" cy="88" r="52" fill="none" stroke="\${group.color}" stroke-width="17" stroke-dasharray="\${length.toFixed(2)} \${circumference.toFixed(2)}" stroke-dashoffset="\${(-usedLength).toFixed(2)}" transform="rotate(-90 88 88)"></circle>\`;
+    const html = `<circle cx="88" cy="88" r="52" fill="none" stroke="${group.color}" stroke-width="17" stroke-dasharray="${length.toFixed(2)} ${circumference.toFixed(2)}" stroke-dashoffset="${(-usedLength).toFixed(2)}" transform="rotate(-90 88 88)"></circle>`;
     usedLength += length;
     return html;
   }).join("");
-  const workMeter = \`<div class="meter-layout">
+  const workMeter = `<div class="meter-layout">
     <svg class="meter" viewBox="0 0 176 176" role="img" aria-labelledby="work-meter-title work-meter-description">
       <title id="work-meter-title">Task status distribution in the observed sample</title>
-      <desc id="work-meter-description">\${escapeHtml(segments.filter(group => group.count > 0).map(group => group.label + ": " + group.count).join(", ") || "No sampled tasks")}</desc>
+      <desc id="work-meter-description">${escapeHtml(segments.filter(group => group.count > 0).map(group => group.label + ": " + group.count).join(", ") || "No sampled tasks")}</desc>
       <circle cx="88" cy="88" r="52" fill="none" stroke="#e7ecf6" stroke-width="17"></circle>
-      \${arcs}
-      <text x="88" y="86" text-anchor="middle" class="meter-total">\${escapeHtml(taskSampleSize)}</text>
+      ${arcs}
+      <text x="88" y="86" text-anchor="middle" class="meter-total">${escapeHtml(taskSampleSize)}</text>
       <text x="88" y="104" text-anchor="middle" class="meter-caption">sampled tasks</text>
     </svg>
-    <div class="meter-legend" aria-label="Task status counts">\${segments.filter(group => group.count > 0).map(group =>
-      \`<div class="legend-row"><span class="legend-dot" style="background:\${group.color}" aria-hidden="true"></span><span>\${escapeHtml(group.label)}</span><strong>\${escapeHtml(group.count)}</strong></div>\`
-    ).join("") || \`<p class="minor">No task status breakdown is available.</p>\`}</div>
+    <div class="meter-legend" aria-label="Task status counts">${segments.filter(group => group.count > 0).map(group =>
+      `<div class="legend-row"><span class="legend-dot" style="background:${group.color}" aria-hidden="true"></span><span>${escapeHtml(group.label)}</span><strong>${escapeHtml(group.count)}</strong></div>`
+    ).join("") || `<p class="minor">No task status breakdown is available.</p>`}</div>
   </div>
-  <p class="sample-note">\${escapeHtml(sampleIsIncomplete ? "Incomplete or stale sample — results are not a complete current view." : "This is a bounded sample, not an all-time success rate or full historical count.")}</p>\`;
+  <p class="sample-note">${escapeHtml(sampleIsIncomplete ? "Incomplete or stale sample — results are not a complete current view." : "This is a bounded sample, not an all-time success rate or full historical count.")}</p>`;
 
   const recentTaskSample = view.taskBoard.slice(0, 5);
   const taskPreview = recentTaskSample.length === 0
     ? empty(sourceEmpty(view, "tasks", "No tasks in the current bounded snapshot."))
-    : \`<ul class="activity-list">\${recentTaskSample.map(task =>
-        \`<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">Task <code title="\${escapeHtml(task.taskId)}">…\${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project <code>\${escapeHtml(task.projectId)}</code> · \${escapeHtml(task.updatedAt)}</span></div>\${badge(task.status)}</li>\`
-      ).join("")}</ul>\`;
+    : `<ul class="activity-list">${recentTaskSample.map(task =>
+        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">Task <code title="${escapeHtml(task.taskId)}">…${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project <code>${escapeHtml(task.projectId)}</code> · ${escapeHtml(task.updatedAt)}</span></div>${badge(task.status)}</li>`
+      ).join("")}</ul>`;
   const taskAttention = view.taskBoard.filter(task =>
     task.waitingForHuman || ["failed", "validation_failed", "stalled"].includes(task.status)).slice(0, 4);
   const taskAttentionUnknown = sampleIsIncomplete || taskSampleSize === 0 && Boolean(tasksMeta?.available === false);
   const attentionPreview = taskAttention.length > 0
-    ? \`<ul class="activity-list">\${taskAttention.map(task =>
-        \`<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">\${escapeHtml(task.waitingForHuman ? "Needs human review" : task.status === "stalled" ? "Stalled work" : "Task failed")} <code title="\${escapeHtml(task.taskId)}">…\${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project <code>\${escapeHtml(task.projectId)}</code></span></div>\${badge(task.status)}</li>\`
-      ).join("")}</ul>\`
+    ? `<ul class="activity-list">${taskAttention.map(task =>
+        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">${escapeHtml(task.waitingForHuman ? "Needs human review" : task.status === "stalled" ? "Stalled work" : "Task failed")} <code title="${escapeHtml(task.taskId)}">…${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project <code>${escapeHtml(task.projectId)}</code></span></div>${badge(task.status)}</li>`
+      ).join("")}</ul>`
     : empty(taskAttentionUnknown ? "Attention status cannot be confirmed from this task source." : "No failed, stalled or review-waiting work observed in this bounded sample.");
   const sourceConcerns = view.sourceNotices.filter(notice =>
     !notice.available || notice.stale || notice.truncated || Boolean(notice.errorCode)).length;
@@ -421,29 +421,29 @@ code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.78rem
 <main id="main-content" class="content" tabindex="-1">
 <div class="topbar"><span class="topbar-label"><span class="local-dot" aria-hidden="true"></span>Local operator console</span><span class="mode-pill">Read-only snapshot</span></div>
 <section id="overview" aria-labelledby="overview-heading">
-<div class="section-head"><div><p class="eyebrow">Your workspace at a glance</p><h2 id="overview-heading">Overview</h2><p class="section-intro">The work, decisions and source coverage that matter right now.</p></div><div class="capture"><strong>Snapshot captured</strong><time datetime="\${escapeHtml(view.generatedAt)}">\${escapeHtml(view.generatedAt)}</time></div></div>
+<div class="section-head"><div><p class="eyebrow">Your workspace at a glance</p><h2 id="overview-heading">Overview</h2><p class="section-intro">The work, decisions and source coverage that matter right now.</p></div><div class="capture"><strong>Snapshot captured</strong><time datetime="${escapeHtml(view.generatedAt)}">${escapeHtml(view.generatedAt)}</time></div></div>
 <div class="pulse-banner" role="status">
-<div class="pulse-left"><span class="status-light \${healthTone}" aria-hidden="true"></span><div><strong>\${escapeHtml(view.header.health === "healthy" ? "Observed sources healthy" : view.header.health === "attention" ? "Some work needs attention" : view.header.health === "critical" ? "Critical observations detected" : "System visibility incomplete")}</strong><p>\${escapeHtml(view.header.unavailableSources)} unavailable · \${escapeHtml(view.header.staleSources)} stale · \${escapeHtml(sourceConcerns)} sources with notices</p></div></div>
+<div class="pulse-left"><span class="status-light ${healthTone}" aria-hidden="true"></span><div><strong>${escapeHtml(view.header.health === "healthy" ? "Observed sources healthy" : view.header.health === "attention" ? "Some work needs attention" : view.header.health === "critical" ? "Critical observations detected" : "System visibility incomplete")}</strong><p>${escapeHtml(view.header.unavailableSources)} unavailable · ${escapeHtml(view.header.staleSources)} stale · ${escapeHtml(sourceConcerns)} sources with notices</p></div></div>
 <a href="#sources" class="pulse-link">See source status →</a>
 </div>
-<div class="cards">\${cards}</div>
+<div class="cards">${cards}</div>
 <div class="decision-grid">
 <div class="preview-panel outcomes-panel">
 <div class="preview-head"><h3>Work outcomes</h3><a href="#tasks">See task records →</a></div>
-<p class="preview-caption">How the \${escapeHtml(taskSampleSize)} visible task records are distributed by status.</p>
-\${workMeter}
+<p class="preview-caption">How the ${escapeHtml(taskSampleSize)} visible task records are distributed by status.</p>
+${workMeter}
 </div>
 <div class="preview-panel attention-panel">
 <div class="preview-head"><h3>Needs attention</h3><a href="#attention">See all notices →</a></div>
 <p class="preview-caption">Review-waiting, failed and stalled records from the bounded task sample.</p>
-\${attentionPreview}
-<div class="attention-source-footer"><span>\${escapeHtml(sourceConcerns)} sources need a closer look</span><a href="#sources">Review coverage →</a></div>
+${attentionPreview}
+<div class="attention-source-footer"><span>${escapeHtml(sourceConcerns)} sources need a closer look</span><a href="#sources">Review coverage →</a></div>
 </div>
 </div>
 <div class="preview-panel recent-panel">
 <div class="preview-head"><h3>Recent work</h3><a href="#tasks">See all shown tasks →</a></div>
 <p class="preview-caption">Latest five rows in the current task snapshot, not a chronological audit trail.</p>
-\${taskPreview}</div>
+${taskPreview}</div>
 <p class="snapshot-notice">Counts are from a bounded, manually refreshed snapshot, not a live guarantee. Up to 100 tasks may be returned, and missing monitoring feeds are not shown as zeros. Refresh this page for a new snapshot. Sign-in sessions expire after 10 minutes; historical rows are not a complete audit trail.</p>
 </section>
 <section id="attention" aria-labelledby="attention-heading"><div class="section-hdr"><div><h2 id="attention-heading">Attention</h2><p>Items identified from the currently available sanitized evidence.</p></div><span class="section-index">02 / 08</span></div><div class="panel">${attention}</div></section>
