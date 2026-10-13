@@ -160,7 +160,7 @@ test("UX-B static section navigation is local, accessible and inert", () => {
   }
   const anchors = [...html.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map((match) => match[1]);
   assert.ok(anchors.length > 0);
-  assert.ok(anchors.every((href) => /^#[a-z-]+$/.test(href!)));
+  assert.ok(anchors.every((href) => /^#[a-z-]+$/.test(href!) || /^\/viewer\/(?:status\/[a-z-]+|task\/[a-f0-9-]+)$/.test(href!)));
   assert.doesNotMatch(html, /<form|<script|<button|<input|onclick=|fetch\(|<iframe/i);
   assert.match(html, /@media\(max-width:800px\)/);
   assert.match(html, /:focus-visible/);
@@ -332,4 +332,11 @@ test("UX-1 current task sample remains labelled as bounded, never a lifetime rat
   const html = renderOperatorVisualizationHtml(current);
   assert.match(html, /bounded sample, not an all-time success rate/);
   assert.match(html, /Task status distribution in the observed sample/);
+});
+
+test("UX-2 task meter links to fixed read-only status routes", () => {
+ const html = renderOperatorVisualizationHtml(view());
+ assert.match(html, /href="\/viewer\/status\/needs-review"/);
+ assert.match(html, /aria-label="Needs review: 1 tasks"/);
+ assert.doesNotMatch(html, /href="https?:\/\//);
 });
