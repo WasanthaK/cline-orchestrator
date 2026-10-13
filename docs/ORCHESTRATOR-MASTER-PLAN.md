@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-10-08
+Last updated: 2026-10-13
 Branch: `milestone-13/delegation`
 
 ## Canonical rules
@@ -50,7 +50,7 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
 | 17 | Productization / installer / first-run UX | Complete — M17A–M17H productization contracts and acceptance composition; harness `400ce861`, type correction `3aa7a573`, CI `#1346` green. Installer execution and physical service installation are not proven by the fake-driver harness. |
-| 18 | Production release | In progress — M18A–M18C complete; M18D real installation/service integration next, followed by M18E release candidate and M18F authorized staged release. M18C3 exact-head `f6d2bdd2`, CI `#1365` green. |
+| 18 | Production release | In progress — M18A–M18C complete; M18D Windows SCM disposable basic lifecycle proof **passed** (run `#38364810465`, pinned candidate `60ff71ff`), while Linux systemd physical lifecycle and full service-readiness/ownership acceptance remain open. M18E graphical acceptance is progressing through UX-2C; M18F staged release remains gated. |
 
 ---
 
@@ -1310,6 +1310,16 @@ M18D GitHub physical-proof isolation hardening: removed `--privileged` and the w
 
 M18D hosted proof isolation CI closeout: exact-head `fd7b6647ddf7f7f07d97a2da660ac46f2a49b659`, [CI #1410](https://github.com/WasanthaK/cline-orchestrator/actions/runs/37949562928), all three normal jobs green. This does not execute the separate manually dispatched physical-service workflow, and the reduced-privilege Linux systemd container may still fail to launch. Release gate remains blocked on a reviewed, narrowly registered manual workflow and genuine captured lifecycle proof on both operating systems. Broad PR #3 must not be merged simply to register the workflow.
 
+
+## M18D Windows SCM physical lifecycle — VERIFIED BASIC PROOF; M18D STILL OPEN (2026-10-13)
+
+The separately authorized, manually dispatched [GitHub-hosted Windows SCM proof run #38364810465](https://github.com/WasanthaK/cline-orchestrator/actions/runs/38364810465) passed on first attempt of the **new** run. The reviewed, immutable candidate was `60ff71ff71914aaa9dc580cb5bc171f86a0a52a3`, which contains the corrected `sc.exe create` argument handling; the manual dispatcher was on `main` commit `394ac4b76e7b97db4ee6a8f5c460cf2f01f8f8d8`. The earlier run `#37954600842` (including its failed retry) used the older `561abb17` candidate and is not acceptance evidence.
+
+**Captured physical evidence:** the Windows runner built the dedicated .NET service host, registered the temporary `cline-orchestrator` SCM entry, reached `START_PENDING` then `RUNNING`, issued a stop that reached `STOP_PENDING`, passed the script's stopped-state wait, deleted the temporary service, and independently confirmed **no SCM registration remained**. All workflow steps finished successfully. This proves the tested disposable SCM create/start/query/stop/delete lifecycle, not production installation.
+
+**Remaining Windows limitations:** the proof checked SCM state, not a separate application-level daemon health/readiness endpoint or durable runtime recovery; it did not prove artifact signing, package-installed native host ownership, real-product config/secrets, repeated/uninstall-failure behavior, or preservation across a production installer failure matrix. The native service executable was built for the hosted proof, not demonstrated as a signed, shipped, installed release artifact. Do not mark all M18D4c or M18D release acceptance complete merely because SCM reported `RUNNING`.
+
+**Next release blocker — Linux M18D4b:** the existing guarded `scripts/prove-disposable-linux-systemd.sh` and manual `.github/workflows/physical-service-acceptance.yml` on the development branch have not produced an independently verified systemd install/start/status/stop/remove run. The latter is **not** registered on `main`; do not merge broad PR #3 to enable it. Review and narrowly register a pinned, disposable-only Linux proof workflow, validate that the reduced-privilege guest can actually boot systemd (otherwise use an isolated VM), and obtain fresh explicit authorization before physical service-manager mutation. After Linux, address the remaining Windows/Linux installed-artifact readiness, cleanup, ownership, failure/restart and rollback evidence and only then reevaluate M18E release-candidate and M18F gates. Normal hosted CI or graphical UI acceptance is not a substitute for these proofs.
 
 ## M18E-UX-A — Graphical operator experience inventory / interaction contract — PROPOSED
 
