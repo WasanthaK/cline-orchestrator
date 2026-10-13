@@ -76,13 +76,24 @@ export function projectTaskTimeline(
     return unavailableTaskTimeline("history_over_limit");
   }
   const events: SanitizedTaskTimelineV1["events"] = [];
-  for (const event of rawEvents) {
-    if (!event || event.taskId !== taskId || !validTimestamp(event.timestamp)
-      || !Object.prototype.hasOwnProperty.call(eventLabels, event.type)) {
+  // Treat event records as untrusted runtime data even though the machine
+  // service advertises a typed contract. Never index labels with an "any".
+  for (const candidate of rawEvents as readonly unknown[]) {
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
       return unavailableTaskTimeline("invalid_event_source");
     }
-    // Labels and event type are constants from our allowlist, not source text.
-    events.push({ at: event.timestamp, type: event.type, label: eventLabels[event.type] });
+    const event = candidate as Record<string, unknown>;
+    const type = event.type;
+    const timestamp = event.timestamp;
+    if (event.taskId !== taskId || !validTimestamp(timestamp)
+      || typeof type !== "string"
+      || !Object.prototype.hasOwnProperty.call(eventLabels, type)) {
+      return unavailableTaskTimeline("invalid_event_source");
+    }
+    // The own-property test above authorizes only this fixed enum, and no
+    // message, event ID or untrusted source data enters the result.
+    const safeType = type as keyof typeof eventLabels;
+    events.push({ at: timestamp, type: safeType, label: eventLabels[safeType] });
   }
   const shown = events.slice(-TASK_EVENT_TIMELINE_LIMITS.maxShownEvents).reverse();
   return {
