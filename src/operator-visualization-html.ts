@@ -1,4 +1,5 @@
 import type { OperatorVisualizationV1 } from "./operator-visualization.js";
+import { taskStatusGroup, safeTaskHref, TASK_STATUS_GROUPS } from "./operator-task-groups.js";
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -96,7 +97,7 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
   const tasks = table(
     ["Task", "Project", "Workspace", "Status", "Runs", "Recoveries", "Validation", "Diff safety", "Updated"],
     view.taskBoard.map((task) => [
-      `<code>${escapeHtml(task.taskId)}</code>`,
+      safeTaskHref(task.taskId) ? `<a href="${safeTaskHref(task.taskId)}"><code>${escapeHtml(task.taskId)}</code></a>` : `<code>${escapeHtml(task.taskId)}</code>`,
       `<code>${escapeHtml(task.projectId)}</code>`,
       `<code>${escapeHtml(task.workspaceId)}</code>`,
       badge(task.status),
@@ -215,7 +216,7 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
       <text x="88" y="104" text-anchor="middle" class="meter-caption">sampled tasks</text>
     </svg>
     <div class="meter-legend" aria-label="Task status counts">${segments.filter(group => group.count > 0).map(group =>
-      `<div class="legend-row"><span class="legend-dot" style="background:${group.color}" aria-hidden="true"></span><span>${escapeHtml(group.label)}</span><strong>${escapeHtml(group.count)}</strong></div>`
+      `<a class="legend-row" href="/viewer/status/${TASK_STATUS_GROUPS.find(g => g.label === group.label)?.slug ?? "other"}"><span class="legend-dot" style="background:${group.color}" aria-hidden="true"></span><span>${escapeHtml(group.label)}</span><strong>${escapeHtml(group.count)}</strong></a>`
     ).join("") || `<p class="minor">No task status breakdown is available.</p>`}</div>
   </div>
   <p class="sample-note">${escapeHtml(sampleIsIncomplete ? "Incomplete or stale sample — results are not a complete current view." : "This is a bounded sample, not an all-time success rate or full historical count.")}</p>`;
@@ -224,7 +225,7 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
   const taskPreview = recentTaskSample.length === 0
     ? empty(sourceEmpty(view, "tasks", "No tasks in the current bounded snapshot."))
     : `<ul class="activity-list">${recentTaskSample.map(task =>
-        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">Task <code title="${escapeHtml(task.taskId)}">…${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project <code>${escapeHtml(task.projectId)}</code> · ${escapeHtml(task.updatedAt)}</span></div>${badge(task.status)}</li>`
+        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">Task ${safeTaskHref(task.taskId) ? `<a href="${safeTaskHref(task.taskId)}">…${escapeHtml(task.taskId.slice(-8))}</a>` : `<code>…${escapeHtml(task.taskId.slice(-8))}</code>`}</span><span class="activity-secondary">Project <code>${escapeHtml(task.projectId)}</code> · ${escapeHtml(task.updatedAt)}</span></div>${badge(task.status)}</li>`
       ).join("")}</ul>`;
   const taskAttention = view.taskBoard.filter(task =>
     task.waitingForHuman || ["failed", "validation_failed", "stalled"].includes(task.status)).slice(0, 4);
@@ -391,6 +392,7 @@ code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.78rem
 @media(max-width:1200px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.meter-layout{grid-template-columns:150px minmax(0,1fr)}}
 @media(max-width:1050px){.decision-grid{grid-template-columns:1fr}.meter-layout{grid-template-columns:200px minmax(0,1fr)}}
 @media(max-width:800px){.decision-grid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.pulse-banner{padding:14px 16px}}
+.legend-row{text-decoration:none;border-radius:8px;padding:3px 5px}.legend-row:hover,.legend-row:focus-visible{background:#eef2fb}.meter a:focus-visible circle{stroke-width:23px}.activity-primary a{color:#395cb9;font-weight:750}
 @media(max-width:480px){.pulse-banner{display:block}.pulse-link{display:inline-block;margin:11px 0 0 26px}.meter-layout{grid-template-columns:145px minmax(0,1fr);padding:0 7px}.meter-legend{gap:7px;padding:0 7px 0 0}.legend-row{font-size:.72rem;grid-template-columns:10px minmax(0,1fr) 22px;gap:5px}.sample-note{margin:0 13px 15px}.recent-panel .activity-list{grid-template-columns:1fr}.card{padding:12px}.card strong{font-size:1.25rem}}
 
 </style>
