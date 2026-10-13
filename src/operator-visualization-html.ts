@@ -10,6 +10,17 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+function projectLabel(task: OperatorVisualizationV1["taskBoard"][number]): string {
+  return task.projectDisplayName
+    ? `<span class="entity-name">${escapeHtml(task.projectDisplayName)}</span>`
+    : `<code title="Project name unavailable">${escapeHtml(task.projectId)}</code>`;
+}
+function workspaceLabel(task: OperatorVisualizationV1["taskBoard"][number]): string {
+  return task.workspaceDisplayName
+    ? `<span class="entity-name">${escapeHtml(task.workspaceDisplayName)}</span>`
+    : `<code title="Workspace name unavailable">${escapeHtml(task.workspaceId)}</code>`;
+}
+
 function badge(value: string): string {
   const tone = ["completed", "succeeded", "active"].includes(value) ? "success"
     : ["failed", "critical", "rolled_back", "blocked"].includes(value) ? "danger"
@@ -98,8 +109,8 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
     ["Task", "Project", "Workspace", "Status", "Runs", "Recoveries", "Validation", "Diff safety", "Updated"],
     view.taskBoard.map((task) => [
       safeTaskHref(task.taskId) ? `<a href="${safeTaskHref(task.taskId)}"><code>${escapeHtml(task.taskId)}</code></a>` : `<code>${escapeHtml(task.taskId)}</code>`,
-      `<code>${escapeHtml(task.projectId)}</code>`,
-      `<code>${escapeHtml(task.workspaceId)}</code>`,
+      projectLabel(task),
+      workspaceLabel(task),
       badge(task.status),
       escapeHtml(task.runCount),
       escapeHtml(task.recoveryCount),
@@ -226,14 +237,14 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
   const taskPreview = recentTaskSample.length === 0
     ? empty(sourceEmpty(view, "tasks", "No tasks in the current bounded snapshot."))
     : `<ul class="activity-list">${recentTaskSample.map(task =>
-        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">Task ${safeTaskHref(task.taskId) ? `<a href="${safeTaskHref(task.taskId)}">…${escapeHtml(task.taskId.slice(-8))}</a>` : `<code>…${escapeHtml(task.taskId.slice(-8))}</code>`}</span><span class="activity-secondary">Project <code>${escapeHtml(task.projectId)}</code> · ${escapeHtml(task.updatedAt)}</span></div>${badge(task.status)}</li>`
+        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">Task ${safeTaskHref(task.taskId) ? `<a href="${safeTaskHref(task.taskId)}">…${escapeHtml(task.taskId.slice(-8))}</a>` : `<code>…${escapeHtml(task.taskId.slice(-8))}</code>`}</span><span class="activity-secondary">Project ${projectLabel(task)} · ${escapeHtml(task.updatedAt)}</span></div>${badge(task.status)}</li>`
       ).join("")}</ul>`;
   const taskAttention = view.taskBoard.filter(task =>
     task.waitingForHuman || ["failed", "validation_failed", "stalled"].includes(task.status)).slice(0, 4);
   const taskAttentionUnknown = sampleIsIncomplete || taskSampleSize === 0 && Boolean(tasksMeta?.available === false);
   const attentionPreview = taskAttention.length > 0
     ? `<ul class="activity-list">${taskAttention.map(task =>
-        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">${escapeHtml(task.waitingForHuman ? "Needs human review" : task.status === "stalled" ? "Stalled work" : "Task failed")} <code title="${escapeHtml(task.taskId)}">…${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project <code>${escapeHtml(task.projectId)}</code></span></div>${badge(task.status)}</li>`
+        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">${escapeHtml(task.waitingForHuman ? "Needs human review" : task.status === "stalled" ? "Stalled work" : "Task failed")} <code title="${escapeHtml(task.taskId)}">…${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project ${projectLabel(task)}</span></div>${badge(task.status)}</li>`
       ).join("")}</ul>`
     : empty(taskAttentionUnknown ? "Attention status cannot be confirmed from this task source." : "No failed, stalled or review-waiting work observed in this bounded sample.");
   const sourceConcerns = view.sourceNotices.filter(notice =>
@@ -393,7 +404,7 @@ code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.78rem
 @media(max-width:1200px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.meter-layout{grid-template-columns:150px minmax(0,1fr)}}
 @media(max-width:1050px){.decision-grid{grid-template-columns:1fr}.meter-layout{grid-template-columns:200px minmax(0,1fr)}}
 @media(max-width:800px){.decision-grid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.pulse-banner{padding:14px 16px}}
-.legend-row{text-decoration:none;border-radius:8px;padding:3px 5px}.legend-row:hover,.legend-row:focus-visible{background:#eef2fb}.meter a:focus-visible circle{stroke-width:23px}.activity-primary a{color:#395cb9;font-weight:750}
+.legend-row{text-decoration:none;border-radius:8px;padding:3px 5px}.legend-row:hover,.legend-row:focus-visible{background:#eef2fb}.meter a:focus-visible circle{stroke-width:23px}.activity-primary a{color:#395cb9;font-weight:750}.entity-name{font-weight:700;color:#2d405f}
 @media(max-width:480px){.pulse-banner{display:block}.pulse-link{display:inline-block;margin:11px 0 0 26px}.meter-layout{grid-template-columns:145px minmax(0,1fr);padding:0 7px}.meter-legend{gap:7px;padding:0 7px 0 0}.legend-row{font-size:.72rem;grid-template-columns:10px minmax(0,1fr) 22px;gap:5px}.sample-note{margin:0 13px 15px}.recent-panel .activity-list{grid-template-columns:1fr}.card{padding:12px}.card strong{font-size:1.25rem}}
 
 </style>
@@ -445,7 +456,7 @@ ${attentionPreview}
 </div>
 <div class="preview-panel recent-panel">
 <div class="preview-head"><h3>Recent work</h3><a href="#tasks">See all shown tasks →</a></div>
-<p class="preview-caption">Latest five rows in the current task snapshot, not a chronological audit trail.</p>
+<p class="preview-caption">Latest five recorded updates in the bounded task sample; these records may be historical, not live work.</p>
 ${taskPreview}</div>
 <p class="snapshot-notice">Counts are from a bounded, manually refreshed snapshot, not a live guarantee. Up to 100 tasks may be returned, and missing monitoring feeds are not shown as zeros. Refresh this page to capture a new bounded snapshot. Sign-in sessions expire after 10 minutes; historical rows are not a complete audit trail.</p>
 </section>

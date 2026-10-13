@@ -55,7 +55,11 @@ export interface OperatorVisualizationV1 {
     code: string;
     at?: string;
   }>;
-  taskBoard: OrchestrationDashboardV1["tasks"];
+  taskBoard: Array<OrchestrationDashboardV1["tasks"][number] & {
+    /** Trusted bounded registry label, omitted if unavailable or ambiguous. */
+    projectDisplayName?: string;
+    workspaceDisplayName?: string;
+  }>;
   workflows: OrchestrationDashboardV1["workflows"];
   incidents: OrchestrationDashboardV1["incidents"];
   /** Optional provenance, not authority: absent means source status unverified. */
@@ -164,6 +168,50 @@ function attentionItems(
     || a.id.localeCompare(b.id));
 }
 
+/** UI names are strictly supplemental; IDs remain authoritative task bindings. */
+function sourceFresh(meta: OrchestrationDashboardV1["sources"]["projects"]): boolean {
+  return meta.available && !meta.stale && !meta.truncated && meta.errorCode === undefined;
+}
+
+function safeDisplayName(value: string): string | undefined {
+  const name = value.trim();
+  // Registry-owned labels only: no raw paths, control characters, URI-like
+  // strings, or unbounded payloads. Renderers still HTML-escape all labels.
+  return name.length >= 1 && name.length <= 80
+    && !/[\\/\u0000-\u001f\u007f<>]/.test(name) && !name.includes("://")
+    ? name : undefined;
+}
+
+function boundedTaskLabels(dashboard: OrchestrationDashboardV1): OperatorVisualizationV1["taskBoard"] {
+  const projects = new Map<string, string | undefined>();
+  if (sourceFresh(dashboard.sources.projects)) {
+    for (const project of dashboard.projects) {
+      if (projects.has(project.projectId)) projects.set(project.projectId, undefined);
+      else projects.set(project.projectId, safeDisplayName(project.displayName));
+    }
+  }
+  const workspaces = new Map<string, { projectId: string; name?: string } | undefined>();
+  if (sourceFresh(dashboard.sources.workspaces)) {
+    for (const workspace of dashboard.workspaces) {
+      if (workspaces.has(workspace.workspaceId)) workspaces.set(workspace.workspaceId, undefined);
+      else workspaces.set(workspace.workspaceId, {
+        projectId: workspace.projectId,
+        name: safeDisplayName(workspace.displayName),
+      });
+    }
+  }
+  return dashboard.tasks.map(task => {
+    const projectDisplayName = projects.get(task.projectId);
+    const workspace = workspaces.get(task.workspaceId);
+    const workspaceDisplayName = workspace?.projectId === task.projectId ? workspace.name : undefined;
+    return {
+      ...structuredClone(task),
+      ...(projectDisplayName ? { projectDisplayName } : {}),
+      ...(workspaceDisplayName ? { workspaceDisplayName } : {}),
+    };
+  });
+}
+
 function sanitizedHandoffs(handoffs: SpecialistHandoffV1[]): OperatorVisualizationV1["specialistTimeline"] {
   return boundedSorted(
     handoffs,
@@ -260,7 +308,7 @@ export function buildOperatorVisualization(
         handoffs: input.supplementalFeedAvailability.handoffs === true,
       },
     } : {}),
-    taskBoard: structuredClone(input.dashboard.tasks),
+    taskBoard: boundedTaskLabels(input.dashboard),
     workflows: structuredClone(input.dashboard.workflows),
     incidents: structuredClone(input.dashboard.incidents),
     specialistTimeline: handoffs,

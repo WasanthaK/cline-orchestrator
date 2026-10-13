@@ -246,7 +246,7 @@ test("Console-2 renders a real visual console shell with bounded overview previe
   assert.match(html, /Recent work/);
   assert.match(html, /Work outcomes/);
   assert.match(html, /Task records/);
-  assert.match(html, /Project <code>project<\/code>/);
+  assert.match(html, /Project <code title="Project name unavailable">project<\/code>/);
   assert.match(html, /@media\(max-width:800px\)/);
   assert.match(html, /@media\(max-width:480px\)/);
   assert.doesNotMatch(html, /<form|<script|<button|<input|onclick=/i);
@@ -339,4 +339,17 @@ test("UX-2 task meter links to fixed read-only status routes", () => {
  assert.match(html, /href="\/viewer\/status\/needs-review"/);
  assert.match(html, /aria-label="Needs review: 1 tasks"/);
  assert.doesNotMatch(html, /href="https?:\/\//);
+});
+
+test("UX-2B project and workspace names are escaped, IDs remain fallback", () => {
+ const v = view();
+ v.taskBoard[0]!.projectDisplayName = 'Acme & Partners';
+ v.taskBoard[0]!.workspaceDisplayName = 'Frontend';
+ const html = renderOperatorVisualizationHtml(v);
+ assert.match(html,/Acme &amp; Partners/);
+ assert.match(html,/Frontend/);
+ assert.match(html,/Project <span class="entity-name">Acme &amp; Partners<\/span>/);
+ delete v.taskBoard[0]!.projectDisplayName;
+ const fallback=renderOperatorVisualizationHtml(v);
+ assert.match(fallback, /Project <code title="Project name unavailable">project<\/code>/);
 });
