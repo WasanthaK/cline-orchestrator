@@ -88,3 +88,43 @@ test("UX-E2b rejects public/invalid listener configuration before binding", asyn
       config as never), { code: "config_invalid" });
   }
 });
+
+test("UX-2 read-only status and task drilldown require a session and expose only sanitized evidence", async () => {
+ const taskId = "11111111-2222-3333-4444-555555555555";
+ const state = snapshot();
+ state.taskBoard = [{ taskId, projectId: "project-safe", workspaceId: "workspace-safe",
+   status: "failed", updatedAt: new Date().toISOString(), runCount: 3, recoveryCount: 1,
+   waitingForHuman: false, validationPassed: false, diffSafetyPassed: undefined }];
+ state.sourceNotices = [];
+ const viewer = await startPassiveOperatorViewer({readSnapshot: async () => state},
+   {host:"127.0.0.1",port:0,token,testOnlyEphemeralPort:true});
+ try {
+   const anon = await fetch(viewer.origin + "/viewer/status/failed");
+   assert.equal(anon.status,200);
+   assert.match(await anon.text(),/Sign in/);
+   const sign = await fetch(viewer.origin + "/viewer/login", {method:"POST",redirect:"manual",
+     headers:{Origin:viewer.origin,"Content-Type":"application/x-www-form-urlencoded"},
+     body:new URLSearchParams({token})});
+   const cookie=sign.headers.get("set-cookie")!.split(";")[0]!;
+   const filtered=await fetch(viewer.origin + "/viewer/status/failed",{headers:{Cookie:cookie}});
+   assert.equal(filtered.status,200);
+   const filteredHtml=await filtered.text();
+   assert.match(filteredHtml,/1 matching records/);
+   assert.match(filteredHtml,/11111111-2222-3333-4444-555555555555/);
+   const detail=await fetch(viewer.origin + "/viewer/task/" + taskId,{headers:{Cookie:cookie}});
+   assert.equal(detail.status,200);
+   const html=await detail.text();
+   assert.match(html,/Independent evidence/);
+   assert.match(html,/Run-by-run history/);
+   assert.match(html,/Not available/);
+   assert.doesNotMatch(html,/<script|<form|<button|<input|goal|credential/i);
+   const missing=await fetch(viewer.origin + "/viewer/task/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",{headers:{Cookie:cookie}});
+   assert.equal(missing.status,404);
+   const bogus=await fetch(viewer.origin + "/viewer/status/everything",{headers:{Cookie:cookie}});
+   assert.equal(bogus.status,404);
+   const forged=await fetch(viewer.origin + "/viewer/status/failed",{headers:{Cookie:cookie,Origin:"http://evil.invalid"}});
+   assert.equal(forged.status,403);
+   const post=await fetch(viewer.origin + "/viewer/status/failed",{method:"POST",headers:{Cookie:cookie,Origin:viewer.origin}});
+   assert.equal(post.status,403);
+ } finally {await viewer.close();}
+});

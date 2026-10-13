@@ -4,6 +4,8 @@ import type { AddressInfo } from "node:net";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { renderOperatorVisualizationHtml } from "./operator-visualization-html.js";
 import type { OperatorVisualizationV1 } from "./operator-visualization.js";
+import { renderTaskGroupHtml, renderTaskDetailHtml } from "./operator-task-drilldown-html.js";
+import { taskGroup, safeTaskHref } from "./operator-task-groups.js";
 
 const COOKIE = "orch_viewer";
 const SESSION_MS = 10 * 60_000;
@@ -149,7 +151,11 @@ export async function startPassiveOperatorViewer(
         return;
       }
       const url = new URL(req.url ?? "/", origin);
-      if (url.search !== "" || !["/viewer", "/viewer/login"].includes(url.pathname)) {
+      const statusSlug = /^\/viewer\/status\/([a-z-]+)$/.exec(url.pathname)?.[1];
+      const detailId = /^\/viewer\/task\/([a-f0-9-]+)$/.exec(url.pathname)?.[1];
+      const readPage = url.pathname === "/viewer" || Boolean(statusSlug && taskGroup(statusSlug))
+        || Boolean(detailId && safeTaskHref(detailId));
+      if (url.search !== "" || !(readPage || url.pathname === "/viewer/login")) {
         send(res, 404, statusPage("Not found"), VIEW_CSP);
         return;
       }
@@ -167,7 +173,7 @@ export async function startPassiveOperatorViewer(
       const expires = /^[a-f0-9]{64}$/.test(id) ? sessions.get(id) : undefined;
       if (expires !== undefined && expires <= Date.now()) sessions.delete(id);
       const authenticated = expires !== undefined && expires > Date.now();
-      if (req.method === "GET" && url.pathname === "/viewer") {
+      if (req.method === "GET" && readPage) {
         if (!authenticated) {
           send(res, 200, loginPage("Sign in with your separately provisioned local viewing token."));
           return;
@@ -178,7 +184,15 @@ export async function startPassiveOperatorViewer(
             || !Array.isArray(view.actions) || view.actions.length !== 0) {
             throw new PassiveViewerError("snapshot_invalid");
           }
-          const html = renderOperatorVisualizationHtml(view);
+          let html: string;
+          try {
+            html = statusSlug ? renderTaskGroupHtml(view, statusSlug)
+              : detailId ? renderTaskDetailHtml(view, detailId)
+              : renderOperatorVisualizationHtml(view);
+          } catch {
+            send(res, 404, statusPage("Task not found in current snapshot"), VIEW_CSP);
+            return;
+          }
           if (Buffer.byteLength(html, "utf8") > MAX_HTML_BYTES) {
             throw new PassiveViewerError("snapshot_invalid");
           }

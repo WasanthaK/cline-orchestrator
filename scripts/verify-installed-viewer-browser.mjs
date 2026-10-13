@@ -224,7 +224,7 @@ try {
     + "skip:document.querySelector('a.skip')?.getAttribute('href'),"
     + "sourceText:document.querySelector('#sources')?.innerText,"
     + "actions:document.querySelectorAll('form,button,input,select,textarea,script,iframe').length,"
-    + "remoteLinks:[...document.querySelectorAll('a[href]')].filter(x=>!x.getAttribute('href').startsWith('#')).length,"
+    + "remoteLinks:[...document.querySelectorAll('a[href]')].filter(x=>!x.getAttribute('href').startsWith('#')&&!/^\\/viewer\\/(status|task)\\//.test(x.getAttribute('href'))).length,"
     + "passwordVisible:document.body.innerText.includes('" + token + "'),"
     + "csp:document.querySelector('meta[http-equiv=\"Content-Security-Policy\"]')?.content,"
     + "focusable:[...document.querySelectorAll('a[href]')].length,"
