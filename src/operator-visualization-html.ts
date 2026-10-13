@@ -202,7 +202,8 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
   let usedLength = 0;
   const arcs = taskSampleSize === 0 ? "" : segments.filter(group => group.count > 0).map(group => {
     const length = group.count / taskSampleSize * circumference;
-    const html = `<circle cx="88" cy="88" r="52" fill="none" stroke="${group.color}" stroke-width="17" stroke-dasharray="${length.toFixed(2)} ${circumference.toFixed(2)}" stroke-dashoffset="${(-usedLength).toFixed(2)}" transform="rotate(-90 88 88)"></circle>`;
+    const slug = TASK_STATUS_GROUPS.find(g => g.label === group.label)?.slug ?? "other";
+    const html = `<a href="/viewer/status/${slug}" aria-label="${group.label}: ${group.count} tasks"><circle cx="88" cy="88" r="52" fill="none" stroke="${group.color}" stroke-width="17" stroke-dasharray="${length.toFixed(2)} ${circumference.toFixed(2)}" stroke-dashoffset="${(-usedLength).toFixed(2)}" transform="rotate(-90 88 88)"></circle></a>`;
     usedLength += length;
     return html;
   }).join("");
