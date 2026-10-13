@@ -237,3 +237,39 @@ test("Console-1 read-only task evidence and accessible tables", () => {
   assert.match(html, /not agent\/model health/);
   assert.doesNotMatch(html, /<script|<form|<button|<input|onclick=/i);
 });
+
+test("Console-2 renders a real visual console shell with bounded overview previews", () => {
+  const html = renderOperatorVisualizationHtml(view());
+  assert.match(html, /<aside class="sidebar" aria-label="Console navigation">/);
+  assert.match(html, /<div class="hero">/);
+  assert.match(html, /<div class="overview-lower">/);
+  assert.match(html, /Task snapshot/);
+  assert.match(html, /Source coverage/);
+  assert.match(html, /Task records/);
+  assert.match(html, /Project <code>project<\/code>/);
+  assert.match(html, /@media\(max-width:800px\)/);
+  assert.match(html, /@media\(max-width:480px\)/);
+  assert.doesNotMatch(html, /<form|<script|<button|<input|onclick=/i);
+});
+
+test("Console-2 status and previews do not turn missing or truncated feeds into healthy counts", () => {
+  const input: OperatorVisualizationV1 = {
+    ...view(),
+    header: { ...view().header, health: "unknown", activeTasks: 0, activeWorkflows: 0,
+      activeWriters: 0, openIncidents: 0, waitingForHuman: 0 },
+    sourceNotices: [
+      { source: "tasks", available: true, stale: false, truncated: true },
+      { source: "workflows", available: false, stale: true, truncated: false },
+      { source: "incidents", available: false, stale: true, truncated: false },
+    ],
+    taskBoard: [], workflows: [], incidents: [], activeWriters: [], specialistTimeline: [],
+    supplementalFeedAvailability: { writers: false, handoffs: false },
+  };
+  const html = renderOperatorVisualizationHtml(input);
+  for (const label of ["Active tasks", "Active workflows", "Active writers", "Open incidents", "Waiting for human"]) {
+    assert.ok(html.includes(`<span>${label}</span><strong>Unknown</strong>`), label);
+  }
+  assert.match(html, /Snapshot truncated/);
+  assert.match(html, /Source coverage/);
+  assert.match(html, /not a complete audit trail/);
+});
