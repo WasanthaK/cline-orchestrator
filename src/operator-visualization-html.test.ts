@@ -241,10 +241,10 @@ test("Console-1 read-only task evidence and accessible tables", () => {
 test("Console-2 renders a real visual console shell with bounded overview previews", () => {
   const html = renderOperatorVisualizationHtml(view());
   assert.match(html, /<aside class="sidebar" aria-label="Console navigation">/);
-  assert.match(html, /<div class="hero">/);
-  assert.match(html, /<div class="overview-lower">/);
-  assert.match(html, /Task snapshot/);
-  assert.match(html, /Source coverage/);
+  assert.match(html, /class="pulse-banner"/);
+  assert.match(html, /class="decision-grid"/);
+  assert.match(html, /Recent work/);
+  assert.match(html, /Work outcomes/);
   assert.match(html, /Task records/);
   assert.match(html, /Project <code>project<\/code>/);
   assert.match(html, /@media\(max-width:800px\)/);
@@ -270,7 +270,7 @@ test("Console-2 status and previews do not turn missing or truncated feeds into 
     assert.ok(html.includes(`<span>${label}</span><strong>Unknown</strong>`), label);
   }
   assert.match(html, /Snapshot truncated/);
-  assert.match(html, /Source coverage/);
+  assert.match(html, /Work outcomes/);
   assert.match(html, /not a complete audit trail/);
 });
 
@@ -318,7 +318,8 @@ test("UX-1 task outcome meter accounts for every sampled status, including unexp
     waitingForHuman: false, validationPassed: true, diffSafetyPassed: true,
   });
   const html = renderOperatorVisualizationHtml(sample);
-  assert.match(html, /Needs review: 1, Completed: 1|Completed: 1, Needs review: 1/);
+  assert.match(html, /Completed: 1/);
+  assert.match(html, /Needs review: 1/);
   assert.match(html, /Failed: 1/);
   assert.match(html, /3<\/text>/);
 });
