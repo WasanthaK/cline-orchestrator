@@ -9,8 +9,8 @@ import { projectTaskTimeline, unavailableTaskTimeline } from "./operator-task-ti
  * startTask, approveEscalation, raw TaskStore, model, process or file access.
  */
 export type TrustedDashboardMachineReader = Pick<
-  MachineOrchestratorService, "listProjects" | "listWorkspaces" | "findTasks" | "getTask" | "getTaskEvents"
->;
+  MachineOrchestratorService, "listProjects" | "listWorkspaces" | "findTasks"
+> & Partial<Pick<MachineOrchestratorService, "getTask" | "getTaskEvents">>;
 
 export const MACHINE_DASHBOARD_READER_CONTRACT = Object.freeze({
   schemaVersion: 1 as const,
@@ -61,14 +61,13 @@ export function createMachineDashboardSnapshotReader(
   if (!machine
     || typeof machine.listProjects !== "function"
     || typeof machine.listWorkspaces !== "function"
-    || typeof machine.findTasks !== "function"
-    || typeof machine.getTask !== "function"
-    || typeof machine.getTaskEvents !== "function") {
+    || typeof machine.findTasks !== "function") {
     throw new Error("Trusted read-only machine dashboard APIs are required");
   }
   const clock = options.now ?? (() => new Date());
   return {
     async readTaskTimeline(identity) {
+      if (!machine.getTask || !machine.getTaskEvents) return unavailableTaskTimeline("not_connected");
       try {
         const task = await machine.getTask(identity.taskId);
         if (task.taskId !== identity.taskId || task.projectId !== identity.projectId
