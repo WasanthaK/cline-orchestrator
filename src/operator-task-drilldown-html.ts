@@ -1,5 +1,6 @@
 import type { OperatorVisualizationV1 } from "./operator-visualization.js";
 import { taskGroup, tasksInGroup, safeTaskHref, taskStatusGroup } from "./operator-task-groups.js";
+import type { SanitizedTaskTimelineV1 } from "./operator-task-timeline.js";
 
 type Task = OperatorVisualizationV1["taskBoard"][number];
 function esc(v: unknown): string {
@@ -9,7 +10,7 @@ function esc(v: unknown): string {
 function evidence(v: boolean | undefined): string {
   return v === undefined ? "Not available" : v ? "Passed" : "Failed";
 }
-const style = ':root{font:15px/1.6 system-ui;color-scheme:light;background:#f4f6fb;color:#243754}*{box-sizing:border-box}body{margin:0}.layout{max-width:1120px;margin:auto;padding:28px 20px}.top{background:#142446;color:white;padding:22px;border-radius:14px}.top a{color:#dbe5ff}a{color:#3d5cae}a:focus-visible,.scroll:focus-visible{outline:3px solid #6d8bff;outline-offset:3px}section{background:white;border:1px solid #e1e7f1;border-radius:14px;padding:22px;margin:17px 0}h1{font-size:1.7rem}h2{font-size:1.1rem}.minor{color:#61718e}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:13px}dt{color:#61718e;font-size:.82rem}dd{margin:4px 0;font-weight:700;overflow-wrap:anywhere}table{min-width:650px;width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e1e7f1;font-size:.83rem}.scroll{overflow-x:auto}.notice{padding:12px;background:#fff6e7;color:#765120;border-radius:9px}@media(max-width:600px){.layout{padding:12px}section{padding:14px}}';
+const style = '.event-list{display:grid;gap:11px;padding-left:26px}.event-list li{padding:6px 0;border-bottom:1px solid #e1e7f1}:root{font:15px/1.6 system-ui;color-scheme:light;background:#f4f6fb;color:#243754}*{box-sizing:border-box}body{margin:0}.layout{max-width:1120px;margin:auto;padding:28px 20px}.top{background:#142446;color:white;padding:22px;border-radius:14px}.top a{color:#dbe5ff}a{color:#3d5cae}a:focus-visible,.scroll:focus-visible{outline:3px solid #6d8bff;outline-offset:3px}section{background:white;border:1px solid #e1e7f1;border-radius:14px;padding:22px;margin:17px 0}h1{font-size:1.7rem}h2{font-size:1.1rem}.minor{color:#61718e}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:13px}dt{color:#61718e;font-size:.82rem}dd{margin:4px 0;font-weight:700;overflow-wrap:anywhere}table{min-width:650px;width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e1e7f1;font-size:.83rem}.scroll{overflow-x:auto}.notice{padding:12px;background:#fff6e7;color:#765120;border-radius:9px}@media(max-width:600px){.layout{padding:12px}section{padding:14px}}';
 function shell(title: string, description: string, body: string, captured: string): string {
   return '<!doctype html><html lang="en"><head><meta charset="utf-8">'
     + '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;; img-src &#39;none&#39;; script-src &#39;none&#39;; connect-src &#39;none&#39;; form-action &#39;none&#39;; base-uri &#39;none&#39;">'
@@ -37,7 +38,7 @@ export function renderTaskGroupHtml(view: OperatorVisualizationV1, slug: string)
     : '<p>No matching tasks in this bounded sample. This does not establish that none exist elsewhere.</p>';
   return shell(g.label + ' tasks', tasks.length + ' matching records in this bounded snapshot', '<section><h2>' + esc(g.label) + ' tasks</h2>' + sourceWarning(view) + '<p class="minor">The filter applies to visible sanitized task records, not lifetime history.</p>' + table + '</section>', view.generatedAt);
 }
-export function renderTaskDetailHtml(view: OperatorVisualizationV1, id: string): string {
+export function renderTaskDetailHtml(view: OperatorVisualizationV1, id: string, timeline?: SanitizedTaskTimelineV1): string {
   if (!safeTaskHref(id) || !view.readOnly || view.actions.length) throw new Error("invalid read-only task");
   const matches = view.taskBoard.filter(t => t.taskId === id);
   if (matches.length !== 1) throw new Error("task not uniquely present in snapshot");
@@ -49,7 +50,10 @@ export function renderTaskDetailHtml(view: OperatorVisualizationV1, id: string):
     + field('Recovery count', t.recoveryCount) + '</dl></section>'
     + '<section><h2>Independent evidence</h2><dl>' + field('Validation', evidence(t.validationPassed))
     + field('Diff safety', evidence(t.diffSafetyPassed)) + '</dl><p class="notice">Completed does not imply independently approved or released. Worker testimony is not proof.</p></section>'
-    + '<section><h2>Run-by-run history</h2><p class="minor">Not available from this sanitized dashboard reader. Run and recovery counts are aggregate evidence, not a verified timeline.</p></section>'
+    + '<section><h2>Execution timeline</h2>' + (timeline?.availability === "available"
+      ? '<p class="minor">' + esc(timeline.totalObserved ?? 0) + ' recorded events · ' + (timeline.truncated ? 'Last 40 shown; earlier events omitted.' : 'All observed records shown.') + ' Event labels and timestamps only; raw messages and logs are excluded.</p>'
+        + (timeline.events.length ? '<ol class="event-list">' + timeline.events.map(event => '<li><strong>' + esc(event.label) + '</strong><br><time datetime="' + esc(event.at) + '">' + esc(event.at) + '</time></li>').join('') + '</ol>' : '<p>No recorded events were returned; absence of history does not prove no execution.</p>')
+      : '<p class="minor">Event history unavailable (' + esc(timeline?.reason ?? "not_connected") + '). Run and recovery counts are aggregate evidence, not a verified timeline.</p>') + '</section>'
     + '<section><h2>Technical identifiers</h2><dl>' + field('Task ID', t.taskId) + field('Project ID', t.projectId) + field('Workspace ID', t.workspaceId) + '</dl></section>'
     + '<p><a href="/viewer/status/' + esc(taskStatusGroup(t.status)) + '">← Status-filtered tasks</a></p>';
   return shell('Task …' + t.taskId.slice(-8), 'Read-only task details and available evidence', body, view.generatedAt);
