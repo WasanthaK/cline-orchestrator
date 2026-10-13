@@ -168,29 +168,74 @@ export function renderOperatorVisualizationHtml(view: OperatorVisualizationV1): 
   );
 
   const cards = [
-    ["Health", view.header.health],
     ["Active tasks", metricValue(view, "tasks", view.header.activeTasks)],
+    ["Waiting for human", metricValue(view, "tasks", view.header.waitingForHuman)],
     ["Active workflows", metricValue(view, "workflows", view.header.activeWorkflows)],
     ["Active writers", view.supplementalFeedAvailability?.writers === true ? view.header.activeWriters : "Unknown"],
     ["Open incidents", metricValue(view, "incidents", view.header.openIncidents)],
-    ["Waiting for human", metricValue(view, "tasks", view.header.waitingForHuman)],
-    ["Stale sources", view.header.staleSources],
-    ["Unavailable sources", view.header.unavailableSources],
   ].map(([label, value]) => `<div class="card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
 
 
-  // This is a bounded projection, never an all-time feed or an audit log.
-  const recentTaskSample = view.taskBoard.slice(0, 4);
+
+  // Status distribution describes this snapshot's bounded task rows ONLY.
+  // It is not a live measurement, all-time success rate, or reconstructed history.
+  const categories = [
+    { label: "Completed", color: "#169b72", statuses: ["completed"] },
+    { label: "In progress", color: "#5775da", statuses: ["created", "running", "waiting", "validating", "repairing", "safety_checking"] },
+    { label: "Needs review", color: "#ce9239", statuses: ["waiting_for_human"] },
+    { label: "Failed", color: "#cf4c68", statuses: ["failed", "validation_failed"] },
+    { label: "Rolled back", color: "#9159b3", statuses: ["rolled_back"] },
+    { label: "Stalled", color: "#c37832", statuses: ["stalled"] },
+    { label: "Stopped", color: "#78879f", statuses: ["aborted"] },
+  ] as const;
+  const groups = categories.map(category => ({
+    ...category,
+    count: view.taskBoard.filter(task => (category.statuses as readonly string[]).includes(task.status)).length,
+  }));
+  const otherCount = view.taskBoard.length - groups.reduce((sum, group) => sum + group.count, 0);
+  const segments = [...groups, { label: "Other", color: "#8392a9", count: otherCount }];
+  const taskSampleSize = view.taskBoard.length;
+  const tasksMeta = view.sourceNotices.find(notice => notice.source === "tasks");
+  const sampleIsIncomplete = Boolean(tasksMeta && (!tasksMeta.available || tasksMeta.stale || tasksMeta.truncated || tasksMeta.errorCode));
+  const circumference = 2 * Math.PI * 52;
+  let usedLength = 0;
+  const arcs = taskSampleSize === 0 ? "" : segments.filter(group => group.count > 0).map(group => {
+    const length = group.count / taskSampleSize * circumference;
+    const html = \`<circle cx="88" cy="88" r="52" fill="none" stroke="\${group.color}" stroke-width="17" stroke-dasharray="\${length.toFixed(2)} \${circumference.toFixed(2)}" stroke-dashoffset="\${(-usedLength).toFixed(2)}" transform="rotate(-90 88 88)"></circle>\`;
+    usedLength += length;
+    return html;
+  }).join("");
+  const workMeter = \`<div class="meter-layout">
+    <svg class="meter" viewBox="0 0 176 176" role="img" aria-labelledby="work-meter-title work-meter-description">
+      <title id="work-meter-title">Task status distribution in the observed sample</title>
+      <desc id="work-meter-description">\${escapeHtml(segments.filter(group => group.count > 0).map(group => group.label + ": " + group.count).join(", ") || "No sampled tasks")}</desc>
+      <circle cx="88" cy="88" r="52" fill="none" stroke="#e7ecf6" stroke-width="17"></circle>
+      \${arcs}
+      <text x="88" y="86" text-anchor="middle" class="meter-total">\${escapeHtml(taskSampleSize)}</text>
+      <text x="88" y="104" text-anchor="middle" class="meter-caption">sampled tasks</text>
+    </svg>
+    <div class="meter-legend" aria-label="Task status counts">\${segments.filter(group => group.count > 0).map(group =>
+      \`<div class="legend-row"><span class="legend-dot" style="background:\${group.color}" aria-hidden="true"></span><span>\${escapeHtml(group.label)}</span><strong>\${escapeHtml(group.count)}</strong></div>\`
+    ).join("") || \`<p class="minor">No task status breakdown is available.</p>\`}</div>
+  </div>
+  <p class="sample-note">\${escapeHtml(sampleIsIncomplete ? "Incomplete or stale sample — results are not a complete current view." : "This is a bounded sample, not an all-time success rate or full historical count.")}</p>\`;
+
+  const recentTaskSample = view.taskBoard.slice(0, 5);
   const taskPreview = recentTaskSample.length === 0
     ? empty(sourceEmpty(view, "tasks", "No tasks in the current bounded snapshot."))
-    : `<ul class="activity-list">${recentTaskSample.map(task =>
-        `<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">Task <code title="${escapeHtml(task.taskId)}">${escapeHtml(task.taskId)}</code></span><span class="activity-secondary">Project <code>${escapeHtml(task.projectId)}</code> · ${escapeHtml(task.updatedAt)}</span></div>${badge(task.status)}</li>`
-      ).join("")}</ul>`;
-  const sourcePreview = view.sourceNotices.length === 0
-    ? empty("No source notices in this bounded projection; this does not prove all feeds are connected.")
-    : `<ul class="source-list">${view.sourceNotices.slice(0, 5).map(source =>
-        `<li><span class="source-mark" aria-hidden="true"></span><div><strong>${escapeHtml(source.source)}</strong><small>${escapeHtml(!source.available ? "Unavailable" : source.stale ? "Stale" : source.truncated ? "Truncated" : source.errorCode ? "Error" : "Notice")}</small></div></li>`
-      ).join("")}</ul>`;
+    : \`<ul class="activity-list">\${recentTaskSample.map(task =>
+        \`<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">Task <code title="\${escapeHtml(task.taskId)}">…\${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project <code>\${escapeHtml(task.projectId)}</code> · \${escapeHtml(task.updatedAt)}</span></div>\${badge(task.status)}</li>\`
+      ).join("")}</ul>\`;
+  const taskAttention = view.taskBoard.filter(task =>
+    task.waitingForHuman || ["failed", "validation_failed", "stalled"].includes(task.status)).slice(0, 4);
+  const taskAttentionUnknown = sampleIsIncomplete || taskSampleSize === 0 && Boolean(tasksMeta?.available === false);
+  const attentionPreview = taskAttention.length > 0
+    ? \`<ul class="activity-list">\${taskAttention.map(task =>
+        \`<li class="activity-row"><span class="activity-rail" aria-hidden="true"></span><div class="activity-copy"><span class="activity-primary">\${escapeHtml(task.waitingForHuman ? "Needs human review" : task.status === "stalled" ? "Stalled work" : "Task failed")} <code title="\${escapeHtml(task.taskId)}">…\${escapeHtml(task.taskId.slice(-8))}</code></span><span class="activity-secondary">Project <code>\${escapeHtml(task.projectId)}</code></span></div>\${badge(task.status)}</li>\`
+      ).join("")}</ul>\`
+    : empty(taskAttentionUnknown ? "Attention status cannot be confirmed from this task source." : "No failed, stalled or review-waiting work observed in this bounded sample.");
+  const sourceConcerns = view.sourceNotices.filter(notice =>
+    !notice.available || notice.stale || notice.truncated || Boolean(notice.errorCode)).length;
   const healthTone = view.header.health === "healthy" ? "healthy"
     : view.header.health === "critical" ? "critical"
     : view.header.health === "attention" ? "attention" : "unknown";
@@ -312,6 +357,42 @@ code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.78rem
 @media(max-width:480px){.content{padding:0 12px 25px}.topbar{gap:8px;font-size:.69rem}.mode-pill{font-size:.69rem;padding:5px 8px}.section-head{display:block}.capture{margin:9px 0 0}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.card{padding:14px 12px}.card strong{font-size:1.4rem}.hero{padding:21px 17px;border-radius:16px}.hero h3{font-size:1.9rem}.hero-stat{padding:11px}.panel{padding:15px 12px}.activity-row{gap:8px;padding:12px}.activity-secondary{font-size:.69rem}table{min-width:620px}.nav-number{display:none}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 @media print{.shell{display:block}.sidebar{display:none}.content{padding:0}.hero{-webkit-print-color-adjust:exact;print-color-adjust:exact}.cards{grid-template-columns:repeat(4,1fr)}.table-wrap{overflow:visible}table{min-width:0;font-size:.7rem}}
+/* UX-1 operator-first information hierarchy: source pulse, outcomes, attention, then work. */
+.pulse-banner{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 20px;border-radius:15px;background:#fff;border:1px solid #dce4f4;box-shadow:0 3px 10px rgba(19,38,78,.03)}
+.pulse-left{display:flex;align-items:center;gap:14px;min-width:0}
+.pulse-left strong{font-size:.98rem;color:#243754}
+.pulse-left p{font-size:.8rem;color:#627494;margin:2px 0 0}
+.status-light{flex-shrink:0;width:12px;height:12px;background:#daaa55;border-radius:50%;box-shadow:0 0 0 5px #fff2de}
+.status-light.healthy{background:#2d9b75;box-shadow:0 0 0 5px #e7f7ef}
+.status-light.critical{background:#d65370;box-shadow:0 0 0 5px #ffecef}
+.status-light.attention{background:#d79b43;box-shadow:0 0 0 5px #fff4e2}
+.pulse-link{white-space:nowrap;text-decoration:none;font-weight:750;font-size:.83rem;color:#405fba}
+.pulse-link:hover{text-decoration:underline}
+.cards{grid-template-columns:repeat(5,minmax(0,1fr));margin:13px 0 0}
+.card{padding:14px 16px;box-shadow:none}
+.card strong{font-size:1.45rem;margin-top:6px;min-height:0}
+.decision-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:15px;margin:15px 0}
+.meter-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:4px;align-items:center;padding:0 16px}
+.meter{width:100%;height:auto;max-height:200px}
+.meter-total{font-size:28px;font-weight:800;fill:#223657}
+.meter-caption{font-size:11px;fill:#7485a2}
+.meter-legend{display:grid;gap:11px;padding:6px 14px 6px 0}
+.legend-row{display:grid;grid-template-columns:12px minmax(0,1fr) 24px;align-items:center;gap:9px;font-size:.82rem;color:#445574}
+.legend-row strong{text-align:right;color:#243754;font-variant-numeric:tabular-nums}
+.legend-dot{width:10px;height:10px;border-radius:4px}
+.sample-note{font-size:.74rem;color:#71819d;line-height:1.5;margin:0 18px 19px}
+.attention-panel .activity-row{padding:13px 17px}
+.attention-source-footer{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:13px 20px;background:#fff9ef;border-top:1px solid #f3e8d5;font-size:.79rem;color:#7a5a29}
+.attention-source-footer a{white-space:nowrap;color:#8f5c1d;text-decoration:underline}
+.recent-panel{margin:0}
+.recent-panel .activity-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}
+.recent-panel .activity-row{border-right:1px solid #edf0f6}
+.snapshot-notice{margin:15px 0 0}
+@media(max-width:1200px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.meter-layout{grid-template-columns:150px minmax(0,1fr)}}
+@media(max-width:1050px){.decision-grid{grid-template-columns:1fr}.meter-layout{grid-template-columns:200px minmax(0,1fr)}}
+@media(max-width:800px){.decision-grid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.pulse-banner{padding:14px 16px}}
+@media(max-width:480px){.pulse-banner{display:block}.pulse-link{display:inline-block;margin:11px 0 0 26px}.meter-layout{grid-template-columns:145px minmax(0,1fr);padding:0 7px}.meter-legend{gap:7px;padding:0 7px 0 0}.legend-row{font-size:.72rem;grid-template-columns:10px minmax(0,1fr) 22px;gap:5px}.sample-note{margin:0 13px 15px}.recent-panel .activity-list{grid-template-columns:1fr}.card{padding:12px}.card strong{font-size:1.25rem}}
+
 </style>
 </head>
 <body>
@@ -340,17 +421,30 @@ code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.78rem
 <main id="main-content" class="content" tabindex="-1">
 <div class="topbar"><span class="topbar-label"><span class="local-dot" aria-hidden="true"></span>Local operator console</span><span class="mode-pill">Read-only snapshot</span></div>
 <section id="overview" aria-labelledby="overview-heading">
-<div class="section-head"><div><p class="eyebrow">Control center / overview</p><h2 id="overview-heading">Operational overview</h2><p class="section-intro">Understand what is known, what needs attention, and where the evidence is incomplete.</p></div><div class="capture"><strong>Snapshot captured</strong><time datetime="${escapeHtml(view.generatedAt)}">${escapeHtml(view.generatedAt)}</time></div></div>
-<div class="hero">
-<div><p class="eyebrow">SYSTEM OBSERVATION</p><h3>Clarity across your<br>orchestration workspace.</h3><p>The console shows bounded evidence from connected readers. Unavailable sources stay unknown rather than appearing healthy.</p><div style="margin-top:19px"><span class="hero-status ${healthTone}"><span class="status-light" aria-hidden="true"></span>Snapshot health: ${escapeHtml(view.header.health)}</span></div></div>
-<div class="hero-stats"><div class="hero-stat"><span>Stale sources</span><strong>${escapeHtml(view.header.staleSources)}</strong></div><div class="hero-stat"><span>Unavailable sources</span><strong>${escapeHtml(view.header.unavailableSources)}</strong></div><div class="hero-stat"><span>Task sample</span><strong>${escapeHtml(view.taskBoard.length)}</strong></div><div class="hero-stat"><span>Notice sample</span><strong>${escapeHtml(view.sourceNotices.length)}</strong></div></div>
+<div class="section-head"><div><p class="eyebrow">Your workspace at a glance</p><h2 id="overview-heading">Overview</h2><p class="section-intro">The work, decisions and source coverage that matter right now.</p></div><div class="capture"><strong>Snapshot captured</strong><time datetime="\${escapeHtml(view.generatedAt)}">\${escapeHtml(view.generatedAt)}</time></div></div>
+<div class="pulse-banner" role="status">
+<div class="pulse-left"><span class="status-light \${healthTone}" aria-hidden="true"></span><div><strong>\${escapeHtml(view.header.health === "healthy" ? "Observed sources healthy" : view.header.health === "attention" ? "Some work needs attention" : view.header.health === "critical" ? "Critical observations detected" : "System visibility incomplete")}</strong><p>\${escapeHtml(view.header.unavailableSources)} unavailable · \${escapeHtml(view.header.staleSources)} stale · \${escapeHtml(sourceConcerns)} sources with notices</p></div></div>
+<a href="#sources" class="pulse-link">See source status →</a>
 </div>
-<div class="cards">${cards}</div>
-<div class="overview-lower">
-<div class="preview-panel"><div class="preview-head"><h3>Task snapshot</h3><a href="#tasks">View all shown tasks →</a></div><p class="preview-caption">Up to four rows from the current bounded task projection, not a full audit history.</p>${taskPreview}</div>
-<div class="preview-panel"><div class="preview-head"><h3>Source coverage</h3><a href="#sources">View data quality →</a></div><p class="preview-caption">Only non-current or problematic sources reported in this projection.</p>${sourcePreview}</div>
+<div class="cards">\${cards}</div>
+<div class="decision-grid">
+<div class="preview-panel outcomes-panel">
+<div class="preview-head"><h3>Work outcomes</h3><a href="#tasks">See task records →</a></div>
+<p class="preview-caption">How the \${escapeHtml(taskSampleSize)} visible task records are distributed by status.</p>
+\${workMeter}
 </div>
-<p class="snapshot-notice" role="status">Snapshot health: <strong>${escapeHtml(view.header.health)}</strong>. ${escapeHtml(view.header.staleSources)} stale and ${escapeHtml(view.header.unavailableSources)} unavailable data sources. Counts are from the captured snapshot, not a live availability guarantee. Metrics may represent partial task history (up to 100 records), not all work. Refresh this page to capture a new bounded snapshot. Sign-in sessions expire after 10 minutes; historical rows are not a complete audit trail.</p>
+<div class="preview-panel attention-panel">
+<div class="preview-head"><h3>Needs attention</h3><a href="#attention">See all notices →</a></div>
+<p class="preview-caption">Review-waiting, failed and stalled records from the bounded task sample.</p>
+\${attentionPreview}
+<div class="attention-source-footer"><span>\${escapeHtml(sourceConcerns)} sources need a closer look</span><a href="#sources">Review coverage →</a></div>
+</div>
+</div>
+<div class="preview-panel recent-panel">
+<div class="preview-head"><h3>Recent work</h3><a href="#tasks">See all shown tasks →</a></div>
+<p class="preview-caption">Latest five rows in the current task snapshot, not a chronological audit trail.</p>
+\${taskPreview}</div>
+<p class="snapshot-notice">Counts are from a bounded, manually refreshed snapshot, not a live guarantee. Up to 100 tasks may be returned, and missing monitoring feeds are not shown as zeros. Refresh this page for a new snapshot. Sign-in sessions expire after 10 minutes; historical rows are not a complete audit trail.</p>
 </section>
 <section id="attention" aria-labelledby="attention-heading"><div class="section-hdr"><div><h2 id="attention-heading">Attention</h2><p>Items identified from the currently available sanitized evidence.</p></div><span class="section-index">02 / 08</span></div><div class="panel">${attention}</div></section>
 <section id="tasks" aria-labelledby="tasks-heading"><div class="section-hdr"><div><h2 id="tasks-heading">Tasks</h2><p>Bounded task records and independent validation indicators.</p></div><span class="section-index">03 / 08</span></div><div class="panel">${sourceWarning(view, "tasks")}${tasks}</div></section>
