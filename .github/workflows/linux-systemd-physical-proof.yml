@@ -59,7 +59,17 @@ jobs:
             -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
             cline-systemd-proof
           sleep 5
-          docker inspect -f '{{.State.Status}}' cline-systemd-proof-guest | grep -Fx running
+          # The reduced-privilege guest may exit immediately (e.g. due to
+          # cgroup constraints). Preserve the actual exit state and fail
+          # closed rather than returning an uninformative grep exit code.
+          state="$(docker inspect -f '{{.State.Status}}' cline-systemd-proof-guest)"
+          echo "Disposable systemd guest state: $state"
+          if [[ "$state" != "running" ]]; then
+            docker inspect -f 'exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}' cline-systemd-proof-guest || true
+            docker logs --tail 100 cline-systemd-proof-guest 2>&1 || true
+            echo 'FAIL: isolated systemd guest terminated before manager readiness; no service-manager operations were attempted'
+            exit 1
+          fi
       - name: Preflight systemd manager inside isolated guest
         shell: bash
         run: |
@@ -91,8 +101,13 @@ jobs:
         if: always()
         shell: bash
         run: |
-          docker logs cline-systemd-proof-guest 2>&1 | tail -100 || true
-          docker exec cline-systemd-proof-guest journalctl --no-pager -n 100 || true
+          # A stopped guest cannot be entered with docker exec, so first
+          # preserve its container state and PID 1 logs independently.
+          docker inspect -f 'guest={{.Name}} state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}' cline-systemd-proof-guest || true
+          docker logs --tail 100 cline-systemd-proof-guest 2>&1 || true
+          if [[ "$(docker inspect -f '{{.State.Status}}' cline-systemd-proof-guest 2>/dev/null || true)" == running ]]; then
+            docker exec cline-systemd-proof-guest journalctl --no-pager -n 100 || true
+          fi
       - name: Always remove disposable guest
         if: always()
         shell: bash
