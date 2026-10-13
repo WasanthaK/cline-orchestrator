@@ -89,6 +89,25 @@ export interface MultiAgentChildExecutionAdmissionTicketV1 {
   token: string;
 }
 
+export interface MultiAgentChildExecutionAdmissionReceiptV1 {
+  schemaVersion: 1;
+  permitId: string;
+  childTaskId: string;
+  delegationSetId: string;
+  delegationId: string;
+  parentTaskId: string;
+  workspaceId: string;
+  coordinationMode: MultiAgentDelegationSetV1["coordinationMode"];
+  consumedAt: string;
+  authority: "child_execution_admission_consumed_evidence_only";
+  grantsTaskAuthority: false;
+  grantsFilesystemAuthority: false;
+  grantsSafetyPlanAuthority: false;
+  grantsWriterLeaseAuthority: false;
+  grantsCredentialAuthority: false;
+  grantsReleaseAuthority: false;
+}
+
 export interface MultiAgentChildExecutionAdmissionOptions {
   ttlMs?: number;
   now?: () => Date;
@@ -366,11 +385,11 @@ export class MultiAgentChildExecutionAdmissionService {
     return { permit: Object.freeze(permit), token };
   }
 
-  consume(
+  private consumeInternal(
     token: string,
     child: MultiAgentChildTaskDescriptorV1,
     set: MultiAgentDelegationSetV1,
-  ): MultiAgentChildExecutionAdmissionPermitV1 {
+  ): { permit: MultiAgentChildExecutionAdmissionPermitV1; consumedAt: string } {
     assertChild(child);
     assertSet(set);
     assertChildSetBinding(child, set);
@@ -410,6 +429,43 @@ export class MultiAgentChildExecutionAdmissionService {
       );
     }
     stored.consumedAt = now.toISOString();
-    return Object.freeze(structuredClone(permit));
+    return {
+      permit: structuredClone(permit),
+      consumedAt: stored.consumedAt,
+    };
+  }
+
+  consume(
+    token: string,
+    child: MultiAgentChildTaskDescriptorV1,
+    set: MultiAgentDelegationSetV1,
+  ): MultiAgentChildExecutionAdmissionPermitV1 {
+    return Object.freeze(this.consumeInternal(token, child, set).permit);
+  }
+
+  consumeForPreparation(
+    token: string,
+    child: MultiAgentChildTaskDescriptorV1,
+    set: MultiAgentDelegationSetV1,
+  ): MultiAgentChildExecutionAdmissionReceiptV1 {
+    const { permit, consumedAt } = this.consumeInternal(token, child, set);
+    return Object.freeze({
+      schemaVersion: 1,
+      permitId: permit.permitId,
+      childTaskId: permit.childTaskId,
+      delegationSetId: permit.delegationSetId,
+      delegationId: permit.delegationId,
+      parentTaskId: permit.parentTaskId,
+      workspaceId: permit.workspaceId,
+      coordinationMode: permit.coordinationMode,
+      consumedAt,
+      authority: "child_execution_admission_consumed_evidence_only",
+      grantsTaskAuthority: false,
+      grantsFilesystemAuthority: false,
+      grantsSafetyPlanAuthority: false,
+      grantsWriterLeaseAuthority: false,
+      grantsCredentialAuthority: false,
+      grantsReleaseAuthority: false,
+    });
   }
 }

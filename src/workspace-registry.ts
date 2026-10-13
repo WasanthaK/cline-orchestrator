@@ -228,9 +228,9 @@ export class WorkspaceRegistry {
     return { ...project };
   }
 
-  async registerWorkspace(input: RegisterWorkspaceInput): Promise<RegisteredWorkspace> {
+  private async prepareWorkspaceRegistration(input: RegisterWorkspaceInput, document: RegistryDocument): Promise<string> {
     validateProfile(input.safetyProfile);
-    const document = await this.load();
+    nonEmpty(input.displayName, "workspace displayName");
     if (!document.projects.some((project) => project.projectId === input.projectId)) {
       throw new WorkspaceRegistryError(`Project '${input.projectId}' is not registered`, "project_not_found");
     }
@@ -245,6 +245,18 @@ export class WorkspaceRegistry {
         "duplicate_root",
       );
     }
+
+    return canonicalRoot;
+  }
+
+  /** Read-only preflight using the same guards as registration. */
+  async previewWorkspaceRegistration(input: RegisterWorkspaceInput): Promise<string> {
+    return this.prepareWorkspaceRegistration(input, await this.load());
+  }
+
+  async registerWorkspace(input: RegisterWorkspaceInput): Promise<RegisteredWorkspace> {
+    const document = await this.load();
+    const canonicalRoot = await this.prepareWorkspaceRegistration(input, document);
 
     const now = new Date().toISOString();
     const workspace: RegisteredWorkspace = {

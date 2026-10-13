@@ -1,0 +1,68 @@
+name: Physical service acceptance (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-scm:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: dotnet build native/windows-scm-host/WindowsScmHost.csproj --configuration Release
+      - name: Real disposable Windows SCM lifecycle
+        shell: pwsh
+        env:
+          ORCH_TEMP_SCM_PROOF: I_AUTHORIZE_GITHUB_HOSTED_SCM
+        run: ./scripts/prove-github-windows-scm.ps1
+      - name: Report cleanup state
+        if: always()
+        shell: pwsh
+        run: |
+          $s = Get-Service -Name cline-orchestrator -ErrorAction SilentlyContinue
+          if ($s) { Write-Output "Cleanup inspection: $($s.Status)"; if ($s.Status -ne 'Stopped') { throw 'Temporary service still running' } }
+  linux-systemd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Create disposable package tarball
+        run: npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+      - name: Build isolated systemd guest
+        run: docker build -t cline-systemd-proof -f scripts/disposable-systemd/Dockerfile .
+      - name: Run isolated systemd guest
+        run: |
+          docker run -d --name cline-systemd-proof-guest --cap-drop=ALL --security-opt=no-new-privileges --cgroupns=private \
+            --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
+            cline-systemd-proof
+      - name: Prove packaged daemon lifecycle inside guest
+        run: |
+          docker exec cline-systemd-proof-guest bash -lc 'mkdir -p /opt/consumer /opt/workspace && touch /run/cline-orchestrator-disposable-guest'
+          docker cp "$RUNNER_TEMP/cline-orchestrator-0.1.0.tgz" cline-systemd-proof-guest:/tmp/package.tgz
+          docker cp scripts/prove-disposable-linux-systemd.sh cline-systemd-proof-guest:/tmp/prove.sh
+          docker exec cline-systemd-proof-guest npm install --global --prefix /opt/consumer --ignore-scripts --no-audit --no-fund /tmp/package.tgz
+          docker exec -e ORCH_DISPOSABLE_SYSTEMD_PROOF=I_AUTHORIZE_DISPOSABLE_SYSTEMD \
+            -e ORCH_PACKAGED_INDEX=/opt/consumer/lib/node_modules/cline-orchestrator/dist/index.js \
+            -e ORCH_DISPOSABLE_WORKSPACE=/opt/workspace \
+            cline-systemd-proof-guest bash /tmp/prove.sh
+      - name: Capture disposable systemd diagnostics
+        if: always()
+        run: |
+          docker logs cline-systemd-proof-guest 2>&1 | tail -100 || true
+          docker exec cline-systemd-proof-guest journalctl --no-pager -n 100 || true
+      - name: Remove disposable guest
+        if: always()
+        run: docker rm -f cline-systemd-proof-guest || true

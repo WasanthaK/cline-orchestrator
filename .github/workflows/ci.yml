@@ -27,6 +27,34 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+      - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+      - run: npm run verify:package
+      - run: npm run verify:installed-package
+      - run: node scripts/verify-linux-systemd-unit.mjs
+      - run: bash -n scripts/prove-disposable-linux-systemd.sh
+      - run: node scripts/verify-disposable-systemd-guard.mjs
+
+  packaged-artifact-platforms:
+    name: packaged artifact (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run verify:package
+      - run: npm run verify:installed-package
+      - if: matrix.os == 'windows-latest'
+        run: node scripts/verify-windows-scm-host-gap.mjs
+      - if: matrix.os == 'windows-latest'
+        run: dotnet build native/windows-scm-host/WindowsScmHost.csproj --configuration Release
+

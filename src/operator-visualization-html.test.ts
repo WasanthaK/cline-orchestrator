@@ -120,8 +120,6 @@ test("renderer has no interactive or executable surface", () => {
     "<input",
     "<select",
     "<textarea",
-    "<a ",
-    "href=",
     "onclick=",
     "onload=",
     "fetch(",
@@ -148,4 +146,210 @@ test("renderer rejects a view that advertises any action capability", () => {
 test("renderer output is deterministic for the same sanitized view", () => {
   const input = view();
   assert.equal(renderOperatorVisualizationHtml(input), renderOperatorVisualizationHtml(input));
+});
+
+
+test("UX-B static section navigation is local, accessible and inert", () => {
+  const html = renderOperatorVisualizationHtml(view());
+  assert.match(html, /<nav class="contents" aria-label="Dashboard sections">/);
+  assert.match(html, /<a class="skip" href="#main-content">Skip to dashboard<\/a>/);
+  assert.match(html, /<main id="main-content" class="content" tabindex="-1">/);
+  for (const section of ["overview", "attention", "writers", "tasks", "workflows", "incidents", "handoffs", "sources"]) {
+    assert.ok(html.includes(`href="#${section}"`));
+    assert.ok(html.includes(`<section id="${section}"`));
+  }
+  const anchors = [...html.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(anchors.length > 0);
+  assert.ok(anchors.every((href) => /^#[a-z-]+$/.test(href!) || /^\/viewer\/(?:status\/[a-z-]+|task\/[a-f0-9-]+)$/.test(href!)));
+  assert.doesNotMatch(html, /<form|<script|<button|<input|onclick=|fetch\(|<iframe/i);
+  assert.match(html, /@media\(max-width:800px\)/);
+  assert.match(html, /:focus-visible/);
+});
+
+test("UX-B keeps stale and unavailable empty task lists distinguishable from genuinely empty lists", () => {
+  const unavailable: OperatorVisualizationV1 = {
+    ...view(),
+    taskBoard: [],
+    sourceNotices: [{ source: "tasks", available: false, stale: true, truncated: false }],
+  };
+  const html = renderOperatorVisualizationHtml(unavailable);
+  assert.match(html, /Source unavailable; no current results can be confirmed/);
+  assert.match(html, /Source unavailable — these rows are not a current, complete result/);
+  assert.doesNotMatch(html, /No tasks in the current bounded snapshot/);
+  const ready: OperatorVisualizationV1 = {
+    ...unavailable,
+    sourceNotices: [],
+    header: { ...unavailable.header, staleSources: 0, unavailableSources: 0 },
+  };
+  assert.match(renderOperatorVisualizationHtml(ready), /No tasks in the current bounded snapshot/);
+});
+
+test("UX-B passive dashboard escapes source error and identifiers", () => {
+  const input: OperatorVisualizationV1 = {
+    ...view(),
+    sourceNotices: [{ source: "tasks", available: true, stale: false, truncated: false, errorCode: "<script>alert(1)</script>" }],
+  };
+  const html = renderOperatorVisualizationHtml(input);
+  assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  assert.equal(html.includes("<script>alert(1)</script>"), false);
+  assert.match(html, /<th scope="col">/);
+  assert.match(html, /No actions available/);
+});
+
+test("UX-E2c3 unknown or unconnected sources never display reassuring zero metrics", () => {
+  const input: OperatorVisualizationV1 = {
+    ...view(),
+    header: { ...view().header, activeTasks: 0, activeWorkflows: 0, activeWriters: 0,
+      openIncidents: 0, waitingForHuman: 0, health: "unknown" },
+    sourceNotices: [
+      { source: "tasks", available: false, stale: true, truncated: false },
+      { source: "workflows", available: false, stale: true, truncated: false },
+      { source: "incidents", available: false, stale: true, truncated: false },
+    ],
+    taskBoard: [], workflows: [], incidents: [], activeWriters: [], specialistTimeline: [],
+    supplementalFeedAvailability: { writers: false, handoffs: false },
+  };
+  const html = renderOperatorVisualizationHtml(input);
+  for (const label of ["Active tasks", "Active workflows", "Active writers", "Open incidents", "Waiting for human"]) {
+    assert.ok(html.includes(`<span>${label}</span><strong>Unknown</strong>`), label);
+  }
+  assert.match(html, /Writer source not connected or unverified/);
+  assert.match(html, /Specialist handoff source not connected or unverified/);
+  assert.match(html, /Source unavailable; no current results can be confirmed/);
+});
+
+test("UX-E2c3 connected empty supplemental feeds can state none observed", () => {
+  const input = { ...view(), activeWriters: [], specialistTimeline: [],
+    supplementalFeedAvailability: { writers: true, handoffs: true } };
+  const html = renderOperatorVisualizationHtml(input);
+  assert.match(html, /No active workspace writers/);
+  assert.match(html, /No specialist handoffs in the current bounded snapshot/);
+});
+
+test("Console-1 read-only task evidence and accessible tables", () => {
+  const html = renderOperatorVisualizationHtml(view());
+  assert.match(html, /<th scope="col">Project<\/th>/);
+  assert.match(html, /Passed/);
+  assert.match(html, /Failed/);
+  assert.match(html, /role="region" aria-label="Task records" tabindex="0"/);
+  assert.match(html, /Refresh this page to capture a new bounded snapshot/);
+  assert.match(html, /not a complete audit trail/);
+  assert.match(html, /not agent\/model health/);
+  assert.doesNotMatch(html, /<script|<form|<button|<input|onclick=/i);
+});
+
+test("Console-2 renders a real visual console shell with bounded overview previews", () => {
+  const html = renderOperatorVisualizationHtml(view());
+  assert.match(html, /<aside class="sidebar" aria-label="Console navigation">/);
+  assert.match(html, /class="pulse-banner"/);
+  assert.match(html, /class="decision-grid"/);
+  assert.match(html, /Recent work/);
+  assert.match(html, /Work outcomes/);
+  assert.match(html, /Task records/);
+  assert.match(html, /Project <code title="Project name unavailable">project<\/code>/);
+  assert.match(html, /@media\(max-width:800px\)/);
+  assert.match(html, /@media\(max-width:480px\)/);
+  assert.doesNotMatch(html, /<form|<script|<button|<input|onclick=/i);
+});
+
+test("Console-2 status and previews do not turn missing or truncated feeds into healthy counts", () => {
+  const input: OperatorVisualizationV1 = {
+    ...view(),
+    header: { ...view().header, health: "unknown", activeTasks: 0, activeWorkflows: 0,
+      activeWriters: 0, openIncidents: 0, waitingForHuman: 0 },
+    sourceNotices: [
+      { source: "tasks", available: true, stale: false, truncated: true },
+      { source: "workflows", available: false, stale: true, truncated: false },
+      { source: "incidents", available: false, stale: true, truncated: false },
+    ],
+    taskBoard: [], workflows: [], incidents: [], activeWriters: [], specialistTimeline: [],
+    supplementalFeedAvailability: { writers: false, handoffs: false },
+  };
+  const html = renderOperatorVisualizationHtml(input);
+  for (const label of ["Active tasks", "Active workflows", "Active writers", "Open incidents", "Waiting for human"]) {
+    assert.ok(html.includes(`<span>${label}</span><strong>Unknown</strong>`), label);
+  }
+  assert.match(html, /Snapshot truncated/);
+  assert.match(html, /Work outcomes/);
+  assert.match(html, /not a complete audit trail/);
+});
+
+test("UX-1 operator-first overview displays measured task status breakdown, not a decorative gauge", () => {
+  const sample = view();
+  const html = renderOperatorVisualizationHtml(sample);
+  assert.match(html, /Work outcomes/);
+  assert.match(html, /Task status distribution in the observed sample/);
+  assert.match(html, /Needs review: 1/);
+  assert.match(html, /<svg class="meter"/);
+  assert.match(html, /<desc id="work-meter-description">/);
+  assert.match(html, /\b1<\/text>/);
+  assert.match(html, /Incomplete or stale sample/);
+  assert.match(html, /Needs attention/);
+  assert.match(html, /Recent work/);
+  assert.match(html, /href="#tasks"/);
+  assert.match(html, /href="#sources"/);
+  assert.doesNotMatch(html, /<script|<form|<button|<input|onclick=/i);
+});
+
+test("UX-1 missing task feed never draws success, failure or false empty current-state indicators", () => {
+  const missing: OperatorVisualizationV1 = {
+    ...view(),
+    taskBoard: [],
+    header: { ...view().header, health: "unknown", activeTasks: 0 },
+    sourceNotices: [{ source: "tasks", stale: true, available: false, truncated: false }],
+  };
+  const html = renderOperatorVisualizationHtml(missing);
+  assert.match(html, /Incomplete or stale sample/);
+  assert.match(html, /Attention status cannot be confirmed/);
+  assert.match(html, /No task status breakdown is available/);
+  assert.match(html, /Source unavailable; no current results can be confirmed/);
+  assert.match(html, /Health: unknown/);
+  assert.doesNotMatch(html, /NaN|Infinity/);
+});
+
+test("UX-1 task outcome meter accounts for every sampled status, including unexpected statuses", () => {
+  const sample = view();
+  sample.taskBoard.push({
+    ...sample.taskBoard[0]!, taskId: "other-task", status: "failed",
+    waitingForHuman: false, validationPassed: undefined, diffSafetyPassed: undefined,
+  });
+  sample.taskBoard.push({
+    ...sample.taskBoard[0]!, taskId: "completed-task", status: "completed",
+    waitingForHuman: false, validationPassed: true, diffSafetyPassed: true,
+  });
+  const html = renderOperatorVisualizationHtml(sample);
+  assert.match(html, /Completed: 1/);
+  assert.match(html, /Needs review: 1/);
+  assert.match(html, /Failed: 1/);
+  assert.match(html, /3<\/text>/);
+});
+
+test("UX-1 current task sample remains labelled as bounded, never a lifetime rate", () => {
+  const current: OperatorVisualizationV1 = {
+    ...view(),
+    sourceNotices: [],
+  };
+  const html = renderOperatorVisualizationHtml(current);
+  assert.match(html, /bounded sample, not an all-time success rate/);
+  assert.match(html, /Task status distribution in the observed sample/);
+});
+
+test("UX-2 task meter links to fixed read-only status routes", () => {
+ const html = renderOperatorVisualizationHtml(view());
+ assert.match(html, /href="\/viewer\/status\/needs-review"/);
+ assert.match(html, /aria-label="Needs review: 1 tasks"/);
+ assert.doesNotMatch(html, /href="https?:\/\//);
+});
+
+test("UX-2B project and workspace names are escaped, IDs remain fallback", () => {
+ const v = view();
+ v.taskBoard[0]!.projectDisplayName = 'Acme & Partners';
+ v.taskBoard[0]!.workspaceDisplayName = 'Frontend';
+ const html = renderOperatorVisualizationHtml(v);
+ assert.match(html,/Acme &amp; Partners/);
+ assert.match(html,/Frontend/);
+ assert.match(html,/Project <span class="entity-name">Acme &amp; Partners<\/span>/);
+ delete v.taskBoard[0]!.projectDisplayName;
+ const fallback=renderOperatorVisualizationHtml(v);
+ assert.match(fallback, /Project <code title="Project name unavailable">project<\/code>/);
 });

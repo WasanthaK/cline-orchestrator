@@ -1,0 +1,52 @@
+name: UX browser acceptance
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "scripts/verify-installed-viewer-browser.mjs"
+      - ".github/workflows/ux-browser-acceptance.yml"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+jobs:
+  installed-viewer-chrome:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+        with:
+          chrome-version: stable
+          install-chromedriver: true
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run verify:package
+      - name: Install actual product tarball into isolated consumer
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ux-install" "$RUNNER_TEMP/ux-archive"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/ux-archive"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/ux-install" "$RUNNER_TEMP"/ux-archive/*.tgz
+      - name: Browser semantic, keyboard and viewport acceptance
+        shell: bash
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          CHROMEDRIVER_BIN: ${{ steps.chrome.outputs.chromedriver-path }}
+          BROWSER_PROOF_DIR: ${{ runner.temp }}/ux-browser-evidence
+        run: node scripts/verify-installed-viewer-browser.mjs "$RUNNER_TEMP/ux-install/node_modules/cline-orchestrator"
+      - name: Upload reviewable screenshots and proof report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-e2c2-browser-evidence
+          path: ${{ runner.temp }}/ux-browser-evidence/
+          if-no-files-found: warn
+          retention-days: 14

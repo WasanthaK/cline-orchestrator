@@ -249,3 +249,32 @@ test("unavailable dashboard evidence reports unknown health without creating act
   assert.ok(view.sourceNotices.some((notice) => notice.source === "tasks"));
   assert.deepEqual(view.actions, []);
 });
+
+test("UX-2B trusted registry names are bounded and cannot override task bindings", () => {
+  const input = dashboard();
+  const make = () => buildOperatorVisualization({dashboard: input, handoffs: [], writerLocks: []}, {now: new Date("2026-09-25T08:20:00.000Z")});
+  let v = make();
+  assert.equal(v.taskBoard[0]?.projectDisplayName, "Project");
+  assert.equal(v.taskBoard[0]?.workspaceDisplayName, "Workspace");
+  assert.equal(v.taskBoard[0]?.projectId, IDS.project);
+  input.sources.projects.stale = true;
+  v = make();
+  assert.equal(v.taskBoard[0]?.projectDisplayName, undefined);
+  assert.equal(v.taskBoard[0]?.workspaceDisplayName, "Workspace");
+  input.sources.projects.stale = false;
+  input.workspaces[0]!.projectId = "other-project";
+  v = make();
+  assert.equal(v.taskBoard[0]?.workspaceDisplayName, undefined);
+  input.workspaces[0]!.projectId = IDS.project;
+  input.projects[0]!.displayName = "PRIVATE\\\\path";
+  v = make();
+  assert.equal(v.taskBoard[0]?.projectDisplayName, undefined);
+  input.projects[0]!.displayName = "<script>alert(1)</script>";
+  v = make();
+  assert.equal(v.taskBoard[0]?.projectDisplayName, undefined);
+  input.projects[0]!.displayName = "Project";
+  input.projects.push({...input.projects[0]!});
+  v = make();
+  assert.equal(v.taskBoard[0]?.projectDisplayName, undefined);
+  assert.doesNotMatch(JSON.stringify(v), /PRIVATE\\\\path|<script>/);
+});
