@@ -13,7 +13,7 @@ const prefix = path.join(tmp, "prefix"), artifacts = path.join(tmp, "artifacts")
 const owned = path.join(tmp, "operator-data"), home = path.join(tmp, "home");
 const sentinel = "RAW_SECRET_M18C2_SENTINEL_71b029";
 const env = { ...process.env, HOME: home, USERPROFILE: home,
- APPDATA: path.join(home, "AppData"), XDG_CONFIG_HOME: path.join(home, "xdg"),
+ APPDATA: path.join(home, "AppData"), LOCALAPPDATA: path.join(home, "AppData", "Local"), XDG_CONFIG_HOME: path.join(home, "xdg"),
  npm_config_cache: path.join(tmp, "npm-cache"), npm_config_update_notifier: "false" };
 for (const key of Object.keys(env)) if (key.startsWith("ORCH_") || key === "npm_config_prefix") delete env[key];
 const run = (command, args, cwd = tmp, timeout = 180000) => {
@@ -73,6 +73,67 @@ try {
  assert.equal(output.payload.daemon.host,"127.0.0.1");
  assert.equal(output.payload.runtime.autoApproveEdits,false);
  assert.equal(output.payload.runtime.autoApproveCommands,false);
+ // RC-A: exercise shipped read-only first-run flow against the real installed JS.
+ // No live model, workspace registration, daemon or task execution in hosted CI.
+ const pilotWorkspace = path.join(tmp,"rc-pilot-workspace");
+ await mkdir(pilotWorkspace,{recursive:true});
+ const pilotConfig = path.join(tmp,"local-llama-pilot.json");
+ await writeFile(pilotConfig,JSON.stringify({
+  schemaVersion:1,
+  provider:{providerId:"ollama-openai",modelId:"local-llama-model",
+    baseUrl:"http://127.0.0.1:8080/v1"},
+  runtime:{autoApproveCommands:false,autoApproveEdits:false},
+  daemon:{host:"127.0.0.1",port:49731}
+ }));
+ const installedJs = path.join(modulePath,"dist","product-cli.js");
+ const pilot = args => run(process.execPath,[installedJs,"--config",pilotConfig,...args],tmp);
+ const pilotConfigCheck=pilot(["config"]); ok(pilotConfigCheck,"installed local-model config");
+ const pilotResolved=JSON.parse(pilotConfigCheck.stdout);
+ assert.equal(pilotResolved.payload.provider.providerId,"ollama-openai");
+ assert.equal(pilotResolved.payload.provider.modelId,"local-llama-model");
+ assert.equal(pilotResolved.payload.provider.baseUrl,"http://127.0.0.1:8080/v1");
+ assert.equal(pilotResolved.payload.runtime.autoApproveCommands,false);
+ assert.equal(pilotResolved.payload.runtime.autoApproveEdits,false);
+ assert.equal(pilotResolved.payload.daemon.host,"127.0.0.1");
+ assert.equal(pilotResolved.grantsAuthority,false);
+ const diagnose=pilot(["diagnose",pilotWorkspace]); ok(diagnose,"installed first-run diagnosis");
+ const diagnosis=JSON.parse(diagnose.stdout);
+ assert.equal(diagnosis.command,"diagnose");
+ assert.equal(diagnosis.grantsAuthority,false);
+ assert.equal(diagnosis.payload.readOnly,true);
+ assert.equal(diagnosis.payload.workspaceReady,false);
+ assert.ok(diagnosis.payload.setupSteps.some(step=>step.code==="register_workspace"));
+ const setup=pilot(["setup",pilotWorkspace]); ok(setup,"installed setup plan");
+ const proposed=JSON.parse(setup.stdout);
+ assert.equal(proposed.command,"setup");
+ assert.equal(proposed.payload.mutationPerformed,false);
+ assert.equal(proposed.payload.explicitM17CConfirmationRequiredForMutation,true);
+ assert.equal(proposed.registersWorkspace,false);
+ assert.equal(proposed.startsService,false);
+ const status=pilot(["status",pilotWorkspace]); ok(status,"installed daemon status");
+ const daemonStatus=JSON.parse(status.stdout);
+ assert.equal(daemonStatus.command,"status");
+ assert.equal(daemonStatus.payload.loopback,true);
+ assert.equal(daemonStatus.grantsAuthority,false);
+ const htmlFile=path.join(tmp,"read-only-setup.html");
+ const exportView=pilot(["setup-view",pilotWorkspace,htmlFile]);
+ ok(exportView,"installed offline setup-view");
+ const receipt=JSON.parse(exportView.stdout);
+ assert.equal(receipt.created,true);
+ assert.equal(receipt.readOnlyView,true);
+ assert.equal(receipt.opensListener,false);
+ assert.equal(receipt.opensBrowser,false);
+ assert.equal(receipt.grantsAuthority,false);
+ const offlineHtml=await readFile(htmlFile,"utf8");
+ assert.match(offlineHtml,/<!doctype html>/i);
+ assert.match(offlineHtml,/Read-only checklist/i);
+ assert.doesNotMatch(offlineHtml,/<script\b|onclick=|onload=|<form\b/i);
+ const originalHtmlHash=hash(Buffer.from(offlineHtml));
+ const refusedRepeat=pilot(["setup-view",pilotWorkspace,htmlFile]);
+ assert.notEqual(refusedRepeat.status,0,"offline setup must not replace an existing file");
+ assert.equal(hash(await readFile(htmlFile)),originalHtmlHash);
+ assert.equal(await exists(path.join(home,".cline-orchestrator")),false);
+ assert.equal(await exists(path.join(home,"xdg","cline-orchestrator")),false);
  const bad=path.join(tmp,"invalid.json");
  await writeFile(bad,JSON.stringify({schemaVersion:1,provider:{apiKey:sentinel}}));
  const rejected=runInstalled(["--config",bad,"config"]);
@@ -84,7 +145,7 @@ try {
  assert.equal(await exists(modulePath),false); assert.equal(await exists(shim),false);
  assert.ok(await exists(prefix));
  for (const [name,expected] of hashes) assert.equal(hash(await readFile(path.join(owned,name))),expected,name);
- console.log(JSON.stringify({slice:"M18C3",platform:process.platform,package:list[0].filename,installedCli:true,
+ console.log(JSON.stringify({slice:"M18C3",platform:process.platform,package:list[0].filename,installedCli:true,readOnlyFirstRunAccepted:true,offlineSetupViewAccepted:true,
   sanitizedRejection:true,removed:true,operatorSentinelsPreserved:hashes.size,
   serviceInstalled:false,daemonStarted:false,grantsAuthority:false}));
 } finally { await rm(tmp,{recursive:true,force:true,maxRetries:3,retryDelay:150}); }
