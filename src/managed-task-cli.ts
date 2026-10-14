@@ -158,7 +158,7 @@ export async function runManagedTaskCli(
   }
 
   const release = await exclusiveCliLock(registry, workspace.workspaceId);
-  const service = deps.machine ?? new MachineOrchestratorService(
+  const ownedService = deps.machine ? undefined : new MachineOrchestratorService(
     registry, new SafetyPlanService(registry),
     selectedProfile => {
       if (selectedProfile !== workspace.safetyProfile.workerProfileId) {
@@ -167,6 +167,7 @@ export async function runManagedTaskCli(
       return worker;
     },
   );
+  const service = deps.machine ?? ownedService!;
   try {
     const preview = await service.previewTask({
       workspaceId: workspace.workspaceId,
@@ -195,7 +196,7 @@ export async function runManagedTaskCli(
     }
     return { started: true, taskId: observed.taskId, status: observed.status, grantsAuthority: false };
   } finally {
-    try { if (!deps.machine) await service.close(); }
+    try { if (ownedService) await ownedService.close(); }
     finally { await release(); }
   }
 }
