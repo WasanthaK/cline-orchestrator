@@ -27,6 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: node scripts/verify-linux-restart-physical-workflow.mjs
       - run: npm install
       - run: npm run typecheck
       - run: npm test
