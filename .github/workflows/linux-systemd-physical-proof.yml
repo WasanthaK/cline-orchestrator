@@ -1,8 +1,7 @@
 name: Linux systemd VM physical proof (manual, pinned)
 
-# This intentionally replaces the failed Docker-in-Docker systemd experiment.
-# ubuntu-24.04 is a disposable GitHub-hosted VM, NOT ubuntu-slim and NOT a
-# self-hosted machine. No execution from pull_request, push or merge.
+# Disposable GitHub-hosted Ubuntu VM only, never a self-hosted runner.
+# No execution from push or pull_request, no container privilege escalation.
 on:
   workflow_dispatch:
     inputs:
@@ -87,17 +86,16 @@ jobs:
           entry="$RUNNER_TEMP/orch-vm-consumer/lib/node_modules/cline-orchestrator/dist/index.js"
           port=43717
           [[ "$node" == /* && "$entry" == /* && "$workspace" == /* && "$home" == /* ]]
-          # Check each path independently: joining paths with spaces before
-          # validation would always fail even on a valid GitHub-hosted VM.
+          # Individually validate systemd directive paths and reject delimiters.
           for p in "$node" "$entry" "$workspace" "$home"; do
-            [[ "$p" != *
+            [[ "$p" != *$'\n'* && "$p" != *$'\r'* && "$p" != *' '* ]]
+          done
           [[ -f "$entry" ]]
           if sudo test -e "$unit" || sudo systemctl list-unit-files --no-legend "$service.service" 2>/dev/null | grep -q "$service"; then
             echo 'Refusing: unit name already exists'
             exit 64
           fi
-          # Refuse any pre-existing listener, including an unrelated service
-          # that does not expose our HTTP /health endpoint.
+          # Refuse any pre-existing listener, even if it has no /health.
           if [[ -n "$(ss -ltnH "( sport = :$port )")" ]]; then
             echo 'Refusing: test port already has a TCP listener'
             exit 64
@@ -131,7 +129,7 @@ jobs:
             fi
             exit "$result"
           }
-          # Set cleanup before creating the unit, so partial writes fail safely.
+          # Trap before first mutation so partial writes are cleaned too.
           trap cleanup EXIT
           registered=yes
           cat <<EOF | sudo tee "$unit" >/dev/null
@@ -168,7 +166,7 @@ jobs:
           done
           [[ "$ready" == yes ]] || { echo 'FAIL: systemd active state and application health not established'; exit 1; }
           echo 'PASS: service RUNNING with independently checked localhost application health'
-          # The service must not listen on public or IPv6 wildcard interfaces.
+          # Reject public and IPv6 wildcard socket binding.
           listeners="$(ss -ltnH "( sport = :$port )")"
           [[ "$listeners" == *"127.0.0.1:$port"* ]]
           [[ "$listeners" != *"0.0.0.0:$port"* && "$listeners" != *"[::]:$port"* ]]
@@ -179,184 +177,4 @@ jobs:
             exit 1
           fi
           echo 'PASS: service stopped and localhost port released'
-          # Cleanup trap owns only this exact temporary unit and checks removal.
-          echo 'PASS: disposable systemd VM lifecycle reached cleanup'
-\n'* && "$p" != *
-          [[ -f "$entry" ]]
-          if sudo test -e "$unit" || sudo systemctl list-unit-files --no-legend "$service.service" 2>/dev/null | grep -q "$service"; then
-            echo 'Refusing: unit name already exists'
-            exit 64
-          fi
-          if curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-            echo 'Refusing: test port already in use'
-            exit 64
-          fi
-          mkdir -p "$workspace" "$home"
-          printf 'operator-owned sentinel; never delete\n' > "$owned"
-          expected="$(sha256sum "$owned" | cut -d' ' -f1)"
-          registered=no
-          cleanup() {
-            result=$?
-            trap - EXIT
-            if [[ "$registered" == yes ]]; then
-              if [[ "$result" -ne 0 ]]; then
-                sudo systemctl status "$service.service" --no-pager --full || true
-                sudo journalctl -u "$service.service" --no-pager -n 50 || true
-              fi
-              sudo systemctl stop "$service.service" >/dev/null 2>&1 || true
-              sudo rm -f -- "$unit" || result=1
-              sudo systemctl daemon-reload >/dev/null 2>&1 || result=1
-              if sudo test -e "$unit"; then echo 'FAIL: owned unit file persists'; result=1; fi
-              if sudo systemctl is-active --quiet "$service.service"; then
-                echo 'FAIL: test service still active'
-                result=1
-              fi
-            fi
-            if [[ -f "$owned" && "$(sha256sum "$owned" | cut -d' ' -f1)" == "$expected" ]]; then
-              echo 'Operator-owned sentinel preserved'
-            else
-              echo 'FAIL: operator-owned sentinel was modified'
-              result=1
-            fi
-            exit "$result"
-          }
-          # Set cleanup before creating the unit, so partial writes fail safely.
-          trap cleanup EXIT
-          registered=yes
-          cat <<EOF | sudo tee "$unit" >/dev/null
-          [Unit]
-          Description=Disposable Cline Orchestrator VM proof $GITHUB_RUN_ID
-          [Service]
-          Type=simple
-          User=$(id -un)
-          WorkingDirectory=$workspace
-          ExecStart=$node $entry daemon $workspace
-          Environment=HOME=$home
-          Environment=ORCH_DAEMON_HOST=127.0.0.1
-          Environment=ORCH_DAEMON_PORT=$port
-          Environment=ORCH_AUTO_APPROVE_COMMANDS=false
-          Environment=ORCH_AUTO_APPROVE_EDITS=false
-          Restart=no
-          KillMode=control-group
-          TimeoutStopSec=15s
-          NoNewPrivileges=true
-          PrivateTmp=true
-          EOF
-          sudo systemd-analyze verify "$unit"
-          sudo systemctl daemon-reload
-          sudo systemctl start "$service.service"
-          ready=no
-          for i in $(seq 1 20); do
-            if sudo systemctl is-active --quiet "$service.service" &&
-              curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$port/health" |
-              node -e 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const x=JSON.parse(s);process.exit(x.status==="running"&&x.activeTaskId==null?0:1)})'; then
-              ready=yes
-              break
-            fi
-            sleep 1
-          done
-          [[ "$ready" == yes ]] || { echo 'FAIL: systemd active state and application health not established'; exit 1; }
-          echo 'PASS: service RUNNING with independently checked localhost application health'
-          # The service must not listen on public or IPv6 wildcard interfaces.
-          listeners="$(ss -ltnH "( sport = :$port )")"
-          [[ "$listeners" == *"127.0.0.1:$port"* ]]
-          [[ "$listeners" != *"0.0.0.0:$port"* && "$listeners" != *"[::]:$port"* ]]
-          sudo systemctl stop "$service.service"
-          [[ "$(sudo systemctl is-active "$service.service" || true)" == inactive ]]
-          if curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-            echo 'FAIL: service still listening after stop'
-            exit 1
-          fi
-          echo 'PASS: service stopped and localhost port released'
-          # Cleanup trap owns only this exact temporary unit and checks removal.
-          echo 'PASS: disposable systemd VM lifecycle reached cleanup'
-\r'* && "$p" != *' '* ]]
-          done
-          [[ -f "$entry" ]]
-          if sudo test -e "$unit" || sudo systemctl list-unit-files --no-legend "$service.service" 2>/dev/null | grep -q "$service"; then
-            echo 'Refusing: unit name already exists'
-            exit 64
-          fi
-          if curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-            echo 'Refusing: test port already in use'
-            exit 64
-          fi
-          mkdir -p "$workspace" "$home"
-          printf 'operator-owned sentinel; never delete\n' > "$owned"
-          expected="$(sha256sum "$owned" | cut -d' ' -f1)"
-          registered=no
-          cleanup() {
-            result=$?
-            trap - EXIT
-            if [[ "$registered" == yes ]]; then
-              if [[ "$result" -ne 0 ]]; then
-                sudo systemctl status "$service.service" --no-pager --full || true
-                sudo journalctl -u "$service.service" --no-pager -n 50 || true
-              fi
-              sudo systemctl stop "$service.service" >/dev/null 2>&1 || true
-              sudo rm -f -- "$unit" || result=1
-              sudo systemctl daemon-reload >/dev/null 2>&1 || result=1
-              if sudo test -e "$unit"; then echo 'FAIL: owned unit file persists'; result=1; fi
-              if sudo systemctl is-active --quiet "$service.service"; then
-                echo 'FAIL: test service still active'
-                result=1
-              fi
-            fi
-            if [[ -f "$owned" && "$(sha256sum "$owned" | cut -d' ' -f1)" == "$expected" ]]; then
-              echo 'Operator-owned sentinel preserved'
-            else
-              echo 'FAIL: operator-owned sentinel was modified'
-              result=1
-            fi
-            exit "$result"
-          }
-          # Set cleanup before creating the unit, so partial writes fail safely.
-          trap cleanup EXIT
-          registered=yes
-          cat <<EOF | sudo tee "$unit" >/dev/null
-          [Unit]
-          Description=Disposable Cline Orchestrator VM proof $GITHUB_RUN_ID
-          [Service]
-          Type=simple
-          User=$(id -un)
-          WorkingDirectory=$workspace
-          ExecStart=$node $entry daemon $workspace
-          Environment=HOME=$home
-          Environment=ORCH_DAEMON_HOST=127.0.0.1
-          Environment=ORCH_DAEMON_PORT=$port
-          Environment=ORCH_AUTO_APPROVE_COMMANDS=false
-          Environment=ORCH_AUTO_APPROVE_EDITS=false
-          Restart=no
-          KillMode=control-group
-          TimeoutStopSec=15s
-          NoNewPrivileges=true
-          PrivateTmp=true
-          EOF
-          sudo systemd-analyze verify "$unit"
-          sudo systemctl daemon-reload
-          sudo systemctl start "$service.service"
-          ready=no
-          for i in $(seq 1 20); do
-            if sudo systemctl is-active --quiet "$service.service" &&
-              curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$port/health" |
-              node -e 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const x=JSON.parse(s);process.exit(x.status==="running"&&x.activeTaskId==null?0:1)})'; then
-              ready=yes
-              break
-            fi
-            sleep 1
-          done
-          [[ "$ready" == yes ]] || { echo 'FAIL: systemd active state and application health not established'; exit 1; }
-          echo 'PASS: service RUNNING with independently checked localhost application health'
-          # The service must not listen on public or IPv6 wildcard interfaces.
-          listeners="$(ss -ltnH "( sport = :$port )")"
-          [[ "$listeners" == *"127.0.0.1:$port"* ]]
-          [[ "$listeners" != *"0.0.0.0:$port"* && "$listeners" != *"[::]:$port"* ]]
-          sudo systemctl stop "$service.service"
-          [[ "$(sudo systemctl is-active "$service.service" || true)" == inactive ]]
-          if curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-            echo 'FAIL: service still listening after stop'
-            exit 1
-          fi
-          echo 'PASS: service stopped and localhost port released'
-          # Cleanup trap owns only this exact temporary unit and checks removal.
           echo 'PASS: disposable systemd VM lifecycle reached cleanup'
