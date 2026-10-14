@@ -140,7 +140,7 @@ test("M18D4d3 fails closed on identity, ambiguity, and forged authority",()=>{
     ServiceRecoveryMatrixError,
   );
 
-  const forged = {...good.observations[0],grantsAuthority:true};
+  const forged = {...good.observations[0],grantsAuthority:true} as unknown as ServiceFailureEvidenceV1;
   const finding = reviewServiceRecoveryMatrix(matrix([{
     ...good,observations:[forged,...good.observations.slice(1)],
   },platform("windows-service")]));
