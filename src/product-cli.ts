@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { runManagedTaskCli, type ManagedTaskReview } from "./managed-task-cli.js";
+import { scheduleManagedRunExitDiagnostic } from "./managed-exit-diagnostics.js";
 import { exportOfflineSetupView } from "./offline-setup-view-export.js";
 import { startInstalledPassiveViewer } from "./installed-passive-viewer.js";
 import { realpathSync } from "node:fs";
@@ -454,6 +455,7 @@ export async function runProductCli(
     };
     const result = await runManagedTaskCli({ workspaceId: route.workspaceId, goal: route.goal, config, env: deps.env }, { confirm });
     process.stdout.write(JSON.stringify({ command: "managed-run", ...result }, null, 2) + "\n");
+    scheduleManagedRunExitDiagnostic(deps.env);
     return undefined;
   }
   if (route.kind === "setup_start") {
