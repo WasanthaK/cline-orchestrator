@@ -117,3 +117,64 @@ test("M17F duplicate manifest ownership entries fail closed", () => {
       && error.code === "path_invalid",
   );
 });
+
+test("M18D4d rejects product directory enclosing preserved operator state", () => {
+  assert.throws(() => planUninstall({
+    ...manifest,
+    entries: [
+      { path: "data", ownership: "product_owned", kind: "directory" },
+      { path: "data/config.json", ownership: "user_owned_config", kind: "file" },
+    ],
+  }), (error: unknown) => error instanceof InstallerPackagingError && error.code === "path_invalid");
+});
+
+test("M18D4d rejects product files nested beneath preserved user-owned directories", () => {
+  assert.throws(() => planUninstall({
+    ...manifest,
+    entries: [
+      { path: "state", ownership: "user_owned_task_state", kind: "directory" },
+      { path: "state/helper.exe", ownership: "product_owned", kind: "file" },
+    ],
+  }), (error: unknown) => error instanceof InstallerPackagingError && error.code === "path_invalid");
+});
+
+test("M18D4d blocks Windows path casing and separator alias collisions", () => {
+  assert.throws(() => planInstall({
+    ...manifest,
+    entries: [
+      { path: "Bin\\agent.exe", ownership: "product_owned", kind: "file" },
+      { path: "bin/AGENT.EXE", ownership: "user_owned_config", kind: "file" },
+    ],
+  }), (error: unknown) => error instanceof InstallerPackagingError && error.code === "path_invalid");
+});
+
+test("M18D4d rejects ambiguous path components and file descendants", () => {
+  for (const path of ["bin/./agent.exe", "bin /agent.exe", "bin./agent.exe"]) {
+    assert.throws(() => planInstall({
+      ...manifest,
+      entries: [{ path, ownership: "product_owned", kind: "file" }],
+    }), (error: unknown) => error instanceof InstallerPackagingError && error.code === "path_invalid");
+  }
+  assert.throws(() => planInstall({
+    ...manifest,
+    entries: [
+      { path: "bin/agent.exe", ownership: "product_owned", kind: "file" },
+      { path: "bin/agent.exe/nested", ownership: "product_owned", kind: "file" },
+    ],
+  }), (error: unknown) => error instanceof InstallerPackagingError && error.code === "path_invalid");
+});
+
+test("M18D4d allows independent product and operator paths and safe nested product files", () => {
+  const result = planUninstall({
+    ...manifest,
+    entries: [
+      { path: "bin", ownership: "product_owned", kind: "directory" },
+      { path: "bin/agent.exe", ownership: "product_owned", kind: "file" },
+      { path: "state", ownership: "user_owned_task_state", kind: "directory" },
+      { path: "state/tasks.json", ownership: "user_owned_task_state", kind: "file" },
+    ],
+  });
+  assert.deepEqual(result.preservedUserOwnedPaths, ["state", "state/tasks.json"]);
+  assert.equal(result.destructiveUserDataDeletionRequested, false);
+  assert.equal(result.mutatesFilesystem, false);
+});
