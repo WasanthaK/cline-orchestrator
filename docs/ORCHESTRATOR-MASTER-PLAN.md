@@ -1,6 +1,6 @@
 # Cline Orchestrator — Master Plan and Progress Tracker
 
-Last updated: 2026-10-13
+Last updated: 2026-10-15
 Branch: `milestone-13/delegation`
 
 ## Canonical rules
@@ -50,7 +50,8 @@ ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline wo
 | 15 | GitHub delivery / release authority | Complete — M15A–M15H; full separated delivery-authority acceptance harness `fcc3f52d`, CI `#1305` green |
 | 16 | Production security / reliability / observability | Complete — M16A–M16H; production hardening acceptance harness `59a11705`, CI `#1323` green |
 | 17 | Productization / installer / first-run UX | Complete — M17A–M17H productization contracts and acceptance composition; harness `400ce861`, type correction `3aa7a573`, CI `#1346` green. Installer execution and physical service installation are not proven by the fake-driver harness. |
-| 18 | Production release | In progress — M18A–M18C complete; Windows SCM basic lifecycle and Linux systemd basic/restart physical proofs passed on pinned candidates. Full persistent service integration M18D remains unproven and excluded from limited foreground-only v0.1 preview. M18E packaged read-only GUI has automated Chrome smoke; real operator task/model signoff pending. M18F staged release separately gated. |
+| 18 | Production release | In progress — M18A–M18C complete; Windows SCM basic lifecycle and Linux systemd basic/restart physical proofs passed on pinned candidates. Full persistent service integration M18D remains unproven and excluded from limited foreground-only v0.1 preview. M18E installed viewer and real local-Qwen task execution were exercised by the Windows operator; a second candidate `59eea2e8` completed a bounded task and exited 0. Final candidate-scoped review, preservation/uninstall and human release decision remain open. M18F staged release separately gated. |
+| 19 | Installable & configurable local application (Windows-first) | **Active product priority** by explicit operator decision (2026-10-15). M19A foreground installer layout and ownership contract is in implementation; M19B Windows user-installable artifact/launcher, M19C secure first-run wizard, M19D settings and task UX, M19E Windows/Linux install-update-uninstall acceptance are pending. Does not close or waive M18D/M18F release gates. |
 
 ---
 
@@ -1457,3 +1458,34 @@ UX-E2c2 exact-head `e1009e64` passed normal CI #38311112299 and installed Chrome
 ## M18E-UX-E2c4 — Keyboard navigation and clean visual evidence — IMPLEMENTED; CI PENDING
 
 PR #20 exact-head `25e41e8` passed standard CI #38312464126 and installed Chrome acceptance #38312464229. The actual screen evidence confirms unknown-source metrics are differentiated from verified zeros. A review found the Chrome script screenshots contained an intentionally keyboard-focused skip link, obscuring part of the title. E2c4 separates the focus-state screenshot from clean desktop/mobile/2x screenshots, tests activation of the skip link into `#main-content`, and asserts disconnected workflow, incident and writer metrics render `Unknown` rather than zero. It makes no service, product action or release change. The automated Chrome smoke remains distinct from human visual signoff, complete WCAG audit, and cross-browser acceptance. M18D physical service proof and M18F release remain open.
+
+
+---
+
+# Milestone 19 — Installable & configurable local application (ACTIVE PRODUCT PRIORITY)
+
+**Decision 2026-10-15:** Deliver a genuine installable and configurable Cline Orchestrator application, **Windows-first**, before broader v0.1 distribution. The operator expressly prioritized this bounded end-to-end product-delivery work while Milestone 18's deferred service-manager and staged-release acceptance remain open. Do not reclassify M17 plan-only installers as shipped installation, or the M18 private npm tarball as an end-user app.
+
+**Canonical design/acceptance:** [M19 Windows-first app plan](M19-WINDOWS-FIRST-APP.md). Tracking issue [#49](https://github.com/WasanthaK/cline-orchestrator/issues/49).
+
+## User-facing outcome
+
+- A developer installs an integrity-verified, self-contained, user-scoped Windows artifact (no source checkout, separate Node/npm install or PowerShell workflow), then opens the app from its launcher.
+- A safe local first-run experience discovers resources, lets the user select `llama.cpp` OpenAI-compatible and other supported provider endpoints/models, checks the actual model, registers a project and workspace and asks for explicit Safety/validation policies.
+- A consistent dashboard shows model and workspace readiness, independently captured task validation/diff/checkpoint evidence, missing-source coverage and runtime status in plain language; advanced technical details remain available by drilldown.
+- Configuration and confirmation use existing trusted product services; the browser does not acquire task, filesystem, credential, daemon or release authority from an installation shortcut.
+- Updates/uninstall remove only product-owned artifacts, **preserving** external configuration, workspace registry, secrets and task history by default. No persistent service, automatic model download, remote bind, unattended task or release operation is implied.
+
+## Ordered slices and gates
+
+| Slice | Scope | State |
+|---|---|---|
+| M19A | Windows user-foreground bundle layout and external state ownership, version/provenance and package constraints, negative tests | **In implementation**; contract-only, no installer artifact |
+| M19B | Reproducible bundled Node runtime + packaged Orchestrator + user-scoped Windows launcher/installer, installed viewer lifecycle, relaunch and shutdown; no service-manager change | Pending |
+| M19C | Secure first-run and model connection flow; invoke existing guided setup/config/registration/Safety boundaries with new browser session/Origin/CSRF/one-time-confirmation proof if actions enter WebView2/browser | Pending |
+| M19D | Settings, task history, source-quality indicators, onboarding errors and accessible operator navigation | Pending |
+| M19E | Exact candidate install, launch, configuration, real local-model task, update/rollback, uninstall/user-data preservation, Windows first then Linux; independent human acceptance | Pending |
+
+**Release discipline:** M19 does not itself authorize an installer to run on the operator's machine, create an OS service, merge/deploy, acquire credentials, or sign/publish a package. M18D service integration and M18F staged release remain separately gated. Run focused local tests during development, then batch review-ready changes into CI rather than triggering hosted workflows for every documentation edit.
+
+**Current technical starting point:** reuse `installer-packaging.ts`, `first-run-assessment.ts`, `first-run-guided-action.ts`, `product-config.ts`, `registration-setup.ts`, `installed-passive-viewer.ts`, and the existing sanitized task/overview projections. The read-only viewer stays read-only until a reviewed authenticated action boundary exists. Do not duplicate task execution or Safety logic in the UI.
