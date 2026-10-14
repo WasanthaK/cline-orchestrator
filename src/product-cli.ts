@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { runManagedTaskCli, type ManagedTaskReview } from "./managed-task-cli.js";
 import { exportOfflineSetupView } from "./offline-setup-view-export.js";
 import { startInstalledPassiveViewer } from "./installed-passive-viewer.js";
 import { realpathSync } from "node:fs";
@@ -36,6 +37,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "setup-project",
     "setup-workspace",
     "setup-start",
+    "managed-run",
     "start",
     "status",
     "tasks",
@@ -57,6 +59,7 @@ export type ProductCliRoute =
   | { kind: "viewer" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
+  | { kind: "managed_run"; workspaceId: string; goal: string; configPath?: string }
   | { kind: "setup_project"; displayName: string; configPath?: never }
   | { kind: "setup_workspace"; inputPath: string; configPath?: never }
   | { kind: "setup_config"; inputPath: string; targetPath: string; configPath?: never }
@@ -125,6 +128,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator setup-project <display-name>  # interactive project registration",
     "  cline-orchestrator setup-workspace <input.json>  # interactive workspace/Safety registration",
     "  cline-orchestrator [--config <file>] setup-start <workspace-id>  # confirmed foreground daemon",
+    "  cline-orchestrator [--config <file>] managed-run <workspace-id> <goal...>  # confirmed managed task (no daemon)",
     "  cline-orchestrator start <workspace>",
     "  cline-orchestrator status <workspace> [task-id]",
     "  cline-orchestrator tasks <workspace>",
@@ -150,7 +154,7 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     const route = routeProductCli(argv.slice(2));
-    if ((route.kind !== "native" && route.kind !== "legacy" && route.kind !== "setup_start" && route.kind !== "setup_view") || route.configPath !== undefined) {
+    if ((route.kind !== "native" && route.kind !== "legacy" && route.kind !== "setup_start" && route.kind !== "setup_view" && route.kind !== "managed_run") || route.configPath !== undefined) {
       throw new ProductCliError(productCliUsage(), "usage_invalid");
     }
     return { ...route, configPath: filePath };
@@ -164,6 +168,12 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "setup-view") {
     if (rest.length !== 2 || !rest[0]?.trim() || !rest[1]?.trim()) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "setup_view", workspace: rest[0], outputFile: rest[1] };
+  }
+  if (command === "managed-run") {
+    if (rest.length < 2 || !rest[0]?.trim() || !rest.slice(1).join(" ").trim()) {
+      throw new ProductCliError(productCliUsage(), "usage_invalid");
+    }
+    return { kind: "managed_run", workspaceId: rest[0]!, goal: rest.slice(1).join(" ") };
   }
   if (command === "setup-start") {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -428,6 +438,22 @@ export async function runProductCli(
     const result = await runNativeProductCommand({ kind: "native", command: "diagnose", args: [route.workspace], configPath: route.configPath }, deps);
     const receipt = await exportOfflineSetupView(result.payload as FirstRunAssessmentV1, route.outputFile);
     process.stdout.write(JSON.stringify(receipt, null, 2) + "\n");
+    return undefined;
+  }
+  if (route.kind === "managed_run") {
+    const config = await resolveProductConfigSource(route.configPath ?? deps.env.ORCH_CONFIG_FILE, deps.env, deps.readConfigFile);
+    const confirm = async (review: ManagedTaskReview) => {
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        throw new ProductCliError("Managed execution requires an interactive terminal", "interactive_required");
+      }
+      process.stdout.write("Review registered workspace and Safety Plan before starting Cline:\n"
+        + JSON.stringify(review, null, 2) + "\n");
+      const terminal = createInterface({ input: process.stdin, output: process.stdout });
+      try { return await terminal.question("Type APPROVE TASK to start: ") === "APPROVE TASK"; }
+      finally { terminal.close(); }
+    };
+    const result = await runManagedTaskCli({ workspaceId: route.workspaceId, goal: route.goal, config, env: deps.env }, { confirm });
+    process.stdout.write(JSON.stringify({ command: "managed-run", ...result }, null, 2) + "\n");
     return undefined;
   }
   if (route.kind === "setup_start") {
