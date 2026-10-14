@@ -1,0 +1,96 @@
+name: Linux service crash/restart VM proof (manual, pinned)
+
+# REGISTER ONLY: no push, pull_request or schedule trigger. Manual service
+# manager operations must be explicitly authorized on the default branch.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RUN_DISPOSABLE_LINUX_RESTART to authorize ONE crash/restart proof on a disposable GitHub-hosted Ubuntu VM'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-systemd-restart-physical-proof
+  cancel-in-progress: false
+
+jobs:
+  disposable-restart-proof:
+    if: ${{ github.repository == 'WasanthaK/cline-orchestrator' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RUN_DISPOSABLE_LINUX_RESTART' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout immutable reviewed service-recovery candidate
+        uses: actions/checkout@v4
+        with:
+          ref: 3cf0ae1f5e5e3ae873b2915113e5c382ae0dfe8a
+          persist-credentials: false
+
+      - name: Verify pinned candidate and disposable VM before installation
+        shell: bash
+        env:
+          EXPECTED_CANDIDATE: 3cf0ae1f5e5e3ae873b2915113e5c382ae0dfe8a
+          PROOF_CONFIRMATION: ${{ inputs.confirmation }}
+          RUNNER_KIND: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          [[ "$PROOF_CONFIRMATION" == RUN_DISPOSABLE_LINUX_RESTART ]]
+          [[ "$GITHUB_ACTIONS" == true && "$RUNNER_OS" == Linux && "$RUNNER_KIND" == github-hosted ]]
+          [[ "$GITHUB_REPOSITORY" == WasanthaK/cline-orchestrator && "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_RUN_ID" =~ ^[1-9][0-9]{0,17}$ ]]
+          [[ -n "${RUNNER_TEMP:-}" && -d "$RUNNER_TEMP" ]]
+          [[ ! -e /.dockerenv && "$(cat /proc/1/comm)" == systemd && -d /run/systemd/system ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_CANDIDATE" ]]
+          test -f scripts/prove-linux-restart-recovery-vm.sh
+          sudo -n true
+          echo "Preflight: reviewed candidate and hosted VM verified, no service operation performed"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build and install exact candidate npm package into runner temp
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run build
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+          package="$RUNNER_TEMP/cline-orchestrator-0.1.0.tgz"
+          test -f "$package"
+          sha256sum "$package"
+          mkdir -p "$RUNNER_TEMP/orch-restart-consumer"
+          npm install --global --prefix "$RUNNER_TEMP/orch-restart-consumer" --ignore-scripts --no-audit --no-fund "$package"
+          test -f "$RUNNER_TEMP/orch-restart-consumer/lib/node_modules/cline-orchestrator/dist/index.js"
+
+      - name: Manually authorized isolated process crash and restart acceptance
+        shell: bash
+        env:
+          ORCH_LINUX_RESTART_CONFIRMATION: ${{ inputs.confirmation }}
+          ORCH_PROOF_RUNNER_KIND: ${{ runner.environment }}
+          ORCH_PROOF_CANDIDATE_SHA: 3cf0ae1f5e5e3ae873b2915113e5c382ae0dfe8a
+          ORCH_PROOF_PACKAGE: ${{ runner.temp }}/cline-orchestrator-0.1.0.tgz
+          ORCH_PROOF_ENTRY: ${{ runner.temp }}/orch-restart-consumer/lib/node_modules/cline-orchestrator/dist/index.js
+          ORCH_PROOF_PORT: '43719'
+        run: |
+          set -euo pipefail
+          # Pin the built artifact's digest for this specific run. The Git
+          # source commit is immutable; this is not a signing attestation.
+          export ORCH_PROOF_PACKAGE_SHA256="$(sha256sum "$ORCH_PROOF_PACKAGE" | cut -d' ' -f1)"
+          bash scripts/prove-linux-restart-recovery-vm.sh
+
+      - name: Report runner-local service residue (read-only)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          service="cline-orch-restart-${GITHUB_RUN_ID}"
+          unit="/run/systemd/system/$service.service"
+          if sudo test -e "$unit" || sudo systemctl is-active --quiet "$service.service"; then
+            echo 'FAIL: temporary service unit or active service remains'
+            exit 1
+          fi
+          echo 'No active disposable restart service or unit file detected'
