@@ -83,7 +83,14 @@ function assertManifest(manifest: InstallManifestV1): void {
     throw new InstallerPackagingError("install manifest is invalid", "manifest_invalid");
   }
 
+  // Normalize path identity without consulting the filesystem. Windows
+  // package paths are case-insensitive; Linux paths are case-sensitive.
+  // Both accept separator spellings but must reject ambiguous aliases.
+  const segmentsOf = (value: string): string[] => value.replace(/\\/g, "/").split("/");
+  const identityOf = (value: string): string =>
+    manifest.platform === "windows" ? value.replace(/\\/g, "/").toLowerCase() : value.replace(/\\/g, "/");
   const seen = new Set<string>();
+  const entries: { path: string; kind: InstallManifestEntryV1["kind"]; ownership: InstallOwnership }[] = [];
   for (const entry of manifest.entries) {
     if (
       !isSafeRelativePath(entry.path)
@@ -95,11 +102,23 @@ function assertManifest(manifest: InstallManifestV1): void {
         "user_owned_task_state",
       ].includes(entry.ownership)
       || !["file", "directory", "service_registration"].includes(entry.kind)
-      || seen.has(entry.path)
+      || segmentsOf(entry.path).some((segment) => segment === "." || segment.endsWith(" ") || segment.endsWith("."))
+      || seen.has(identityOf(entry.path))
     ) {
       throw new InstallerPackagingError("install manifest entry is invalid", "path_invalid");
     }
-    seen.add(entry.path);
+    const id = identityOf(entry.path);
+    // An installer must not own a parent directory of operator data (or
+    // claim any directory below operator-owned paths). Reject all conflicting
+    // ownership ancestors before making any non-executing plan.
+    for (const prior of entries) {
+      const overlapping = id.startsWith(prior.path + "/") || prior.path.startsWith(id + "/");
+      if (overlapping && (entry.ownership !== prior.ownership || prior.kind !== "directory" && id.startsWith(prior.path + "/") || entry.kind !== "directory" && prior.path.startsWith(id + "/"))) {
+        throw new InstallerPackagingError("install manifest has overlapping or conflicting ownership", "path_invalid");
+      }
+    }
+    seen.add(id);
+    entries.push({ path: id, kind: entry.kind, ownership: entry.ownership });
 
     if (
       entry.kind === "service_registration"
