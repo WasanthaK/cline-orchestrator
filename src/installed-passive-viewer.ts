@@ -1,4 +1,5 @@
 import { MachineOrchestratorService } from "./machine-orchestrator.js";
+import type { TrustedDashboardMachineReader } from "./machine-dashboard-snapshot-reader.js";
 import { createMachineDashboardSnapshotReader } from "./machine-dashboard-snapshot-reader.js";
 import { startPassiveOperatorViewer, type PassiveViewerServerHandle } from "./passive-operator-viewer.js";
 import { SafetyPlanService } from "./safety-plan.js";
@@ -11,7 +12,7 @@ export const INSTALLED_VIEWER_CONTRACT = Object.freeze({
   portSource: "ORCH_VIEWER_PORT" as const,
   host: "127.0.0.1" as const,
   defaultPort: 4321 as const,
-  readOnlyMachineMethods: ["listProjects", "listWorkspaces", "findTasks"] as const,
+  readOnlyMachineMethods: ["listProjects", "listWorkspaces", "findTasks", "getTask", "getTaskEvents"] as const,
   noWorkerProfileResolution: true as const,
   noDaemonStartup: true as const,
   noTaskMutation: true as const,
@@ -44,12 +45,27 @@ export function installedViewerConfigFromEnvironment(env: Record<string, string 
 }
 
 /**
- * This intentionally makes only the three existing read-only machine calls
- * available to the viewer. No worker profile may be resolved, and the viewer
- * never calls any other method or creates a daemon/controller/SDK runtime.
- *
- * The machine service instance provides binding-filtered task observations.
- * It does NOT grant task authority by existing in this viewer process.
+ * Pass only the exact five observation capabilities to the installed viewer.
+ * Task details and events stay behind registered Safety/task bindings, and
+ * the downstream timeline projection drops raw messages and identifiers.
+ * No execution, approval, TaskStore, or worker profile capability escapes.
+ */
+export function createInstalledViewerMachineReader(
+  machine: Pick<MachineOrchestratorService,
+    "listProjects" | "listWorkspaces" | "findTasks" | "getTask" | "getTaskEvents">,
+): TrustedDashboardMachineReader {
+  return {
+    listProjects: () => machine.listProjects(),
+    listWorkspaces: () => machine.listWorkspaces(),
+    findTasks: (options) => machine.findTasks(options),
+    getTask: (taskId) => machine.getTask(taskId),
+    getTaskEvents: (taskId) => machine.getTaskEvents(taskId),
+  };
+}
+
+/**
+ * The foreground passive viewer remains read-only and never resolves a
+ * worker profile, starts Cline or installs a service.
  */
 export async function startInstalledPassiveViewer(
   env: Record<string, string | undefined>,
@@ -61,12 +77,7 @@ export async function startInstalledPassiveViewer(
     throw new Error("Read-only viewer must never resolve or execute a worker profile");
   });
   try {
-    const source = {
-      listProjects: () => machine.listProjects(),
-      listWorkspaces: () => machine.listWorkspaces(),
-      findTasks: (options: Parameters<MachineOrchestratorService["findTasks"]>[0]) =>
-        machine.findTasks(options),
-    };
+    const source = createInstalledViewerMachineReader(machine);
     const viewer = await startPassiveOperatorViewer(
       createMachineDashboardSnapshotReader(source), config);
     // Machine service is entirely local to the reader; no worker has been

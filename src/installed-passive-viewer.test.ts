@@ -12,7 +12,7 @@ test("UX-E2b3 requires explicit viewer command and local token", () => {
   assert.equal(INSTALLED_VIEWER_CONTRACT.noTaskMutation, true);
   assert.equal(INSTALLED_VIEWER_CONTRACT.noServiceInstallation, true);
   assert.deepEqual(INSTALLED_VIEWER_CONTRACT.readOnlyMachineMethods,
-    ["listProjects", "listWorkspaces", "findTasks"]);
+    ["listProjects", "listWorkspaces", "findTasks", "getTask", "getTaskEvents"]);
 });
 
 test("UX-E2b3 validates environment before listening and never permits public bind", () => {
