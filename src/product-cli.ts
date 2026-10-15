@@ -23,6 +23,7 @@ import {
 import { resolveProductConfigSource, readProductConfigFile, PRODUCT_CONFIG_SOURCE_CONTRACT } from "./product-config-source.js";
 import { runConfigWriteSetup, type ConfigWriteReview } from "./config-write-setup.js";
 import { runRegistrationSetup, RegistrationSetupError, type RegistrationSetupReview } from "./registration-setup.js";
+import { createNativeProject, type NativeProjectReviewV1 } from "./native-project-setup.js";
 import { runDaemonStartSetup, type DaemonStartSetupReview } from "./daemon-start-setup.js";
 import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
@@ -38,6 +39,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "viewer",
     "check-provider",
     "setup-config-desktop",
+    "setup-project-desktop",
     "setup-config",
     "setup-project",
     "setup-workspace",
@@ -64,6 +66,7 @@ export type ProductCliRoute =
   | { kind: "viewer" }
   | { kind: "provider_check"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_config_save"; providerId: string; modelId: string; baseUrl: string }
+  | { kind: "desktop_project_create"; displayName: string }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
   | { kind: "managed_run"; workspaceId: string; goal: string; configPath?: string }
@@ -132,6 +135,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator viewer  # explicit foreground, localhost-only read-only dashboard",
     "  cline-orchestrator check-provider <openai-compatible> <model-id> <http://127.0.0.1:port/v1>  # metadata-only loopback preflight",
     "  cline-orchestrator setup-config-desktop <provider> <model> <loopback-url>  # Windows local UI, confirmed create-only",
+    "  cline-orchestrator setup-project-desktop <project-name>  # native Windows explicit local registry confirmation",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
     "  cline-orchestrator setup-project <display-name>  # interactive project registration",
@@ -181,6 +185,10 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "setup-config-desktop") {
     if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "desktop_config_save", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
+  }
+  if (command === "setup-project-desktop") {
+    if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_project_create", displayName: rest[0]! };
   }
   if (command === "setup-view") {
     if (rest.length !== 2 || !rest[0]?.trim() || !rest[1]?.trim()) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -443,6 +451,27 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "desktop_project_create") {
+    if (process.platform !== "win32" || typeof deps.env.LOCALAPPDATA !== "string"
+      || !path.win32.isAbsolute(deps.env.LOCALAPPDATA)) {
+      throw new ProductCliError("Windows local user registry is unavailable", "interactive_required");
+    }
+    // The project registry location is resolved by WorkspaceRegistry itself.
+    // No selected path, browser route, task capability or implicit approval.
+    const confirm = async (review: NativeProjectReviewV1) => {
+      process.stdout.write(JSON.stringify(review) + "\n");
+      const terminal = createInterface({ input: process.stdin, crlfDelay: Infinity });
+      try {
+        const phrase = await terminal.question("", { signal: AbortSignal.timeout(55_000) });
+        return phrase === "REGISTER PROJECT";
+      } catch { return false; }
+      finally { terminal.close(); }
+    };
+    const result = await createNativeProject(route.displayName, confirm,
+      deps.registrationRegistry ?? new WorkspaceRegistry());
+    process.stdout.write(JSON.stringify(result) + "\n");
+    return undefined;
+  }
   if (route.kind === "desktop_config_save") {
     // Deliberately no HTTP route, generic target path, unattended switch, raw
     // secret, daemon or task capability. The native host must obtain local
