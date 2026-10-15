@@ -7,6 +7,7 @@ on:
       - "native/windows-installer/**"
       - "scripts/build-windows-foreground-bundle.ps1"
       - "scripts/verify-native-desktop-config.mjs"
+      - "scripts/verify-native-project-registration.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -59,6 +60,10 @@ jobs:
           # create-only config; no service, task, external model or new permissions.
           & node ./scripts/verify-native-desktop-config.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19C2 installed configuration smoke failed' }
+          # M19C2B1: actual installed CLI, private project review and user
+          # registry create/cancel; no workspace, model invocation or task.
+          & node ./scripts/verify-native-project-registration.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19C2B1 installed project registration failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru

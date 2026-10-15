@@ -21,7 +21,8 @@ internal static class Program
 
 /// <summary>
 /// A user-invoked foreground host for the already-reviewed passive viewer.
-/// No daemon, task, setup mutation, Windows service or release path exists here.
+/// No daemon, task, Windows service or release path exists here. Native setup
+/// dialogs request explicit local confirmation through existing trusted services.
 /// </summary>
 internal sealed class ViewerLauncherForm : Form
 {
