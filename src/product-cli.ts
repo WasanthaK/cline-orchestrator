@@ -5,6 +5,7 @@ import { scheduleManagedRunExitDiagnostic } from "./managed-exit-diagnostics.js"
 import { exportOfflineSetupView } from "./offline-setup-view-export.js";
 import { startInstalledPassiveViewer } from "./installed-passive-viewer.js";
 import { checkLocalProvider } from "./local-provider-check.js";
+import { saveNativeProviderConfig } from "./native-provider-config-save.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -36,6 +37,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "setup-view",
     "viewer",
     "check-provider",
+    "setup-config-desktop",
     "setup-config",
     "setup-project",
     "setup-workspace",
@@ -61,6 +63,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 export type ProductCliRoute =
   | { kind: "viewer" }
   | { kind: "provider_check"; providerId: string; modelId: string; baseUrl: string }
+  | { kind: "desktop_config_save"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
   | { kind: "managed_run"; workspaceId: string; goal: string; configPath?: string }
@@ -128,6 +131,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
     "  cline-orchestrator viewer  # explicit foreground, localhost-only read-only dashboard",
     "  cline-orchestrator check-provider <openai-compatible> <model-id> <http://127.0.0.1:port/v1>  # metadata-only loopback preflight",
+    "  cline-orchestrator setup-config-desktop <provider> <model> <loopback-url>  # Windows local UI, confirmed create-only",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
     "  cline-orchestrator setup-project <display-name>  # interactive project registration",
@@ -173,6 +177,10 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "check-provider") {
     if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "provider_check", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
+  }
+  if (command === "setup-config-desktop") {
+    if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_config_save", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
   }
   if (command === "setup-view") {
     if (rest.length !== 2 || !rest[0]?.trim() || !rest[1]?.trim()) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -435,6 +443,33 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "desktop_config_save") {
+    // Deliberately no HTTP route, generic target path, unattended switch, raw
+    // secret, daemon or task capability. The native host must obtain local
+    // consent after receiving the confirmed service review over stdio.
+    const stateRoot = deps.env.LOCALAPPDATA;
+    if (process.platform !== "win32" || typeof stateRoot !== "string" ||
+      !path.win32.isAbsolute(stateRoot) || !stateRoot.trim()) {
+      throw new ProductCliError("Windows local user state directory is unavailable", "interactive_required");
+    }
+    const destination = path.win32.join(stateRoot, "ClineOrchestrator");
+    const confirm = async (review: Parameters<typeof saveNativeProviderConfig>[1] extends
+      (review: infer T) => Promise<boolean> ? T : never) => {
+      process.stdout.write(JSON.stringify(review) + "\n");
+      const terminal = createInterface({ input: process.stdin, crlfDelay: Infinity });
+      try {
+        const phrase = await terminal.question("", { signal: AbortSignal.timeout(55_000) });
+        return phrase === "CREATE CONFIG";
+      } catch { return false; }
+      finally { terminal.close(); }
+    };
+    const result = await saveNativeProviderConfig({
+      providerId: route.providerId, modelId: route.modelId,
+      baseUrl: route.baseUrl, stateDirectory: destination,
+    }, confirm);
+    process.stdout.write(JSON.stringify(result) + "\n");
+    return undefined;
+  }
   if (route.kind === "provider_check") {
     const result = await checkLocalProvider(route);
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
