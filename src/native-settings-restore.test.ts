@@ -39,7 +39,12 @@ test("M19D3B only returns verified finite model choices, not raw settings or pat
     assert.equal(found.status, "available");
     assert.equal(found.currentRevision, sha(current));
     assert.deepEqual(found.choices, [{ revision: hash, selection: oldModel }]);
-    assert.doesNotMatch(JSON.stringify(found), /config\.json|ClineOrchestrator|maxIterations|99/);
+    const publicView = JSON.stringify(found);
+    assert.doesNotMatch(publicView, /config\\.json|ClineOrchestrator|"runtime"|"daemon"|"maxIterations"/);
+    // SHA-256 revisions are opaque hex digests; arbitrary digit sequences such
+    // as "99" may legitimately occur in them and are not private settings.
+    assert.deepEqual(Object.keys(found.choices[0]!).sort(), ["revision", "selection"]);
+    assert.deepEqual(Object.keys(found.choices[0]!.selection).sort(), ["baseUrl", "modelId", "providerId"]);
     assert.equal(found.readOnly, true);
     assert.equal(found.grantsAuthority, false);
     assert.equal(NATIVE_SETTINGS_RESTORE_CONTRACT.browserMutation, false);
