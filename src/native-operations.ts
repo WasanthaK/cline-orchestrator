@@ -59,11 +59,12 @@ export function projectNativeOperations(
   let state: HistoryState = "unavailable";
   let counts: TaskCounts = unknown;
 
-  // A source notice is emitted only for problematic sources by the trusted
-  // dashboard reader. Missing notice therefore means this particular
-  // reader verified a complete bounded query, not full lifetime history.
+  // The trusted machine reader treats a saturated 100-row listing as
+  // incomplete. Enforce that cap here as well so callers cannot accidentally
+  // turn a full current sample into a trustworthy lifetime total.
+  // Missing task notice only means this trusted bounded reader verified it.
   if (snapshot?.readOnly === true && snapshot.actions?.length === 0
-    && Array.isArray(snapshot.taskBoard) && snapshot.taskBoard.length <= 100
+    && Array.isArray(snapshot.taskBoard) && snapshot.taskBoard.length < NATIVE_OPERATIONS_CONTRACT.boundedTaskSample
     && Array.isArray(snapshot.sourceNotices)) {
     const notice = snapshot.sourceNotices.find(item => item.source === "tasks");
     state = notice?.available === false ? "unavailable"

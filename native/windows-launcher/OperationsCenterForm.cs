@@ -92,6 +92,10 @@ internal sealed class OperationsCenterForm : Form
         bool available = viewerAvailable();
         taskHistory.Enabled = available;
         dataQuality.Enabled = available;
+        taskHistory.Text = available ? "Task history and evidence"
+            : "Task history (open dashboard first)";
+        dataQuality.Text = available ? "Data quality details"
+            : "Data quality (open dashboard first)";
     }
 
     private void OpenSection(string section)

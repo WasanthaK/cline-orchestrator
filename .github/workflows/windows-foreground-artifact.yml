@@ -10,6 +10,7 @@ on:
       - "scripts/verify-native-project-registration.mjs"
       - "scripts/verify-native-workspace-registration.mjs"
       - "scripts/verify-native-setup-readiness.mjs"
+      - "scripts/verify-native-operations.mjs"
       - "scripts/verify-native-settings-update.mjs"
       - "scripts/verify-native-settings-recovery.mjs"
       - "scripts/verify-native-settings-restore.mjs"
@@ -77,6 +78,10 @@ jobs:
           # isolated user-state folder and a disposable synthetic loopback LLM.
           & node ./scripts/verify-native-setup-readiness.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19C3 installed readiness acceptance failed' }
+          # M19D4: directly prove installed native operations/status UX is
+          # bounded, sanitized, read-only and fail-closed in isolated state.
+          & node ./scripts/verify-native-operations.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19D4 installed operations acceptance failed' }
           # M19D2: private revision-checked confirmed local config update.
           & node ./scripts/verify-native-settings-update.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19D2 installed settings update acceptance failed' }

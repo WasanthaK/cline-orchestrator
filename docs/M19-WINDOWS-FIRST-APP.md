@@ -109,6 +109,22 @@ No claim is made about adversarial OS-level compare-and-swap atomicity,
 full historical rollback, or physical operator-machine acceptance. Those
 remain release gates, along with signed release and M19E rollout.
 
+### M19D4 — Installed Operations & Settings acceptance (review candidate)
+
+The actual Windows-installed `operations-desktop` command must be exercised
+in disposable **fresh**, **synthetic loopback connected**, **offline** and
+**corrupt settings** scenarios. It may report a verified 0-task sample only
+when the bounded task source is complete, never when missing, truncated or
+saturated at the 100-record cap. No task IDs, raw paths, model identifiers,
+credentials, execution authority or task-control routes may appear.
+
+The native Operations screen labels disabled task-history and data-quality
+drill-downs with the action the operator must take: open the separate
+foreground dashboard. Browser viewer remains authenticated and read-only.
+Source proof covers the full installed CLI; desktop interaction and
+accessibility still require the M19E operator-machine walkthrough. Running
+on disposable Windows CI does not install on an actual operator computer.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

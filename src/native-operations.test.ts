@@ -63,7 +63,18 @@ test("M19D1 never promotes failed or truncated task sources to healthy counters"
     assert.notEqual(result.history.state, "available");
     assert.equal(result.history.counts.completed, null);
   }
-  assert.equal(projectNativeOperations(setup, view(new Array(101).fill({ status: "completed" }))).history.state, "unavailable");
+  // A saturated page cannot prove listing completeness, even if the
+  // upstream snapshot omitted its expected truncation/source notice.
+  for (const saturatedSize of [100, 101]) {
+    const saturated = projectNativeOperations(setup,
+      view(new Array(saturatedSize).fill({ status: "completed" })));
+    assert.equal(saturated.history.state, "unavailable");
+    assert.equal(saturated.history.counts.sampled, null);
+  }
+  const validSample = projectNativeOperations(setup,
+    view(new Array(99).fill({ status: "completed" })));
+  assert.equal(validSample.history.state, "available");
+  assert.equal(validSample.history.counts.completed, 99);
   assert.throws(() => projectNativeOperations({ ...setup, grantsAuthority: true } as unknown as NativeSetupReadinessV1));
 });
 
