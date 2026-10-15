@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -83,7 +83,10 @@ try {
   assert.equal(cancel.review.action, "register_workspace");
   assert.equal(cancel.review.destination, "local_user_workspace_registry");
   assert.equal(cancel.review.requiresExactReply, "REGISTER WORKSPACE");
-  assert.equal(cancel.review.canonicalRoot.toLowerCase(), workspace.toLowerCase());
+  // Windows TEMP may be returned as an 8.3 alias (RUNNER~1) while the
+  // registration service deliberately resolves the physical long path.
+  assert.equal(cancel.review.canonicalRoot.toLowerCase(),
+    (await realpath(workspace)).toLowerCase());
   assert.deepEqual(cancel.review.registration.safetyProfile, payload.safetyProfile);
   assert.equal(JSON.parse(cancel.stdout.trim().split("\n").at(-1)).outcome, "cancelled");
   assert.equal(await readFile(registryFile, "utf8"), before);
