@@ -71,7 +71,13 @@ export async function saveNativeProviderConfig(
   const directory = path.resolve(request.stateDirectory);
   try {
     const [physical, entry] = await Promise.all([realpath(directory), lstat(directory)]);
-    if (physical !== directory || !entry.isDirectory() || entry.isSymbolicLink()) {
+    // Windows canonical filesystem casing is not guaranteed to match the
+    // caller's casing even when it identifies the same real directory.
+    // Keep physical alias/symlink denial; compare Windows roots case-folded.
+    const sameLocation = process.platform === "win32"
+      ? path.win32.normalize(physical).toLowerCase() === path.win32.normalize(directory).toLowerCase()
+      : physical === directory;
+    if (!sameLocation || !entry.isDirectory() || entry.isSymbolicLink()) {
       throw new Error("state alias");
     }
   } catch { throw new NativeProviderSaveError("scope_invalid"); }
