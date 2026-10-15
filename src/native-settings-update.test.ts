@@ -92,7 +92,16 @@ test("M19D2 stale edits, remote model, unsafe saved policies, and symlink never 
     }, async () => { await writeFile(target, "USER_REPLACED"); return true; }, available), { code: "write_failed" });
     assert.equal(await readFile(target, "utf8"), "USER_REPLACED");
     assert.deepEqual(await readdir(directory), ["config.json"]);
-    await writeFile(target, original.replace('"maxIterations":9', '"maxIterations":9,"autoApproveCommands":true'));
+    const unsafe = JSON.parse(original) as {
+      runtime: { autoApproveCommands: boolean; autoApproveEdits: boolean };
+    };
+    unsafe.runtime.autoApproveCommands = true;
+    await writeFile(target, JSON.stringify(unsafe));
+    assert.equal((await inspectNativeSettings(directory)).status, "attention");
+    // Reject both classes of unsafe automatic tool approval, independently.
+    unsafe.runtime.autoApproveCommands = false;
+    unsafe.runtime.autoApproveEdits = true;
+    await writeFile(target, JSON.stringify(unsafe));
     assert.equal((await inspectNativeSettings(directory)).status, "attention");
     await rm(target);
     await symlink(path.join(directory, "some-target"), target);
