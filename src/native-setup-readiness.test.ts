@@ -64,7 +64,7 @@ test("M19C3 valid provider, local model, project, workspace and Safety show setu
     assert.equal(state.workspaceCount, 1);
     assert.equal(state.grantsAuthority, false);
     const json = JSON.stringify(state);
-    assert.doesNotMatch(json, /local-model|http:|workspace-registry|test\/\*\*|secret|workspace\\/i);
+    assert.doesNotMatch(json, /local-model|http:|workspace-registry|test\/\*\*|secret|disposable-workspace/i);
   });
 });
 
