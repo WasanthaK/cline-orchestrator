@@ -72,6 +72,23 @@ Explicit restore/rollback UI and physical multi-process concurrency proof
 remain pending. Preserving a previous version is not rollback acceptance.
 No browser mutation or task/daemon/service/release authority is added.
 
+### M19D3A — Verified recovery visibility (review candidate)
+
+Saved previous settings are only *potential* recovery material. The native
+settings editor now checks their filesystem type, immutable candidate name,
+actual content SHA-256, bounded size, product configuration policy, disabled
+automatic approvals, and literal-loopback provider endpoint. Missing or
+corrupt current settings, untrusted backup names, aliases and partial reads
+never report a verified zero or a restorable backup. The output is only a
+bounded count and one of four explicit statuses; filenames, secrets, paths
+and previous configuration content remain private.
+
+**No restore action is implemented by M19D3A.** Real rollback requires a
+separate exact prior-version selection/provenance, current revision lease,
+human preview, crash-safe commit/retention, and fail-closed concurrent
+writer/rollback acceptance. The current UI explicitly labels restore as
+not enabled, even when backup bytes pass verification.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

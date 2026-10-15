@@ -28,6 +28,7 @@ import { listNativeProjects, registerNativeWorkspace, type NativeWorkspaceReview
 import { inspectNativeSetupReadiness } from "./native-setup-readiness.js";
 import { projectNativeOperations } from "./native-operations.js";
 import { inspectNativeSettings, updateNativeSettings, type NativeSettingsReviewV1 } from "./native-settings-update.js";
+import { inspectNativeSettingsRecovery } from "./native-settings-recovery.js";
 import { MachineOrchestratorService } from "./machine-orchestrator.js";
 import { SafetyPlanService } from "./safety-plan.js";
 import { createMachineDashboardSnapshotReader } from "./machine-dashboard-snapshot-reader.js";
@@ -52,6 +53,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "readiness-desktop",
     "operations-desktop",
     "settings-desktop",
+    "recovery-desktop",
     "update-settings-desktop",
     "setup-workspace-desktop",
     "setup-config",
@@ -85,6 +87,7 @@ export type ProductCliRoute =
   | { kind: "desktop_readiness" }
   | { kind: "desktop_operations" }
   | { kind: "desktop_settings_read" }
+  | { kind: "desktop_recovery" }
   | { kind: "desktop_settings_update"; expectedRevision: string; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_workspace_create" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
@@ -160,6 +163,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator readiness-desktop  # read-only local setup snapshot and loopback model metadata check",
     "  cline-orchestrator operations-desktop  # read-only local setup and bounded task visibility",
     "  cline-orchestrator settings-desktop  # private native saved provider review",
+    "  cline-orchestrator recovery-desktop  # verify previous versions without restoring anything",
     "  cline-orchestrator update-settings-desktop <revision> <provider> <model> <loopback-url>  # confirmed revision update",
     "  cline-orchestrator setup-workspace-desktop  # native Windows confirmed workspace/Safety registration over private stdio",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
@@ -216,9 +220,9 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "desktop_project_create", displayName: rest[0]! };
   }
-  if (command === "settings-desktop") {
+  if (command === "settings-desktop" || command === "recovery-desktop") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
-    return { kind: "desktop_settings_read" };
+    return { kind: command === "settings-desktop" ? "desktop_settings_read" : "desktop_recovery" };
   }
   if (command === "update-settings-desktop") {
     if (rest.length !== 4) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -519,7 +523,8 @@ export async function runProductCli(
     } finally { await machine.close(); }
     return undefined;
   }
-  if (route.kind === "desktop_settings_read" || route.kind === "desktop_settings_update") {
+  if (route.kind === "desktop_settings_read" || route.kind === "desktop_settings_update"
+    || route.kind === "desktop_recovery") {
     const stateRoot = deps.env.LOCALAPPDATA;
     if (process.platform !== "win32" || typeof stateRoot !== "string"
       || !path.win32.isAbsolute(stateRoot)) {
@@ -528,6 +533,10 @@ export async function runProductCli(
     const directory = path.win32.join(stateRoot, "ClineOrchestrator");
     if (route.kind === "desktop_settings_read") {
       process.stdout.write(JSON.stringify(await inspectNativeSettings(directory)) + "\n");
+      return undefined;
+    }
+    if (route.kind === "desktop_recovery") {
+      process.stdout.write(JSON.stringify(await inspectNativeSettingsRecovery(directory)) + "\n");
       return undefined;
     }
     // One exact private host confirmation; no browser access or config path args.

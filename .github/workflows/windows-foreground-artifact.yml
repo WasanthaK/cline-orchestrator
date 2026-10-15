@@ -11,6 +11,7 @@ on:
       - "scripts/verify-native-workspace-registration.mjs"
       - "scripts/verify-native-setup-readiness.mjs"
       - "scripts/verify-native-settings-update.mjs"
+      - "scripts/verify-native-settings-recovery.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -78,6 +79,9 @@ jobs:
           # M19D2: private revision-checked confirmed local config update.
           & node ./scripts/verify-native-settings-update.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19D2 installed settings update acceptance failed' }
+          # M19D3A: read-only recovery visibility with exact backup digest proofs.
+          & node ./scripts/verify-native-settings-recovery.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19D3A installed recovery inspection failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru

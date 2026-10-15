@@ -12,6 +12,7 @@ internal sealed class EditSavedSettingsForm : Form
     private readonly TextBox model = new() { Dock = DockStyle.Fill };
     private readonly TextBox endpoint = new() { Dock = DockStyle.Fill };
     private readonly Label state = new() { Dock = DockStyle.Fill, Text = "Loading saved settings..." };
+    private readonly Label recoveryStatus = new() { Dock = DockStyle.Fill, Text = "Recovery: Unknown" };
     private readonly Button review = new() { Text = "Review update", Enabled = false, AutoSize = true };
     private readonly Button refresh = new() { Text = "Refresh saved settings", AutoSize = true };
     private readonly Button close = new() { Text = "Close", AutoSize = true };
@@ -21,19 +22,20 @@ internal sealed class EditSavedSettingsForm : Form
     internal EditSavedSettingsForm()
     {
         Text = "Cline Orchestrator — Edit saved local model";
-        Width = 670; Height = 390;
-        MinimumSize = new Size(580, 340);
+        Width = 690; Height = 445;
+        MinimumSize = new Size(580, 395);
         StartPosition = FormStartPosition.CenterParent;
         provider.Items.Add("OpenAI-compatible (llama.cpp)");
         provider.Items.Add("Ollama OpenAI-compatible endpoint");
         provider.SelectedIndex = 0;
         var table = new TableLayoutPanel {
-            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6, Padding = new Padding(18),
+            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 7, Padding = new Padding(18),
         };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) table.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
         table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         table.Controls.Add(new Label { Text = "Provider", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
@@ -43,13 +45,14 @@ internal sealed class EditSavedSettingsForm : Form
         table.Controls.Add(new Label { Text = "Local API URL", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 2);
         table.Controls.Add(endpoint, 1, 2);
         table.Controls.Add(state, 0, 3); table.SetColumnSpan(state, 2);
+        table.Controls.Add(recoveryStatus, 0, 4); table.SetColumnSpan(recoveryStatus, 2);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill };
         actions.Controls.Add(refresh); actions.Controls.Add(review); actions.Controls.Add(close);
-        table.Controls.Add(actions, 0, 4); table.SetColumnSpan(actions, 2);
+        table.Controls.Add(actions, 0, 5); table.SetColumnSpan(actions, 2);
         table.Controls.Add(new Label {
             Dock = DockStyle.Fill, Text = "Updates need model verification and fresh one-time consent. Previous settings are preserved.",
-        }, 0, 5);
-        table.SetColumnSpan(table.GetControlFromPosition(0, 5)!, 2);
+        }, 0, 6);
+        table.SetColumnSpan(table.GetControlFromPosition(0, 6)!, 2);
         Controls.Add(table);
         refresh.Click += async (_, _) => await RefreshAsync();
         review.Click += async (_, _) => await UpdateAsync();
@@ -82,6 +85,7 @@ internal sealed class EditSavedSettingsForm : Form
         busy = true; review.Enabled = false; refresh.Enabled = false;
         revision = null;
         state.Text = "Inspecting current local settings...";
+        recoveryStatus.Text = "Recovery evidence: Unknown";
         try
         {
             using var child = Process.Start(Command("settings-desktop")) ?? throw new InvalidOperationException();
@@ -117,6 +121,7 @@ internal sealed class EditSavedSettingsForm : Form
                 revision = rev;
                 state.Text = "Saved local settings loaded. Review changes before approving; updates never start tasks.";
                 review.Enabled = true;
+                await ReadRecoveryStatusAsync();
             }
             catch {
                 try { if (!child.HasExited) child.Kill(entireProcessTree: true); } catch { }
@@ -125,6 +130,52 @@ internal sealed class EditSavedSettingsForm : Form
         }
         catch { state.Text = "Saved settings could not be verified. No changes made."; }
         finally { busy = false; refresh.Enabled = true; }
+    }
+
+    // Recovery status has no restore control or write permission.
+    private async Task ReadRecoveryStatusAsync()
+    {
+        recoveryStatus.Text = "Recovery evidence: Unknown";
+        try
+        {
+            using var child = Process.Start(Command("recovery-desktop"))
+                ?? throw new InvalidOperationException();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try
+            {
+                var stdout = child.StandardOutput.ReadToEndAsync(timeout.Token);
+                var stderr = child.StandardError.ReadToEndAsync(timeout.Token);
+                await child.WaitForExitAsync(timeout.Token);
+                string json = await stdout; _ = await stderr;
+                if (child.ExitCode != 0 || json.Length > 8192)
+                    throw new InvalidOperationException();
+                using var parsed = JsonDocument.Parse(json);
+                var record = parsed.RootElement;
+                if (record.GetProperty("schemaVersion").GetInt32() != 1
+                    || record.GetProperty("command").GetString() != "recovery-desktop"
+                    || !record.GetProperty("readOnly").GetBoolean()
+                    || record.GetProperty("grantsAuthority").GetBoolean()
+                    || record.GetProperty("restorationAvailable").GetBoolean())
+                    throw new InvalidOperationException();
+                string? status = record.GetProperty("status").GetString();
+                recoveryStatus.Text = status switch
+                {
+                    "no_previous_version" when record.GetProperty("verifiedCount").GetInt32() == 0
+                        => "Recovery: No saved previous versions (verified)",
+                    "verified_versions" when record.GetProperty("verifiedCount").GetInt32() is > 0 and <= 32
+                        => $"Recovery: {record.GetProperty("verifiedCount").GetInt32()} verified previous version(s); restore not enabled",
+                    "needs_attention" => "Recovery: Previous versions need attention; no restore action",
+                    "unavailable" => "Recovery: Verification unavailable",
+                    _ => throw new InvalidOperationException(),
+                };
+            }
+            catch {
+                try { if (!child.HasExited) child.Kill(entireProcessTree: true); }
+                catch { /* Only our owned child. */ }
+                throw;
+            }
+        }
+        catch { recoveryStatus.Text = "Recovery evidence: Unknown"; }
     }
 
     private async Task UpdateAsync()
