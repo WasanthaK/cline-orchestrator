@@ -281,9 +281,8 @@ internal sealed class RegisterWorkspaceForm : Form
                     + "\nProtected:\n" + string.Join("\n", protectedPaths)
                     + "\nValidation commands:\n" + string.Join("\n", commands)
                     + "\n\nNo task or model will start. Commands may execute in a separately authorized future task.";
-                bool approved = MessageBox.Show(this, message, "Confirm exact workspace and Safety profile",
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
-                    MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+                using var reviewDialog = new WorkspaceSafetyReviewForm(message);
+                bool approved = reviewDialog.ShowDialog(this) == DialogResult.Yes;
                 await child.StandardInput.WriteLineAsync(approved ? "REGISTER WORKSPACE" : "CANCEL");
                 await child.StandardInput.FlushAsync(timeout.Token);
                 child.StandardInput.Close();
