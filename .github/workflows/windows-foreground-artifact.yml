@@ -6,6 +6,7 @@ on:
       - "native/windows-launcher/**"
       - "native/windows-installer/**"
       - "scripts/build-windows-foreground-bundle.ps1"
+      - "scripts/verify-native-desktop-config.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -54,6 +55,10 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $receipt.grantsAuthority -ne $false -or $receipt.command -ne 'config') {
             throw 'Installed CLI config smoke failed'
           }
+          # Actual installed CLI: synthetic loopback model, consent/cancel and
+          # create-only config; no service, task, external model or new permissions.
+          & node ./scripts/verify-native-desktop-config.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19C2 installed configuration smoke failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
