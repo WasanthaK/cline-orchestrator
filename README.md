@@ -296,6 +296,8 @@ npm run dev -- rollback <workspace> <task-id>
 
 The packaged CLI should be preferred for normal product use.
 
+**Windows-first installable app:** The current npm tarball and foreground read-only viewer are developer-preview interfaces, not yet a one-click configured desktop application. Milestone 19 is the active productization priority for a user-scoped installer, guided provider/workspace/Safety setup, settings and safe removal. See [M19 Windows-first app plan](docs/M19-WINDOWS-FIRST-APP.md); do not treat installation of the tarball as authorization to run tasks or as the M19 end-user deliverable.
+
 ## Canonical development plan
 
 The source of truth for current milestone status and security constraints is:
