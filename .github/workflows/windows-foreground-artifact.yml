@@ -8,6 +8,7 @@ on:
       - "scripts/build-windows-foreground-bundle.ps1"
       - "scripts/verify-native-desktop-config.mjs"
       - "scripts/verify-native-project-registration.mjs"
+      - "scripts/verify-native-workspace-registration.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -64,6 +65,10 @@ jobs:
           # registry create/cancel; no workspace, model invocation or task.
           & node ./scripts/verify-native-project-registration.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19C2B1 installed project registration failed' }
+          # M19C2B2: actual installed CLI project listing and workspace
+          # Safety registration with explicit confirm, cancel and duplicate denial.
+          & node ./scripts/verify-native-workspace-registration.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19C2B2 installed workspace registration failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
