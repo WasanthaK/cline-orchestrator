@@ -41,6 +41,7 @@ internal sealed class ViewerLauncherForm : Form
     private readonly Button openDashboard = new() { Text = "Open dashboard", Enabled = false, AutoSize = true };
     private readonly Button connectModel = new() { Text = "Connect local model", AutoSize = true };
     private readonly Button registerProject = new() { Text = "Register project", AutoSize = true };
+    private readonly Button registerWorkspace = new() { Text = "Register workspace", AutoSize = true };
     private readonly Button exit = new() { Text = "Stop viewer and close", AutoSize = true };
     private Process? viewer;
     private string? secret;
@@ -49,9 +50,9 @@ internal sealed class ViewerLauncherForm : Form
     internal ViewerLauncherForm()
     {
         Text = "Cline Orchestrator";
-        Width = 735;
+        Width = 875;
         Height = 285;
-        MinimumSize = new System.Drawing.Size(690, 270);
+        MinimumSize = new System.Drawing.Size(800, 270);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
@@ -77,6 +78,7 @@ internal sealed class ViewerLauncherForm : Form
         actions.Controls.Add(openDashboard);
         actions.Controls.Add(connectModel);
         actions.Controls.Add(registerProject);
+        actions.Controls.Add(registerWorkspace);
         actions.Controls.Add(exit);
         Controls.Add(actions);
         Controls.Add(accessCode);
@@ -109,6 +111,11 @@ internal sealed class ViewerLauncherForm : Form
         registerProject.Click += (_, _) =>
         {
             using var dialog = new RegisterProjectForm();
+            dialog.ShowDialog(this);
+        };
+        registerWorkspace.Click += (_, _) =>
+        {
+            using var dialog = new RegisterWorkspaceForm();
             dialog.ShowDialog(this);
         };
         exit.Click += (_, _) => Close();
