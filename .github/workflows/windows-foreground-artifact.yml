@@ -13,6 +13,9 @@ on:
       - "scripts/verify-native-operations.mjs"
       - "scripts/verify-windows-foreground-evidence.mjs"
       - "scripts/verify-windows-foreground-evidence.d.mts"
+      - "scripts/windows-candidate-inventory.mjs"
+      - "scripts/windows-candidate-inventory.d.mts"
+      - "src/windows-candidate-inventory.test.ts"
       - "src/windows-foreground-evidence.test.ts"
       - "scripts/verify-native-settings-update.mjs"
       - "scripts/verify-native-settings-recovery.mjs"
@@ -46,6 +49,26 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'm19b-output'
           & node ./scripts/verify-windows-foreground-evidence.mjs $out $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'M19E1 source provenance and artifact hashes were not verified' }
+      - name: Generate dependency SBOM and verify full installed file inventory (disposable only)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'm19b-output'
+          $target = Join-Path $out 'DEPENDENCY-SBOM.cdx.json'
+          # npm's standards-based SBOM must be produced from the versioned
+          # source root. The separate consumer prefix has a synthetic npm
+          # root "app@" and npm refuses to generate a valid root PURL there.
+          Push-Location $env:GITHUB_WORKSPACE
+          try {
+            $sbom = & npm sbom --sbom-format cyclonedx --omit=dev
+            if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency SBOM generation failed' }
+            [System.IO.File]::WriteAllText($target, ($sbom -join [Environment]::NewLine),
+                [System.Text.UTF8Encoding]::new($false))
+          } finally { Pop-Location }
+          & node ./scripts/windows-candidate-inventory.mjs create $out $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate inventory creation failed' }
+          & node ./scripts/windows-candidate-inventory.mjs verify $out $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate inventory or runtime SBOM verification failed' }
       - name: Smoke installed user executable and external data preservation
         shell: pwsh
         run: |
@@ -119,4 +142,6 @@ jobs:
             ${{ runner.temp }}/m19b-output/ClineOrchestrator-Setup-unsigned.exe
             ${{ runner.temp }}/m19b-output/ClineOrchestrator-win-x64-portable.zip
             ${{ runner.temp }}/m19b-output/BUILD-EVIDENCE.json
+            ${{ runner.temp }}/m19b-output/DEPENDENCY-SBOM.cdx.json
+            ${{ runner.temp }}/m19b-output/BUNDLE-INVENTORY.json
           retention-days: 14

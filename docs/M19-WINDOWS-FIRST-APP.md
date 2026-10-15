@@ -146,6 +146,25 @@ payload file-hash inventory, reproducible independent rebuild comparison,
 clean-machine update/rollback and human Windows/Linux acceptance remain
 open. M19E1 cannot be interpreted as signing or production approval.
 
+### M19E2 — Runtime dependency SBOM and complete product file inventory (review candidate)
+
+The disposable Windows artifact workflow now produces npm's **CycloneDX**
+SBOM from the checked-out versioned source lockfile, explicitly omitting dev
+dependencies. A separate verifier reads the actual installed consumer
+`app/package-lock.json` and refuses the candidate when any installed
+runtime dependency name/version is absent from the SBOM. It then hashes every
+regular file in the installed Windows product bundle (not just the three
+M19E1 core binaries) and records a deterministic, sorted manifest with SHA-256
+and byte lengths.
+
+The source Git SHA, bundle manifest, build evidence, runtime dependency
+coverage, and SBOM digest must agree; symlinks, aliases, mismatched files,
+unknown or malformed dependencies, and outdated manifests fail closed.
+The SBOM and inventory are CI review artifacts only, not public releases or
+authorization to install on an operator workstation. This proves **build
+inventory consistency**, not cryptographic signing, reproducible independent
+rebuilds or third-party package vulnerability-free status.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.
