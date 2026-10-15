@@ -1,4 +1,5 @@
 import { runRegistrationSetup, type RegistrationSetupReview } from "./registration-setup.js";
+import path from "node:path";
 import { WorkspaceRegistry } from "./workspace-registry.js";
 
 export const NATIVE_WORKSPACE_SETUP_CONTRACT = Object.freeze({
@@ -65,7 +66,7 @@ function validLines(lines: unknown): lines is string[] {
   return Array.isArray(lines) && lines.length > 0 && lines.length <= 16
     && lines.every(value => typeof value === "string"
       && value.length > 0 && value.length <= 280
-      && !/[\x00-\x08\x0b-\x1f\x7f]/.test(value)
+      && !/[\x00-\x1f\x7f]/.test(value)
       && value.trim().length > 0);
 }
 
@@ -77,7 +78,10 @@ function checkInput(value: unknown): asserts value is NativeWorkspaceInput {
     || typeof obj.projectId !== "string" || !/^[0-9a-fA-F-]{36}$/.test(obj.projectId)
     || typeof obj.displayName !== "string" || !safeLabel.test(obj.displayName)
     || typeof obj.root !== "string" || obj.root.length < 4 || obj.root.length > 1024
-    || !/^[A-Za-z]:[\\/]/.test(obj.root) || /[\x00-\x1f\x7f]/.test(obj.root)) fail();
+    || !path.isAbsolute(obj.root)
+    || path.parse(obj.root).root === path.resolve(obj.root)
+    || (process.platform === "win32" && !/^[A-Za-z]:[\\/]/.test(obj.root))
+    || /[\x00-\x1f\x7f]/.test(obj.root)) fail();
   const safety = obj.safetyProfile;
   if (!safety || typeof safety !== "object" || Array.isArray(safety)) fail();
   const profile = safety as Record<string, unknown>;
