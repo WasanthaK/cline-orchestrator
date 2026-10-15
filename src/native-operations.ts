@@ -88,7 +88,7 @@ export function projectNativeOperations(
       status: setup.status, steps: setup.steps,
       projectCount: setup.projectCount, workspaceCount: setup.workspaceCount,
     },
-    history: { state, counts, scope: "bounded_current_sample" },
+    history: { state, counts, scope: "bounded_current_sample" as const },
     // Workflow, supervisor, writer and incident adapters are NOT installed.
     additionalSources: "not_connected",
     viewerRequiredForTaskDrilldown: true,
