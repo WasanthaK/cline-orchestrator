@@ -10,11 +10,19 @@ namespace ClineOrchestrator.Launcher;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         if (!OperatingSystem.IsWindows()) return;
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        // No message loop, viewer, model, daemon, task or file changes.
+        if (args.Length == 1 && args[0] == "--accessibility-self-check")
+        {
+            try { Environment.ExitCode = NativeAccessibility.SelfCheck() ? 0 : 1; }
+            catch { Environment.ExitCode = 1; }
+            return;
+        }
+        if (args.Length != 0) return;
         Application.Run(new ViewerLauncherForm());
     }
 }
@@ -59,6 +67,17 @@ internal sealed class ViewerLauncherForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
+        CancelButton = exit;
+        NativeAccessibility.Name(accessCode, "Viewer access code", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(copyCode, "Copy access code", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(openDashboard, "Open dashboard", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(readiness, "Setup status", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(operations, "Operations and settings", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(editSettings, "Edit saved model", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(connectModel, "Connect local model", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(registerProject, "Register project", "Keyboard and screen-reader control. This action requires separate confirmation.");
+        NativeAccessibility.Name(registerWorkspace, "Register workspace", "Keyboard and screen-reader control. This action requires separate confirmation.");
+        NativeAccessibility.Name(exit, "Stop viewer and close", "Keyboard and screen-reader control. No task authority is granted by this control.");
 
         var heading = new Label
         {

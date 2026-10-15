@@ -229,6 +229,19 @@ Safety/workspace/lease boundaries. M19E4A adds no task-launch or browser
 mutation API and never installs or starts a local model. Full live Cline
 acceptance remains **not run** until actual machine evidence and human review.
 
+### M19E4B — Installed native accessibility baseline (review candidate)
+
+All seven native forms have meaningful keyboard and screen-reader control
+names, descriptions and Escape-to-close dialog behavior. The compiled Windows
+launcher supports an **offline-only** `--accessibility-self-check` argument:
+it constructs/disposes the actual controls without displaying a form or
+starting any viewer, model, Cline task, daemon or installer. Hosted disposable
+Windows acceptance executes this check from the installed binary.
+
+This is a basic automated accessibility contract, NOT human approval, WCAG
+certification, real screen-reader testing, display scaling or high-contrast
+review. Those remain explicit release blockers.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

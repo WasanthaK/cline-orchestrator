@@ -40,6 +40,16 @@ internal sealed class OperationsCenterForm : Form
         Height = 515;
         MinimumSize = new Size(620, 470);
         StartPosition = FormStartPosition.CenterParent;
+        CancelButton = close;
+        NativeAccessibility.Name(refresh, "Refresh operations", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(taskHistory, "Task history and evidence", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(dataQuality, "Data quality details", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(settings, "Setup and settings", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(editSettings, "Edit saved model", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(close, "Close operations", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        heading.AccessibleName = "Operations readiness heading";
+        history.AccessibleName = "Task sample status";
+        coverage.AccessibleName = "Unconnected evidence sources";
 
         var body = new TableLayoutPanel {
             Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8,

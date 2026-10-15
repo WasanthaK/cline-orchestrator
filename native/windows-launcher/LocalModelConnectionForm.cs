@@ -30,6 +30,15 @@ internal sealed class LocalModelConnectionForm : Form
         Height = 530;
         MinimumSize = new Size(530, 470);
         StartPosition = FormStartPosition.CenterParent;
+        CancelButton = close;
+        NativeAccessibility.Name(provider, "Model provider", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(model, "Model ID", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(endpoint, "Local model API URL", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(models, "Discovered local models", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(check, "Check model connection", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(save, "Save verified settings", "Keyboard and screen-reader control. This action requires separate confirmation.");
+        NativeAccessibility.Name(close, "Close model connection", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        status.AccessibleName = "Model connection status";
         provider.Items.Add("OpenAI-compatible (llama.cpp)");
         provider.Items.Add("Ollama OpenAI-compatible endpoint");
         provider.SelectedIndex = 0;

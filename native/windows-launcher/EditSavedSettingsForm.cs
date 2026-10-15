@@ -31,6 +31,17 @@ internal sealed class EditSavedSettingsForm : Form
         Width = 730; Height = 515;
         MinimumSize = new Size(650, 465);
         StartPosition = FormStartPosition.CenterParent;
+        CancelButton = close;
+        NativeAccessibility.Name(provider, "Saved model provider", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(model, "Saved model ID", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(endpoint, "Saved model endpoint", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(review, "Review settings update", "Keyboard and screen-reader control. This action requires separate confirmation.");
+        NativeAccessibility.Name(refresh, "Refresh saved settings", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(restoreChoices, "Verified previous model selections", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(restore, "Restore selected model", "Keyboard and screen-reader control. This action requires separate confirmation.");
+        NativeAccessibility.Name(close, "Close saved model editor", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        state.AccessibleName = "Saved model status";
+        recoveryStatus.AccessibleName = "Previous configuration verification";
         provider.Items.Add("OpenAI-compatible (llama.cpp)");
         provider.Items.Add("Ollama OpenAI-compatible endpoint");
         provider.SelectedIndex = 0;
