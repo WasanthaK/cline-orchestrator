@@ -1,0 +1,75 @@
+name: Windows foreground installer acceptance
+
+on:
+  pull_request:
+    paths:
+      - "native/windows-launcher/**"
+      - "native/windows-installer/**"
+      - "scripts/build-windows-foreground-bundle.ps1"
+      - ".github/workflows/windows-foreground-artifact.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install NSIS builder on disposable hosted runner
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+      - name: Build pinned Node bundle and self-contained native launcher
+        shell: pwsh
+        run: |
+          & ./scripts/build-windows-foreground-bundle.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'm19b-output') -Installer
+      - name: Smoke installed user executable and external data preservation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'm19b-output'
+          $setup = Join-Path $out 'ClineOrchestrator-Setup-unsigned.exe'
+          if (!(Test-Path -LiteralPath $setup)) { throw 'Unsigned installer missing' }
+          $prefix = Join-Path $env:LOCALAPPDATA 'Programs\ClineOrchestrator'
+          if (Test-Path -LiteralPath $prefix) { throw 'Disposable installer target is not empty' }
+          $external = Join-Path $env:RUNNER_TEMP 'm19b-user-data-sentinel'
+          [System.IO.File]::WriteAllText($external,'PRESERVE_M19B_USER_STATE')
+          $before = (Get-FileHash -Algorithm SHA256 -LiteralPath $external).Hash
+          $process = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'User-scoped installation failed' }
+          $node = Join-Path $prefix 'runtime\node.exe'
+          $entry = Join-Path $prefix 'app\node_modules\cline-orchestrator\dist\product-cli.js'
+          $launcher = Join-Path $prefix 'launcher\ClineOrchestrator.exe'
+          if (!(Test-Path -LiteralPath $launcher) -or !(Test-Path -LiteralPath $node) -or !(Test-Path -LiteralPath $entry)) {
+            throw 'Native launcher or bundled product runtime missing'
+          }
+          $version = & $node --version
+          if ($version.Trim() -ne 'v22.23.3') { throw 'Unexpected bundled Node version' }
+          $receipt = & $node $entry config | Out-String | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $receipt.grantsAuthority -ne $false -or $receipt.command -ne 'config') {
+            throw 'Installed CLI config smoke failed'
+          }
+          $uninstaller = Join-Path $prefix 'Uninstall.exe'
+          if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
+          $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
+          if ($remove.ExitCode -ne 0) { throw 'User-scoped uninstall failed' }
+          if (Test-Path -LiteralPath $node) { throw 'Uninstall left runtime node.exe in place' }
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $external).Hash -ne $before) {
+            throw 'External user data modified by install or removal'
+          }
+          Write-Output 'M19B installed artifact/uninstall/sentinel proof passed; no service, no model, no task.'
+      - name: Upload unsigned review artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m19b-windows-unsigned-foreground-preview
+          path: |
+            ${{ runner.temp }}/m19b-output/ClineOrchestrator-Setup-unsigned.exe
+            ${{ runner.temp }}/m19b-output/ClineOrchestrator-win-x64-portable.zip
+            ${{ runner.temp }}/m19b-output/BUILD-EVIDENCE.json
+          retention-days: 14
