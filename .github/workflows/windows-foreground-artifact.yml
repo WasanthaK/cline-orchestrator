@@ -55,16 +55,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:RUNNER_TEMP 'm19b-output'
           $target = Join-Path $out 'DEPENDENCY-SBOM.cdx.json'
-          # npm's standards-based SBOM must be produced from the versioned
-          # source root. The separate consumer prefix has a synthetic npm
-          # root "app@" and npm refuses to generate a valid root PURL there.
-          Push-Location $env:GITHUB_WORKSPACE
-          try {
-            $sbom = & npm sbom --sbom-format cyclonedx --omit=dev
-            if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency SBOM generation failed' }
-            [System.IO.File]::WriteAllText($target, ($sbom -join [Environment]::NewLine),
-                [System.Text.UTF8Encoding]::new($false))
-          } finally { Pop-Location }
+          # Derive CycloneDX from actual packaged runtime package.json files
+          # and the consumer lockfile, rather than the source dev tree.
+          & node ./scripts/windows-candidate-inventory.mjs sbom $out $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Installed runtime CycloneDX creation failed' }
           & node ./scripts/windows-candidate-inventory.mjs create $out $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Candidate inventory creation failed' }
           & node ./scripts/windows-candidate-inventory.mjs verify $out $env:GITHUB_SHA

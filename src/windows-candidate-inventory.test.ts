@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import {
-  createWindowsCandidateInventory, verifyWindowsCandidateInventory,
+  createWindowsCandidateInventory, verifyWindowsCandidateInventory, generateWindowsCandidateSbom,
 } from "../scripts/windows-candidate-inventory.mjs";
 
 const commit = "a".repeat(40);
@@ -111,5 +111,13 @@ test("M19E2 refuses SBOM missing the runtime tree even with plausible metadata",
       dependencies: [],
     }));
     await assert.rejects(createWindowsCandidateInventory(root, commit), /SBOM missing installed/);
+  });
+});
+
+test("M19E2 installed-tree CycloneDX generator rejects a fake runtime before writing", async () => {
+  await fixture(async root => {
+    const target = path.join(root, "DEPENDENCY-SBOM.cdx.json");
+    await rm(target);
+    await assert.rejects(generateWindowsCandidateSbom(root, commit), /Missing installed runtime package/);
   });
 });

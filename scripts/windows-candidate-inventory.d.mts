@@ -6,3 +6,4 @@ export declare function createWindowsCandidateInventory(root: string, sourceComm
   releasesSoftware: false; grantsAuthority: false;
 }>;
 export declare function verifyWindowsCandidateInventory(root: string, sourceCommit: string): ReturnType<typeof createWindowsCandidateInventory>;
+export declare function generateWindowsCandidateSbom(root: string, sourceCommit: string): Promise<{schemaVersion:1;sourceCommit:string;installedDependenciesRepresented:number;standard:"CycloneDX";installationPerformed:false;grantsAuthority:false;releasesSoftware:false}>;
