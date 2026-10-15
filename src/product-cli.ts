@@ -29,6 +29,7 @@ import { inspectNativeSetupReadiness } from "./native-setup-readiness.js";
 import { projectNativeOperations } from "./native-operations.js";
 import { inspectNativeSettings, updateNativeSettings, type NativeSettingsReviewV1 } from "./native-settings-update.js";
 import { inspectNativeSettingsRecovery } from "./native-settings-recovery.js";
+import { inspectNativeRestoreChoices, restoreNativeModelSelection, type NativeRestoreReviewV1 } from "./native-settings-restore.js";
 import { MachineOrchestratorService } from "./machine-orchestrator.js";
 import { SafetyPlanService } from "./safety-plan.js";
 import { createMachineDashboardSnapshotReader } from "./machine-dashboard-snapshot-reader.js";
@@ -54,6 +55,8 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "operations-desktop",
     "settings-desktop",
     "recovery-desktop",
+    "restore-choices-desktop",
+    "restore-model-desktop",
     "update-settings-desktop",
     "setup-workspace-desktop",
     "setup-config",
@@ -88,6 +91,8 @@ export type ProductCliRoute =
   | { kind: "desktop_operations" }
   | { kind: "desktop_settings_read" }
   | { kind: "desktop_recovery" }
+  | { kind: "desktop_restore_choices" }
+  | { kind: "desktop_model_restore"; expectedRevision: string; backupRevision: string }
   | { kind: "desktop_settings_update"; expectedRevision: string; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_workspace_create" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
@@ -164,6 +169,8 @@ export function productCliUsage(): string {
     "  cline-orchestrator operations-desktop  # read-only local setup and bounded task visibility",
     "  cline-orchestrator settings-desktop  # private native saved provider review",
     "  cline-orchestrator recovery-desktop  # verify previous versions without restoring anything",
+    "  cline-orchestrator restore-choices-desktop  # read-only verified local-model snapshots",
+    "  cline-orchestrator restore-model-desktop <current-sha256> <backup-sha256>  # explicit native confirmed restore",
     "  cline-orchestrator update-settings-desktop <revision> <provider> <model> <loopback-url>  # confirmed revision update",
     "  cline-orchestrator setup-workspace-desktop  # native Windows confirmed workspace/Safety registration over private stdio",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
@@ -223,6 +230,14 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "settings-desktop" || command === "recovery-desktop") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: command === "settings-desktop" ? "desktop_settings_read" : "desktop_recovery" };
+  }
+  if (command === "restore-choices-desktop") {
+    if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_restore_choices" };
+  }
+  if (command === "restore-model-desktop") {
+    if (rest.length !== 2) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_model_restore", expectedRevision: rest[0]!, backupRevision: rest[1]! };
   }
   if (command === "update-settings-desktop") {
     if (rest.length !== 4) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -524,7 +539,8 @@ export async function runProductCli(
     return undefined;
   }
   if (route.kind === "desktop_settings_read" || route.kind === "desktop_settings_update"
-    || route.kind === "desktop_recovery") {
+    || route.kind === "desktop_recovery" || route.kind === "desktop_restore_choices"
+    || route.kind === "desktop_model_restore") {
     const stateRoot = deps.env.LOCALAPPDATA;
     if (process.platform !== "win32" || typeof stateRoot !== "string"
       || !path.win32.isAbsolute(stateRoot)) {
@@ -537,6 +553,24 @@ export async function runProductCli(
     }
     if (route.kind === "desktop_recovery") {
       process.stdout.write(JSON.stringify(await inspectNativeSettingsRecovery(directory)) + "\n");
+      return undefined;
+    }
+    if (route.kind === "desktop_restore_choices") {
+      process.stdout.write(JSON.stringify(await inspectNativeRestoreChoices(directory)) + "\n");
+      return undefined;
+    }
+    if (route.kind === "desktop_model_restore") {
+      const confirmRestore = async (review: NativeRestoreReviewV1) => {
+        process.stdout.write(JSON.stringify(review) + "\n");
+        const terminal = createInterface({ input: process.stdin, crlfDelay: Infinity });
+        try {
+          return await terminal.question("", { signal: AbortSignal.timeout(55_000) }) === "RESTORE CONFIG";
+        } catch { return false; }
+        finally { terminal.close(); }
+      };
+      const result = await restoreNativeModelSelection({ stateDirectory: directory,
+        expectedRevision: route.expectedRevision, backupRevision: route.backupRevision }, confirmRestore);
+      process.stdout.write(JSON.stringify(result) + "\n");
       return undefined;
     }
     // One exact private host confirmation; no browser access or config path args.

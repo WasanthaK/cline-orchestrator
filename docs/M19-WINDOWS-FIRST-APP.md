@@ -89,6 +89,26 @@ human preview, crash-safe commit/retention, and fail-closed concurrent
 writer/rollback acceptance. The current UI explicitly labels restore as
 not enabled, even when backup bytes pass verification.
 
+### M19D3B — Controlled restore of a verified local model (review candidate)
+
+The native saved-model editor now offers a **Restore selected model** selector
+populated only from verified bounded previous versions. The operator must
+select an exact digest and approve a short-lived, single-use **RESTORE CONFIG**
+review. Both the current file revision and backup hash/policy are rechecked
+immediately before saving, and the restored loopback model must pass a fresh
+metadata preflight. No remote model selection is allowed.
+
+Restore changes *only* provider ID/model ID/local endpoint in the current
+settings. Current runtime parameters, daemon and Safety permissions are
+preserved and automatic approval remains disabled. The old current file is
+retained as a create-only previous version. Stale revisions, corrupt backups,
+concurrent modifications or failed verification refuse to restore; cancellation
+leaves both files untouched. No browser action can reach this path.
+
+No claim is made about adversarial OS-level compare-and-swap atomicity,
+full historical rollback, or physical operator-machine acceptance. Those
+remain release gates, along with signed release and M19E rollout.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

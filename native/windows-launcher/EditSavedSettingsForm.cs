@@ -15,6 +15,12 @@ internal sealed class EditSavedSettingsForm : Form
     private readonly Label recoveryStatus = new() { Dock = DockStyle.Fill, Text = "Recovery: Unknown" };
     private readonly Button review = new() { Text = "Review update", Enabled = false, AutoSize = true };
     private readonly Button refresh = new() { Text = "Refresh saved settings", AutoSize = true };
+    private readonly Button restore = new() { Text = "Restore selected model", Enabled = false, AutoSize = true };
+    private readonly ComboBox restoreChoices = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+    private sealed record RestoreOption(string Revision, string ProviderId, string ModelId, string BaseUrl)
+    {
+        public override string ToString() => ModelId + "  (" + Revision[..8] + ")";
+    }
     private readonly Button close = new() { Text = "Close", AutoSize = true };
     private string? revision;
     private bool busy;
@@ -22,21 +28,22 @@ internal sealed class EditSavedSettingsForm : Form
     internal EditSavedSettingsForm()
     {
         Text = "Cline Orchestrator — Edit saved local model";
-        Width = 690; Height = 445;
-        MinimumSize = new Size(580, 395);
+        Width = 730; Height = 515;
+        MinimumSize = new Size(650, 465);
         StartPosition = FormStartPosition.CenterParent;
         provider.Items.Add("OpenAI-compatible (llama.cpp)");
         provider.Items.Add("Ollama OpenAI-compatible endpoint");
         provider.SelectedIndex = 0;
         var table = new TableLayoutPanel {
-            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 7, Padding = new Padding(18),
+            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 8, Padding = new Padding(18),
         };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) table.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
         table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         table.Controls.Add(new Label { Text = "Provider", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
         table.Controls.Add(provider, 1, 0);
@@ -46,16 +53,22 @@ internal sealed class EditSavedSettingsForm : Form
         table.Controls.Add(endpoint, 1, 2);
         table.Controls.Add(state, 0, 3); table.SetColumnSpan(state, 2);
         table.Controls.Add(recoveryStatus, 0, 4); table.SetColumnSpan(recoveryStatus, 2);
+        table.Controls.Add(new Label { Text = "Verified previous model", Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
+        table.Controls.Add(restoreChoices, 1, 5);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill };
-        actions.Controls.Add(refresh); actions.Controls.Add(review); actions.Controls.Add(close);
-        table.Controls.Add(actions, 0, 5); table.SetColumnSpan(actions, 2);
+        actions.Controls.Add(refresh); actions.Controls.Add(review); actions.Controls.Add(restore); actions.Controls.Add(close);
+        table.Controls.Add(actions, 0, 6); table.SetColumnSpan(actions, 2);
         table.Controls.Add(new Label {
             Dock = DockStyle.Fill, Text = "Updates need model verification and fresh one-time consent. Previous settings are preserved.",
-        }, 0, 6);
-        table.SetColumnSpan(table.GetControlFromPosition(0, 6)!, 2);
+        }, 0, 7);
+        table.SetColumnSpan(table.GetControlFromPosition(0, 7)!, 2);
         Controls.Add(table);
         refresh.Click += async (_, _) => await RefreshAsync();
         review.Click += async (_, _) => await UpdateAsync();
+        restore.Click += async (_, _) => await RestoreAsync();
+        restoreChoices.SelectedIndexChanged += (_, _) => restore.Enabled = !busy && revision is not null
+            && restoreChoices.SelectedItem is RestoreOption;
         close.Click += (_, _) => Close();
         Shown += async (_, _) => await RefreshAsync();
     }
@@ -82,7 +95,8 @@ internal sealed class EditSavedSettingsForm : Form
     private async Task RefreshAsync()
     {
         if (busy) return;
-        busy = true; review.Enabled = false; refresh.Enabled = false;
+        busy = true; review.Enabled = false; refresh.Enabled = false; restore.Enabled = false;
+        restoreChoices.Items.Clear();
         revision = null;
         state.Text = "Inspecting current local settings...";
         recoveryStatus.Text = "Recovery evidence: Unknown";
@@ -122,6 +136,7 @@ internal sealed class EditSavedSettingsForm : Form
                 state.Text = "Saved local settings loaded. Review changes before approving; updates never start tasks.";
                 review.Enabled = true;
                 await ReadRecoveryStatusAsync();
+                await ReadRestoreChoicesAsync();
             }
             catch {
                 try { if (!child.HasExited) child.Kill(entireProcessTree: true); } catch { }
@@ -129,7 +144,10 @@ internal sealed class EditSavedSettingsForm : Form
             }
         }
         catch { state.Text = "Saved settings could not be verified. No changes made."; }
-        finally { busy = false; refresh.Enabled = true; }
+        finally {
+            busy = false; refresh.Enabled = true;
+            restore.Enabled = revision is not null && restoreChoices.SelectedItem is RestoreOption;
+        }
     }
 
     // Recovery status has no restore control or write permission.
@@ -176,6 +194,133 @@ internal sealed class EditSavedSettingsForm : Form
             }
         }
         catch { recoveryStatus.Text = "Recovery evidence: Unknown"; }
+    }
+
+    private async Task ReadRestoreChoicesAsync()
+    {
+        restore.Enabled = false;
+        restoreChoices.Items.Clear();
+        try
+        {
+            using var child = Process.Start(Command("restore-choices-desktop"))
+                ?? throw new InvalidOperationException();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try
+            {
+                var stdout = child.StandardOutput.ReadToEndAsync(timeout.Token);
+                var stderr = child.StandardError.ReadToEndAsync(timeout.Token);
+                await child.WaitForExitAsync(timeout.Token);
+                string json = await stdout; _ = await stderr;
+                if (child.ExitCode != 0 || json.Length > 8192) throw new InvalidOperationException();
+                using var parsed = JsonDocument.Parse(json);
+                var result = parsed.RootElement;
+                if (result.GetProperty("schemaVersion").GetInt32() != 1
+                    || result.GetProperty("command").GetString() != "restore-choices-desktop"
+                    || !result.GetProperty("readOnly").GetBoolean()
+                    || result.GetProperty("grantsAuthority").GetBoolean()
+                    || result.GetProperty("currentRevision").GetString() != revision)
+                    throw new InvalidOperationException();
+                string? status = result.GetProperty("status").GetString();
+                if (status == "none") return;
+                if (status != "available") throw new InvalidOperationException();
+                var choices = result.GetProperty("choices");
+                if (choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() is < 1 or > 32)
+                    throw new InvalidOperationException();
+                foreach (var item in choices.EnumerateArray())
+                {
+                    string digest = item.GetProperty("revision").GetString() ?? "";
+                    var selection = item.GetProperty("selection");
+                    string providerId = selection.GetProperty("providerId").GetString() ?? "";
+                    string modelId = selection.GetProperty("modelId").GetString() ?? "";
+                    string baseUrl = selection.GetProperty("baseUrl").GetString() ?? "";
+                    if (digest.Length != 64 || !digest.All(Uri.IsHexDigit)
+                        || providerId is not ("openai-compatible" or "ollama-openai")
+                        || modelId.Length is < 1 or > 160 || baseUrl.Length is < 1 or > 250)
+                        throw new InvalidOperationException();
+                    restoreChoices.Items.Add(new RestoreOption(digest, providerId, modelId, baseUrl));
+                }
+                if (restoreChoices.Items.Count > 0) restoreChoices.SelectedIndex = 0;
+            }
+            catch {
+                try { if (!child.HasExited) child.Kill(entireProcessTree: true); } catch { }
+                throw;
+            }
+        }
+        catch {
+            restoreChoices.Items.Clear();
+            recoveryStatus.Text = "Recovery: Previous versions cannot be selected safely; refresh";
+        }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (busy || revision is null || restoreChoices.SelectedItem is not RestoreOption selected) return;
+        busy = true; restore.Enabled = false; review.Enabled = false; refresh.Enabled = false;
+        string currentRevision = revision;
+        revision = null;
+        bool success = false;
+        try
+        {
+            using var child = Process.Start(Command("restore-model-desktop", currentRevision, selected.Revision))
+                ?? throw new InvalidOperationException();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(85));
+            try
+            {
+                var stderr = child.StandardError.ReadToEndAsync(timeout.Token);
+                string? line = await child.StandardOutput.ReadLineAsync(timeout.Token);
+                if (line is null || line.Length > 8192) throw new InvalidOperationException();
+                using var reviewDoc = JsonDocument.Parse(line);
+                var proposal = reviewDoc.RootElement;
+                var choice = proposal.GetProperty("selection");
+                if (proposal.GetProperty("schemaVersion").GetInt32() != 1
+                    || proposal.GetProperty("kind").GetString() != "settings-restore-review"
+                    || proposal.GetProperty("action").GetString() != "restore_provider"
+                    || proposal.GetProperty("destination").GetString() != "local_app_data_config"
+                    || proposal.GetProperty("grantsAuthority").GetBoolean()
+                    || proposal.GetProperty("currentRevision").GetString() != currentRevision
+                    || proposal.GetProperty("selectedBackupRevision").GetString() != selected.Revision
+                    || proposal.GetProperty("requiresExactReply").GetString() != "RESTORE CONFIG"
+                    || choice.GetProperty("providerId").GetString() != selected.ProviderId
+                    || choice.GetProperty("modelId").GetString() != selected.ModelId
+                    || choice.GetProperty("baseUrl").GetString() != selected.BaseUrl
+                    || !DateTimeOffset.TryParse(proposal.GetProperty("expiresAt").GetString(), out var expiry)
+                    || expiry <= DateTimeOffset.UtcNow || expiry > DateTimeOffset.UtcNow.AddSeconds(65))
+                    throw new InvalidOperationException();
+                bool approved = MessageBox.Show(this,
+                    "Restore this previously saved local model?\n\nModel: " + selected.ModelId
+                    + "\nProvider: " + selected.ProviderId + "\nEndpoint: " + selected.BaseUrl
+                    + "\n\nOnly the model connection fields will change. Current runtime and Safety settings"
+                    + " are retained, and current settings are preserved as another previous version."
+                    + "\nNo task or model will be started.",
+                    "Confirm previous local model", MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+                await child.StandardInput.WriteLineAsync(approved ? "RESTORE CONFIG" : "CANCEL");
+                await child.StandardInput.FlushAsync(timeout.Token);
+                child.StandardInput.Close();
+                string? receiptLine = await child.StandardOutput.ReadLineAsync(timeout.Token);
+                await child.WaitForExitAsync(timeout.Token);
+                _ = await stderr;
+                if (child.ExitCode != 0 || receiptLine is null || receiptLine.Length > 8192)
+                    throw new InvalidOperationException();
+                using var receiptDoc = JsonDocument.Parse(receiptLine);
+                var receipt = receiptDoc.RootElement;
+                if (receipt.GetProperty("schemaVersion").GetInt32() != 1
+                    || receipt.GetProperty("kind").GetString() != "settings-restore-result"
+                    || receipt.GetProperty("grantsAuthority").GetBoolean()
+                    || receipt.GetProperty("configSaved").GetBoolean() != approved)
+                    throw new InvalidOperationException();
+                success = approved;
+                state.Text = approved ? "Previous model restored safely. Review current settings."
+                    : "Restoration cancelled; current settings unchanged.";
+            }
+            catch {
+                try { if (!child.HasExited) child.Kill(entireProcessTree: true); } catch { }
+                throw;
+            }
+        }
+        catch { state.Text = "Restoration was not verified. Refresh current settings before retrying."; }
+        finally { busy = false; refresh.Enabled = true; }
+        if (success) await RefreshAsync();
     }
 
     private async Task UpdateAsync()

@@ -90,7 +90,7 @@ const validSelection = (s: Selection): boolean => {
   } catch { return false; }
 };
 
-async function existingSettings(stateDirectory: string): Promise<Existing> {
+export async function existingSettings(stateDirectory: string): Promise<Existing> {
   if (typeof stateDirectory !== "string" || !path.isAbsolute(stateDirectory)
     || stateDirectory.includes("\0")) throw new NativeSettingsUpdateError("unsafe");
   const directory = path.resolve(stateDirectory);
@@ -154,7 +154,7 @@ export async function inspectNativeSettings(stateDirectory: string): Promise<Nat
   });
 }
 
-async function commitRevision(before: Existing, next: ProductConfigFileV1): Promise<void> {
+export async function commitRevision(before: Existing, next: ProductConfigFileV1): Promise<void> {
   const fresh = await existingSettings(before.directory);
   if (fresh.revision !== before.revision || fresh.identity.dev !== before.identity.dev
     || fresh.identity.ino !== before.identity.ino) throw new NativeSettingsUpdateError("stale");

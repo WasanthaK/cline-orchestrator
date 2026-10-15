@@ -12,6 +12,7 @@ on:
       - "scripts/verify-native-setup-readiness.mjs"
       - "scripts/verify-native-settings-update.mjs"
       - "scripts/verify-native-settings-recovery.mjs"
+      - "scripts/verify-native-settings-restore.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -82,6 +83,9 @@ jobs:
           # M19D3A: read-only recovery visibility with exact backup digest proofs.
           & node ./scripts/verify-native-settings-recovery.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19D3A installed recovery inspection failed' }
+          # M19D3B: consent-bound model restoration with selected backup digest and stale refusal.
+          & node ./scripts/verify-native-settings-restore.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19D3B installed model restore acceptance failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
