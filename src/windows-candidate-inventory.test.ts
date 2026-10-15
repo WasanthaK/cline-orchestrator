@@ -24,6 +24,9 @@ async function fixture(work: (root: string) => Promise<void>) {
           "node_modules/sample-runtime": { version: dependency.version },
         },
       }),
+      "app/node_modules/cline-orchestrator/package.json":
+        JSON.stringify({ name: "cline-orchestrator", version: "0.1.0",
+          dependencies: { "sample-runtime": dependency.version } }),
       "app/node_modules/sample-runtime/package.json":
         JSON.stringify({ name: dependency.name, version: dependency.version }),
       "runtime/node.exe": "mock-node-binary",
@@ -53,7 +56,7 @@ async function fixture(work: (root: string) => Promise<void>) {
 test("M19E2 creates verifiable exact-commit full payload inventory with safe public receipt", async () => {
   await fixture(async root => {
     const created = await createWindowsCandidateInventory(root, commit);
-    assert.equal(created.filesVerified, 5);
+    assert.equal(created.filesVerified, 6);
     assert.equal(created.installedDependenciesChecked, 1);
     assert.equal(created.sbomComponents, 1);
     assert.equal(created.signed, false);
@@ -63,6 +66,7 @@ test("M19E2 creates verifiable exact-commit full payload inventory with safe pub
     assert.deepEqual(verified, created);
     const raw = await readFile(path.join(root, "BUNDLE-INVENTORY.json"), "utf8");
     assert.deepEqual(JSON.parse(raw).files.map((x: {path: string}) => x.path).sort(), [
+      "app/node_modules/cline-orchestrator/package.json",
       "app/node_modules/sample-runtime/package.json",
       "app/package-lock.json", "app/product-manifest.json",
       "launcher/ClineOrchestrator.exe", "runtime/node.exe",
@@ -118,6 +122,9 @@ test("M19E2 installed-tree CycloneDX generator rejects a fake runtime before wri
   await fixture(async root => {
     const target = path.join(root, "DEPENDENCY-SBOM.cdx.json");
     await rm(target);
+    // The parent app is present, but a locked transitive package has been
+    // removed. This must fail without producing a misleading SBOM.
+    await rm(path.join(root, "ClineOrchestrator/app/node_modules/sample-runtime/package.json"));
     await assert.rejects(generateWindowsCandidateSbom(root, commit), /Missing installed runtime package/);
   });
 });
