@@ -183,6 +183,29 @@ binary rollback. Independent transactional update/rollback design, clean VM
 real-model work, human accessibility review, signing, Linux support and M18F
 release authority remain pending.
 
+### M19E3B — Binary upgrade/rollback design rehearsal (review candidate)
+
+A pure in-memory candidate assessment and fault-transition simulation maps
+the necessary Windows **upgrade** prerequisites without performing an upgrade.
+The shipped unsigned installer still **refuses existing targets**. Candidate
+source revision, installed product hash, version increase, exact signed
+candidate and trusted signer, runtime SBOM/whole-bundle inventory, immutable
+prior product snapshot, separate user-data integrity, no active viewer/writer,
+explicit owner consent and independent M18F release approval are all required
+before a real implementation may even be reviewed.
+
+The model always returns `upgradeAvailable: false`,
+`rollbackAvailable: false`, `releaseAuthorized: false` and
+`grantsAuthority: false`. Even externally asserted perfect evidence only
+advances to *independent implementation review*, never executable authority.
+Fault rehearsal describes discard-before-switch vs restoring owned binaries
+after an interrupted switch; it cannot do either action in the OS.
+Any missing immutable prior snapshot requires manual recovery review.
+
+Actual transactional update code, process lease barriers, locked-file behavior,
+snapshot durability, crash recovery, Windows platform signing, independent
+human review and Linux compatibility are still **pending**.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.
