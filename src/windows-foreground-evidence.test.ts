@@ -55,7 +55,7 @@ async function fixture(run: (root: string, files: Record<string, string>) => Pro
 
 test("M19E1 fails closed on synthetic unpinned Node runtime, without installation", async () => {
   await fixture(async root => {
-    await assert.rejects(verifyWindowsForegroundEvidence(root, commit), /Pinned runtime/);
+    await assert.rejects(verifyWindowsForegroundEvidence(root, commit), /Candidate component differs from embedded manifest/);
     await assert.rejects(verifyWindowsForegroundEvidence(root, "b".repeat(40)), /wrong commit/);
   });
 });
