@@ -66,6 +66,9 @@ try {
  assert.equal(viewerEvidence.serviceInstalled,false);
  assert.equal(viewerEvidence.daemonStarted,false);
  assert.equal(viewerEvidence.browserAutomationDone,false);
+ const invalidProvider=runInstalled(["check-provider", "openai-compatible", "my-model", "http://example.com/v1"]);
+ assert.notEqual(invalidProvider.status,0,"remote provider check must fail closed");
+ assert.doesNotMatch(invalidProvider.stderr,/example\.com|my-model/,"rejected provider check must not expose input");
  const config=runInstalled(["config"]); ok(config,"installed config");
  const output=JSON.parse(config.stdout);
  assert.equal(output.command,"config"); assert.equal(output.grantsAuthority,false);
