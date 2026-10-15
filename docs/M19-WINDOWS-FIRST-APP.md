@@ -125,6 +125,27 @@ Source proof covers the full installed CLI; desktop interaction and
 accessibility still require the M19E operator-machine walkthrough. Running
 on disposable Windows CI does not install on an actual operator computer.
 
+### M19E1 — Candidate provenance preflight (review candidate)
+
+The disposable Windows CI must independently verify that its unsigned package
+really corresponds to the checked-out exact Git SHA before installing it on
+the disposable runner. The read-only verifier checks the embedded product
+manifest against BUILD-EVIDENCE.json, pinned official Node 22.23.3 SHA-256,
+the launcher and product CLI hash declarations, ZIP and unsigned installer
+digests, and the packaged regular-file count. It rejects symlinked package
+entries, any mismatch, an unsafe manifest claim, or an unknown/invalid
+commit. The provenance check runs **before** CI installation.
+
+The verification report is intentionally sanitized and says
+`releaseAuthorized: false`, `signed: false`, and
+`installationPerformed: false`. It does not publish artifacts, start
+models/tasks, or install on the operator workstation.
+
+This is **not** complete release provenance: a dependency SBOM, full
+payload file-hash inventory, reproducible independent rebuild comparison,
+clean-machine update/rollback and human Windows/Linux acceptance remain
+open. M19E1 cannot be interpreted as signing or production approval.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

@@ -11,6 +11,9 @@ on:
       - "scripts/verify-native-workspace-registration.mjs"
       - "scripts/verify-native-setup-readiness.mjs"
       - "scripts/verify-native-operations.mjs"
+      - "scripts/verify-windows-foreground-evidence.mjs"
+      - "scripts/verify-windows-foreground-evidence.d.mts"
+      - "src/windows-foreground-evidence.test.ts"
       - "scripts/verify-native-settings-update.mjs"
       - "scripts/verify-native-settings-recovery.mjs"
       - "scripts/verify-native-settings-restore.mjs"
@@ -36,6 +39,13 @@ jobs:
         shell: pwsh
         run: |
           & ./scripts/build-windows-foreground-bundle.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'm19b-output') -Installer
+      - name: Check exact-commit unsigned candidate provenance (no installation)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'm19b-output'
+          & node ./scripts/verify-windows-foreground-evidence.mjs $out $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'M19E1 source provenance and artifact hashes were not verified' }
       - name: Smoke installed user executable and external data preservation
         shell: pwsh
         run: |
