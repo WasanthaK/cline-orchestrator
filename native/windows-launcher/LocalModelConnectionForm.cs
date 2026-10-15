@@ -104,7 +104,7 @@ internal sealed class LocalModelConnectionForm : Form
 
     private string CurrentSelection() =>
         (provider.SelectedIndex == 1 ? "ollama-openai" : "openai-compatible")
-        + "\\n" + model.Text + "\\n" + endpoint.Text;
+        + "\n" + model.Text + "\n" + endpoint.Text;
 
     private void InvalidateVerification()
     {
@@ -281,12 +281,12 @@ internal sealed class LocalModelConnectionForm : Form
                     || expiry <= DateTimeOffset.UtcNow || expiry > DateTimeOffset.UtcNow.AddSeconds(65))
                     throw new InvalidOperationException();
 
-                var text = "Create this NEW settings file?\\n\\n"
-                    + dest + "\\n\\nProvider: " + selectedProvider
-                    + "\\nModel: " + selectedModel
-                    + "\\nEndpoint: " + selectedEndpoint
-                    + "\\n\\nAutomatic command and edit approvals will remain disabled."
-                    + "\\nNo existing configuration will be overwritten.";
+                var text = "Create this NEW settings file?\n\n"
+                    + dest + "\n\nProvider: " + selectedProvider
+                    + "\nModel: " + selectedModel
+                    + "\nEndpoint: " + selectedEndpoint
+                    + "\n\nAutomatic command and edit approvals will remain disabled."
+                    + "\nNo existing configuration will be overwritten.";
                 bool approved = MessageBox.Show(this, text, "Confirm local settings creation",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question,
                     MessageBoxDefaultButton.Button2) == DialogResult.Yes;
