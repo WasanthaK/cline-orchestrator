@@ -88,8 +88,7 @@ try {
         param([string] $full)
         $name = $full.Substring($bundle.Length + 1).Replace('/', '\')
         foreach ($component in ($name -split '\\')) {
-            if ($component -notmatch $safeName -or $component -eq '.' -or $component -eq '..'
-                -or $component.EndsWith(' ') -or $component.EndsWith('.')) {
+            if ($component -notmatch $safeName -or $component -eq '.' -or $component -eq '..' -or $component.EndsWith(' ') -or $component.EndsWith('.')) {
                 throw 'Unsupported package path; refuse installation.'
             }
         }
