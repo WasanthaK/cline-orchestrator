@@ -16,6 +16,9 @@ const MANIFEST = "BUNDLE-INVENTORY.json";
 const BOM = "DEPENDENCY-SBOM.cdx.json";
 const BUNDLE = "ClineOrchestrator";
 const LOCK = "app/package-lock.json";
+// Keep failure messages bounded. Source details can contain user paths or
+// package metadata and must not leak into public CI logs.
+let validationStage = "startup";
 
 function validRevision(value) {
   assert.match(value ?? "", REV, "Exact 40-character candidate commit required");
@@ -121,7 +124,9 @@ function readBom(data, expected) {
 async function inputs(root, sourceCommit) {
   assert.ok(typeof root === "string" && path.isAbsolute(root), "Absolute candidate path required");
   validRevision(sourceCommit);
+  validationStage = "build-evidence";
   const evidence = JSON.parse(await readFile(await regularFile(root, "BUILD-EVIDENCE.json"), "utf8"));
+  validationStage = "embedded-manifest";
   const embedded = JSON.parse(await readFile(await regularFile(root,
     BUNDLE + "/app/product-manifest.json"), "utf8"));
   assert.equal(evidence.sourceCommit, sourceCommit, "Build evidence commit mismatch");
@@ -129,10 +134,14 @@ async function inputs(root, sourceCommit) {
   assert.equal(evidence.installerBuilt, true, "Unsigned installer not built");
   assert.equal(embedded.grantsAuthority, false);
   assert.equal(embedded.serviceInstalled, false);
+  validationStage = "installed-lockfile";
   const installed = JSON.parse(await readFile(await regularFile(root, BUNDLE + "/" + LOCK), "utf8"));
+  validationStage = "installed-dependency-list";
   const packages = canonicalInstalledDependencies(installed);
+  validationStage = "sbom-file";
   const sbomFile = await regularFile(root, BOM);
   const sbom = await readFile(sbomFile, "utf8");
+  validationStage = "sbom-content";
   const details = readBom(sbom, packages);
   return { packages, details, sbomFile };
 }
@@ -150,6 +159,7 @@ function sanitize(sourceCommit, manifest) {
 }
 export async function createWindowsCandidateInventory(root, sourceCommit) {
   const { packages, details, sbomFile } = await inputs(root, sourceCommit);
+  validationStage = "bundle-inventory";
   const files = await candidateFiles(root);
   const manifest = {
     schemaVersion: 1, sourceCommit,
@@ -194,8 +204,20 @@ if (entry && entry === path.resolve(fileURLToPath(import.meta.url))) {
       ? await createWindowsCandidateInventory(root, commit)
       : await verifyWindowsCandidateInventory(root, commit);
     process.stdout.write(JSON.stringify(result) + "\n");
-  } catch {
-    process.stderr.write("Windows candidate SBOM/inventory check failed; no release was authorized.\n");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const reasons = [
+      "Unsupported installed lockfile", "Installed runtime dependency tree is missing",
+      "Invalid installed package name", "Invalid installed package version",
+      "SBOM missing or oversized", "Expected CycloneDX SBOM",
+      "Unsupported CycloneDX version", "SBOM lacks component/dependency graph",
+      "Source product identity missing from SBOM", "Invalid component data",
+      "SBOM missing installed runtime dependency components",
+      "Unsafe Windows candidate path component", "Windows case-aliased package entry",
+      "Non-regular, linked or aliased product file",
+    ];
+    const reason = reasons.find(text => message.includes(text)) ?? "unclassified";
+    process.stderr.write("Windows candidate inventory rejected [" + validationStage + "/" + reason + "]. No release authorized.\n");
     process.exitCode = 1;
   }
 }
