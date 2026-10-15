@@ -24,6 +24,7 @@ import { resolveProductConfigSource, readProductConfigFile, PRODUCT_CONFIG_SOURC
 import { runConfigWriteSetup, type ConfigWriteReview } from "./config-write-setup.js";
 import { runRegistrationSetup, RegistrationSetupError, type RegistrationSetupReview } from "./registration-setup.js";
 import { createNativeProject, type NativeProjectReviewV1 } from "./native-project-setup.js";
+import { listNativeProjects, registerNativeWorkspace, type NativeWorkspaceReviewV1 } from "./native-workspace-setup.js";
 import { runDaemonStartSetup, type DaemonStartSetupReview } from "./daemon-start-setup.js";
 import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
@@ -40,6 +41,8 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "check-provider",
     "setup-config-desktop",
     "setup-project-desktop",
+    "list-projects-desktop",
+    "setup-workspace-desktop",
     "setup-config",
     "setup-project",
     "setup-workspace",
@@ -67,6 +70,8 @@ export type ProductCliRoute =
   | { kind: "provider_check"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_config_save"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_project_create"; displayName: string }
+  | { kind: "desktop_project_list" }
+  | { kind: "desktop_workspace_create" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
   | { kind: "managed_run"; workspaceId: string; goal: string; configPath?: string }
@@ -136,6 +141,8 @@ export function productCliUsage(): string {
     "  cline-orchestrator check-provider <openai-compatible> <model-id> <http://127.0.0.1:port/v1>  # metadata-only loopback preflight",
     "  cline-orchestrator setup-config-desktop <provider> <model> <loopback-url>  # Windows local UI, confirmed create-only",
     "  cline-orchestrator setup-project-desktop <project-name>  # native Windows explicit local registry confirmation",
+    "  cline-orchestrator list-projects-desktop  # read-only local project names for native selector",
+    "  cline-orchestrator setup-workspace-desktop  # native Windows confirmed workspace/Safety registration over private stdio",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
     "  cline-orchestrator setup-project <display-name>  # interactive project registration",
@@ -189,6 +196,10 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "setup-project-desktop") {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "desktop_project_create", displayName: rest[0]! };
+  }
+  if (command === "list-projects-desktop" || command === "setup-workspace-desktop") {
+    if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: command === "list-projects-desktop" ? "desktop_project_list" : "desktop_workspace_create" };
   }
   if (command === "setup-view") {
     if (rest.length !== 2 || !rest[0]?.trim() || !rest[1]?.trim()) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -451,6 +462,40 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "desktop_project_list" || route.kind === "desktop_workspace_create") {
+    if (process.platform !== "win32" || typeof deps.env.LOCALAPPDATA !== "string"
+      || !path.win32.isAbsolute(deps.env.LOCALAPPDATA)) {
+      throw new ProductCliError("Windows local registry is unavailable", "interactive_required");
+    }
+    const registry = deps.registrationRegistry ?? new WorkspaceRegistry();
+    if (route.kind === "desktop_project_list") {
+      process.stdout.write(JSON.stringify(await listNativeProjects(registry)) + "\n");
+      return undefined;
+    }
+    // One bounded JSON line from the owned, redirected native-child stdin.
+    // No arbitrary registry file, task/daemon command or browser mutation.
+    const inputTerminal = createInterface({ input: process.stdin, crlfDelay: Infinity });
+    let input: unknown;
+    try {
+      const line = await inputTerminal.question("", { signal: AbortSignal.timeout(25_000) });
+      if (line.length > 20_000) throw new Error("too large");
+      input = JSON.parse(line);
+    } catch {
+      throw new ProductCliError("Native workspace review input is invalid", "usage_invalid");
+    } finally { inputTerminal.close(); }
+    const confirm = async (review: NativeWorkspaceReviewV1) => {
+      process.stdout.write(JSON.stringify(review) + "\n");
+      const terminal = createInterface({ input: process.stdin, crlfDelay: Infinity });
+      try {
+        const phrase = await terminal.question("", { signal: AbortSignal.timeout(55_000) });
+        return phrase === "REGISTER WORKSPACE";
+      } catch { return false; }
+      finally { terminal.close(); }
+    };
+    const result = await registerNativeWorkspace(input, confirm, registry);
+    process.stdout.write(JSON.stringify(result) + "\n");
+    return undefined;
+  }
   if (route.kind === "desktop_project_create") {
     if (process.platform !== "win32" || typeof deps.env.LOCALAPPDATA !== "string"
       || !path.win32.isAbsolute(deps.env.LOCALAPPDATA)) {
