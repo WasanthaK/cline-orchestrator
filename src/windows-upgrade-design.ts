@@ -182,7 +182,7 @@ export function assessWindowsUpgrade(evidence: WindowsUpgradeEvidenceV1): Window
       "review_exact_candidate_and_consent",
       "atomic_switch_and_health_check",
       "commit_or_restore_owned_previous_version",
-    ],
+    ] as const,
     userOwnedStateMustRemainUnchanged: true,
     rollbackAvailable: false,
     upgradeAvailable: false,
