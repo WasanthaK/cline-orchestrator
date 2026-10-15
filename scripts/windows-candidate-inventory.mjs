@@ -76,25 +76,110 @@ async function candidateFiles(root) {
   entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   return entries;
 }
-function canonicalInstalledDependencies(lock) {
+async function canonicalInstalledDependencies(root, lock) {
   assert.ok(lock && typeof lock === "object" && lock.lockfileVersion >= 2
     && lock.packages && typeof lock.packages === "object"
     && !Array.isArray(lock.packages), "Unsupported installed lockfile");
   const packages = [];
   for (const [location, data] of Object.entries(lock.packages)) {
     if (!location || !location.includes("node_modules/") || !data?.version) continue;
-    // An npm nested install can contain more than one node_modules segment.
     const nodeLocation = location.lastIndexOf("node_modules/");
     const name = location.slice(nodeLocation + "node_modules/".length);
     assert.ok(/^(@[^/]+\/)?[^/]+$/.test(name), "Invalid installed package name");
     assert.ok(typeof data.version === "string" && data.version.length < 128,
       "Invalid installed package version");
-    if (name === "cline-orchestrator") continue; // BOM source application root
-    packages.push({ name, version: data.version });
+    if (name === "cline-orchestrator") continue; // application itself
+    let bytes;
+    try {
+      bytes = await readFile(await regularFile(root,
+        BUNDLE + "/app/" + location + "/package.json"), "utf8");
+    } catch (error) {
+      if (error?.code === "ENOENT" && (data.optional === true || data.dev === true))
+        continue; // npm omits platform-optional and development packages
+      throw new Error("Missing installed runtime package");
+    }
+    const installed = JSON.parse(bytes);
+    assert.equal(installed.name, name, "Installed runtime package name mismatch");
+    assert.equal(installed.version, data.version, "Installed runtime package version mismatch");
+    packages.push({ name, version: data.version, location,
+      dependencies: data.dependencies ?? {}, integrity: data.integrity });
+    assert.ok(packages.length <= MAX_FILES, "Installed dependency count exceeds limit");
   }
-  assert.ok(packages.length > 0 && packages.length <= MAX_FILES,
-    "Installed runtime dependency tree is missing");
+  assert.ok(packages.length > 0, "Installed runtime dependency tree is missing");
   return packages;
+}
+
+function packageRef(pkg) {
+  return "installed:" + pkg.location;
+}
+function packagePurl(pkg) {
+  const name = pkg.name.startsWith("@") ? "%40" + pkg.name.slice(1) : pkg.name;
+  return "pkg:npm/" + name + "@" + pkg.version;
+}
+function resolveDependency(packageLocation, dependency, byLocation) {
+  // Follow npm's nested node_modules lookup order; never invent missing
+  // edges. Optional dependencies can be absent on a given platform.
+  let parent = packageLocation;
+  while (parent) {
+    const candidate = parent + "/node_modules/" + dependency;
+    if (byLocation.has(candidate)) return packageRef(byLocation.get(candidate));
+    const previous = parent.lastIndexOf("/node_modules/");
+    if (previous < 0) break;
+    parent = parent.slice(0, previous);
+  }
+  const root = byLocation.get("node_modules/" + dependency);
+  return root ? packageRef(root) : null;
+}
+
+export async function generateWindowsCandidateSbom(root, sourceCommit) {
+  assert.ok(typeof root === "string" && path.isAbsolute(root), "Absolute candidate path required");
+  validRevision(sourceCommit);
+  validationStage = "sbom-generation-source";
+  const evidence = JSON.parse(await readFile(await regularFile(root, "BUILD-EVIDENCE.json"), "utf8"));
+  const manifest = JSON.parse(await readFile(await regularFile(root,
+    BUNDLE + "/app/product-manifest.json"), "utf8"));
+  assert.equal(evidence.sourceCommit, sourceCommit, "Build evidence commit mismatch");
+  assert.equal(manifest.sourceCommit, sourceCommit, "Embedded source commit mismatch");
+  assert.equal(manifest.grantsAuthority, false);
+  validationStage = "sbom-generation-installed-lock";
+  const lock = JSON.parse(await readFile(await regularFile(root, BUNDLE + "/" + LOCK), "utf8"));
+  const packages = await canonicalInstalledDependencies(root, lock);
+  const byLocation = new Map(packages.map(pkg => [pkg.location, pkg]));
+  const components = packages.map(pkg => ({
+    type: "library", "bom-ref": packageRef(pkg),
+    name: pkg.name, version: pkg.version, purl: packagePurl(pkg),
+  })).sort((a, b) => a["bom-ref"].localeCompare(b["bom-ref"]));
+  const rootRef = "pkg:npm/cline-orchestrator@0.1.0";
+  const dependencyRows = packages.map(pkg => ({
+    ref: packageRef(pkg),
+    dependsOn: [...new Set(Object.keys(pkg.dependencies).map(name =>
+      resolveDependency(pkg.location, name, byLocation)).filter(Boolean))].sort(),
+  }));
+  // The installed application manifest, rather than the source checkout's
+  // dev dependency graph, determines the direct runtime dependencies.
+  const installedRoot = JSON.parse(await readFile(await regularFile(root,
+    BUNDLE + "/app/node_modules/cline-orchestrator/package.json"), "utf8"));
+  const rootEdges = [...new Set(Object.keys(installedRoot.dependencies ?? {})
+    .map(name => {
+      const direct = byLocation.get("node_modules/" + name);
+      return direct ? packageRef(direct) : null;
+    }).filter(Boolean))].sort();
+  dependencyRows.push({ ref: rootRef, dependsOn: rootEdges });
+  dependencyRows.sort((a, b) => a.ref.localeCompare(b.ref));
+  const sbom = {
+    bomFormat: "CycloneDX", specVersion: "1.5", version: 1,
+    metadata: { component: {
+      type: "application", name: "cline-orchestrator", version: "0.1.0",
+      purl: rootRef, "bom-ref": rootRef,
+    } },
+    components, dependencies: dependencyRows,
+  };
+  validationStage = "sbom-generation-write";
+  await writeFile(path.join(root, BOM), JSON.stringify(sbom, null, 2) + "\n",
+    { flag: "wx", mode: 0o600 });
+  return Object.freeze({ schemaVersion: 1, sourceCommit,
+    installedDependenciesRepresented: components.length, standard: "CycloneDX",
+    installationPerformed: false, grantsAuthority: false, releasesSoftware: false });
 }
 function readBom(data, expected) {
   assert.ok(Buffer.byteLength(data) > 10 && Buffer.byteLength(data) < MAX_SBOM,
@@ -137,7 +222,7 @@ async function inputs(root, sourceCommit) {
   validationStage = "installed-lockfile";
   const installed = JSON.parse(await readFile(await regularFile(root, BUNDLE + "/" + LOCK), "utf8"));
   validationStage = "installed-dependency-list";
-  const packages = canonicalInstalledDependencies(installed);
+  const packages = await canonicalInstalledDependencies(root, installed);
   validationStage = "sbom-file";
   const sbomFile = await regularFile(root, BOM);
   const sbom = await readFile(sbomFile, "utf8");
@@ -197,10 +282,12 @@ export async function verifyWindowsCandidateInventory(root, sourceCommit) {
 const entry = process.argv[1] && path.resolve(process.argv[1]);
 if (entry && entry === path.resolve(fileURLToPath(import.meta.url))) {
   try {
-    if (process.argv.length !== 5 || !["create", "verify"].includes(process.argv[2]))
+    if (process.argv.length !== 5 || !["sbom", "create", "verify"].includes(process.argv[2]))
       throw new Error("Invalid candidate command");
     const [_, __, mode, root, commit] = process.argv;
-    const result = mode === "create"
+    const result = mode === "sbom"
+      ? await generateWindowsCandidateSbom(root, commit)
+      : mode === "create"
       ? await createWindowsCandidateInventory(root, commit)
       : await verifyWindowsCandidateInventory(root, commit);
     process.stdout.write(JSON.stringify(result) + "\n");
@@ -208,6 +295,8 @@ if (entry && entry === path.resolve(fileURLToPath(import.meta.url))) {
     const message = error instanceof Error ? error.message : "";
     const reasons = [
       "Unsupported installed lockfile", "Installed runtime dependency tree is missing",
+      "Missing installed runtime package", "Installed runtime package name mismatch",
+      "Installed runtime package version mismatch",
       "Invalid installed package name", "Invalid installed package version",
       "SBOM missing or oversized", "Expected CycloneDX SBOM",
       "Unsupported CycloneDX version", "SBOM lacks component/dependency graph",
