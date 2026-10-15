@@ -38,6 +38,7 @@ internal sealed class ViewerLauncherForm : Form
     };
     private readonly Button copyCode = new() { Text = "Copy access code", Enabled = false, AutoSize = true };
     private readonly Button openDashboard = new() { Text = "Open dashboard", Enabled = false, AutoSize = true };
+    private readonly Button connectModel = new() { Text = "Connect local model", AutoSize = true };
     private readonly Button exit = new() { Text = "Stop viewer and close", AutoSize = true };
     private Process? viewer;
     private string? secret;
@@ -72,6 +73,7 @@ internal sealed class ViewerLauncherForm : Form
         };
         actions.Controls.Add(copyCode);
         actions.Controls.Add(openDashboard);
+        actions.Controls.Add(connectModel);
         actions.Controls.Add(exit);
         Controls.Add(actions);
         Controls.Add(accessCode);
@@ -95,6 +97,11 @@ internal sealed class ViewerLauncherForm : Form
                 Process.Start(new ProcessStartInfo(ViewerUrl) { UseShellExecute = true });
             }
             catch { status.Text = "Could not open your browser. Open http://127.0.0.1:4321/viewer manually."; }
+        };
+        connectModel.Click += (_, _) =>
+        {
+            using var dialog = new LocalModelConnectionForm();
+            dialog.ShowDialog(this);
         };
         exit.Click += (_, _) => Close();
         Shown += async (_, _) => await StartViewerAsync();

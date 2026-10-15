@@ -4,6 +4,7 @@ import { runManagedTaskCli, type ManagedTaskReview } from "./managed-task-cli.js
 import { scheduleManagedRunExitDiagnostic } from "./managed-exit-diagnostics.js";
 import { exportOfflineSetupView } from "./offline-setup-view-export.js";
 import { startInstalledPassiveViewer } from "./installed-passive-viewer.js";
+import { checkLocalProvider } from "./local-provider-check.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -34,6 +35,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "setup",
     "setup-view",
     "viewer",
+    "check-provider",
     "setup-config",
     "setup-project",
     "setup-workspace",
@@ -58,6 +60,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 
 export type ProductCliRoute =
   | { kind: "viewer" }
+  | { kind: "provider_check"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
   | { kind: "managed_run"; workspaceId: string; goal: string; configPath?: string }
@@ -124,6 +127,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator config",
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
     "  cline-orchestrator viewer  # explicit foreground, localhost-only read-only dashboard",
+    "  cline-orchestrator check-provider <openai-compatible> <model-id> <http://127.0.0.1:port/v1>  # metadata-only loopback preflight",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
     "  cline-orchestrator setup-project <display-name>  # interactive project registration",
@@ -165,6 +169,10 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "viewer") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "viewer" };
+  }
+  if (command === "check-provider") {
+    if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "provider_check", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
   }
   if (command === "setup-view") {
     if (rest.length !== 2 || !rest[0]?.trim() || !rest[1]?.trim()) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -427,6 +435,11 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "provider_check") {
+    const result = await checkLocalProvider(route);
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return undefined;
+  }
   if (route.kind === "viewer") {
     const viewer = await startInstalledPassiveViewer(deps.env);
     process.stdout.write(JSON.stringify({ command: "viewer", origin: viewer.origin,
