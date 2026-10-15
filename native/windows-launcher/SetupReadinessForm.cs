@@ -92,7 +92,7 @@ internal sealed class SetupReadinessForm : Form
         };
         setup[1].Click += async (_, _) =>
         {
-            using var dialog = new LocalModelConnectionForm();
+            using var dialog = new EditSavedSettingsForm();
             dialog.ShowDialog(this);
             await RefreshAsync();
         };

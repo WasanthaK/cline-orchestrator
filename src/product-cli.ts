@@ -27,6 +27,7 @@ import { createNativeProject, type NativeProjectReviewV1 } from "./native-projec
 import { listNativeProjects, registerNativeWorkspace, type NativeWorkspaceReviewV1 } from "./native-workspace-setup.js";
 import { inspectNativeSetupReadiness } from "./native-setup-readiness.js";
 import { projectNativeOperations } from "./native-operations.js";
+import { inspectNativeSettings, updateNativeSettings, type NativeSettingsReviewV1 } from "./native-settings-update.js";
 import { MachineOrchestratorService } from "./machine-orchestrator.js";
 import { SafetyPlanService } from "./safety-plan.js";
 import { createMachineDashboardSnapshotReader } from "./machine-dashboard-snapshot-reader.js";
@@ -50,6 +51,8 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "list-projects-desktop",
     "readiness-desktop",
     "operations-desktop",
+    "settings-desktop",
+    "update-settings-desktop",
     "setup-workspace-desktop",
     "setup-config",
     "setup-project",
@@ -81,6 +84,8 @@ export type ProductCliRoute =
   | { kind: "desktop_project_list" }
   | { kind: "desktop_readiness" }
   | { kind: "desktop_operations" }
+  | { kind: "desktop_settings_read" }
+  | { kind: "desktop_settings_update"; expectedRevision: string; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_workspace_create" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
@@ -154,6 +159,8 @@ export function productCliUsage(): string {
     "  cline-orchestrator list-projects-desktop  # read-only local project names for native selector",
     "  cline-orchestrator readiness-desktop  # read-only local setup snapshot and loopback model metadata check",
     "  cline-orchestrator operations-desktop  # read-only local setup and bounded task visibility",
+    "  cline-orchestrator settings-desktop  # private native saved provider review",
+    "  cline-orchestrator update-settings-desktop <revision> <provider> <model> <loopback-url>  # confirmed revision update",
     "  cline-orchestrator setup-workspace-desktop  # native Windows confirmed workspace/Safety registration over private stdio",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
@@ -208,6 +215,15 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "setup-project-desktop") {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "desktop_project_create", displayName: rest[0]! };
+  }
+  if (command === "settings-desktop") {
+    if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_settings_read" };
+  }
+  if (command === "update-settings-desktop") {
+    if (rest.length !== 4) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_settings_update", expectedRevision: rest[0]!,
+      providerId: rest[1]!, modelId: rest[2]!, baseUrl: rest[3]! };
   }
   if (command === "readiness-desktop" || command === "operations-desktop") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -501,6 +517,34 @@ export async function runProductCli(
       catch { /* Failed task history is unknown, not an empty healthy result. */ }
       process.stdout.write(JSON.stringify(projectNativeOperations(snapshot, visual)) + "\n");
     } finally { await machine.close(); }
+    return undefined;
+  }
+  if (route.kind === "desktop_settings_read" || route.kind === "desktop_settings_update") {
+    const stateRoot = deps.env.LOCALAPPDATA;
+    if (process.platform !== "win32" || typeof stateRoot !== "string"
+      || !path.win32.isAbsolute(stateRoot)) {
+      throw new ProductCliError("Native settings require Windows local user state", "interactive_required");
+    }
+    const directory = path.win32.join(stateRoot, "ClineOrchestrator");
+    if (route.kind === "desktop_settings_read") {
+      process.stdout.write(JSON.stringify(await inspectNativeSettings(directory)) + "\n");
+      return undefined;
+    }
+    // One exact private host confirmation; no browser access or config path args.
+    const confirm = async (review: NativeSettingsReviewV1) => {
+      process.stdout.write(JSON.stringify(review) + "\n");
+      const terminal = createInterface({ input: process.stdin, crlfDelay: Infinity });
+      try {
+        const phrase = await terminal.question("", { signal: AbortSignal.timeout(55_000) });
+        return phrase === "UPDATE CONFIG";
+      } catch { return false; }
+      finally { terminal.close(); }
+    };
+    const result = await updateNativeSettings({
+      stateDirectory: directory, expectedRevision: route.expectedRevision,
+      selection: { providerId: route.providerId, modelId: route.modelId, baseUrl: route.baseUrl },
+    }, confirm);
+    process.stdout.write(JSON.stringify(result) + "\n");
     return undefined;
   }
   if (route.kind === "desktop_project_list" || route.kind === "desktop_workspace_create") {

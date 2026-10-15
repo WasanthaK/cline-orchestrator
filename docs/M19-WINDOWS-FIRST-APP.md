@@ -54,6 +54,24 @@ authority; create-only settings remain create-only. More complete revision-safe
 settings editing, trend history and lifecycle management belong to later M19D
 work and M19E review.
 
+### M19D2 — Revision-checked native saved-model editor (review candidate)
+
+From Operations & settings, Setup status or the launcher, the native editor
+can inspect a saved local provider, model and literal /v1 endpoint with its
+file revision. Credentials and private paths do not leave the native child.
+
+Changes require fresh loopback model metadata, exact prior file revision,
+the existing 60-second single-use setup review, and explicit UPDATE CONFIG.
+A successful write atomically replaces verified user-owned config with a
+create-only hash-named previous version retained for future rollback. Only
+provider/model/endpoint fields change. Cancellation, stale state, symlinks,
+unapproved runtimes, remote endpoints and unavailable models fail closed.
+The original create-only first-run flow is unchanged.
+
+Explicit restore/rollback UI and physical multi-process concurrency proof
+remain pending. Preserving a previous version is not rollback acceptance.
+No browser mutation or task/daemon/service/release authority is added.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

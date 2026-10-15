@@ -10,6 +10,7 @@ on:
       - "scripts/verify-native-project-registration.mjs"
       - "scripts/verify-native-workspace-registration.mjs"
       - "scripts/verify-native-setup-readiness.mjs"
+      - "scripts/verify-native-settings-update.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -74,6 +75,9 @@ jobs:
           # isolated user-state folder and a disposable synthetic loopback LLM.
           & node ./scripts/verify-native-setup-readiness.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19C3 installed readiness acceptance failed' }
+          # M19D2: private revision-checked confirmed local config update.
+          & node ./scripts/verify-native-settings-update.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19D2 installed settings update acceptance failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru

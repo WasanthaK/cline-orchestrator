@@ -27,6 +27,7 @@ internal sealed class OperationsCenterForm : Form
     private readonly Button taskHistory = new() { Text = "Task history and evidence", AutoSize = true };
     private readonly Button dataQuality = new() { Text = "Data quality details", AutoSize = true };
     private readonly Button settings = new() { Text = "Setup & settings", AutoSize = true };
+    private readonly Button editSettings = new() { Text = "Edit saved model", AutoSize = true };
     private readonly Button close = new() { Text = "Close", AutoSize = true };
     private bool loading;
 
@@ -63,6 +64,7 @@ internal sealed class OperationsCenterForm : Form
         actions.Controls.Add(taskHistory);
         actions.Controls.Add(dataQuality);
         actions.Controls.Add(settings);
+        actions.Controls.Add(editSettings);
         actions.Controls.Add(close);
         body.Controls.Add(actions, 0, 7);
         Controls.Add(body);
@@ -72,6 +74,11 @@ internal sealed class OperationsCenterForm : Form
         dataQuality.Click += (_, _) => OpenSection("sources");
         settings.Click += async (_, _) => {
             using var dialog = new SetupReadinessForm();
+            dialog.ShowDialog(this);
+            await RefreshAsync();
+        };
+        editSettings.Click += async (_, _) => {
+            using var dialog = new EditSavedSettingsForm();
             dialog.ShowDialog(this);
             await RefreshAsync();
         };

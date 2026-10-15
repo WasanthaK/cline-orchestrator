@@ -41,6 +41,7 @@ internal sealed class ViewerLauncherForm : Form
     private readonly Button openDashboard = new() { Text = "Open dashboard", Enabled = false, AutoSize = true };
     private readonly Button readiness = new() { Text = "Setup status", AutoSize = true };
     private readonly Button operations = new() { Text = "Operations & settings", AutoSize = true };
+    private readonly Button editSettings = new() { Text = "Edit saved model", AutoSize = true };
     private readonly Button connectModel = new() { Text = "Connect local model", AutoSize = true };
     private readonly Button registerProject = new() { Text = "Register project", AutoSize = true };
     private readonly Button registerWorkspace = new() { Text = "Register workspace", AutoSize = true };
@@ -79,6 +80,7 @@ internal sealed class ViewerLauncherForm : Form
         actions.Controls.Add(copyCode);
         actions.Controls.Add(openDashboard);
         actions.Controls.Add(operations);
+        actions.Controls.Add(editSettings);
         actions.Controls.Add(readiness);
         actions.Controls.Add(connectModel);
         actions.Controls.Add(registerProject);
@@ -112,6 +114,11 @@ internal sealed class ViewerLauncherForm : Form
             using var dialog = new OperationsCenterForm(
                 () => !stopping && viewer is { HasExited: false },
                 section => OpenViewerSection(section));
+            dialog.ShowDialog(this);
+        };
+        editSettings.Click += (_, _) =>
+        {
+            using var dialog = new EditSavedSettingsForm();
             dialog.ShowDialog(this);
         };
         readiness.Click += (_, _) =>
