@@ -38,6 +38,22 @@ Welcome/runtime readiness → choose provider, model and loopback URL → explic
 
 Use design-thinking language: activity gauges for current system health, trend graphs only where time-series evidence is available, task lifecycle with independent validation and diff safety, source coverage notices showing **Unknown** vs verified zero, and deliberate drilldown for identifiers/technical details. Settings include provider/model endpoint, runtime limits, workspace registrations/Safety revisions, diagnostics, version and foreground lifecycle, with the same trusted backend services.
 
+### M19D1 — Native integrated operations & settings (review candidate)
+
+The Windows launcher offers an Operations & settings entry. Its read-only local
+summary composes existing verified native setup states with the same trusted
+sanitized task dashboard reader used by the passive browser viewer. It displays
+bounded sample counts ONLY when the task source is verified, and explicitly
+uses Unknown for unavailable, stale or truncated results. Other disconnected
+workflow/incident/writer sources stay labeled unconnected.
+
+The screen links to authenticated localhost task history and source quality
+drilldowns, and reuses the existing confirmed setup dialog for settings and
+registration. It adds no browser mutation, task, model, daemon or service
+authority; create-only settings remain create-only. More complete revision-safe
+settings editing, trend history and lifecycle management belong to later M19D
+work and M19E review.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

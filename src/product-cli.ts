@@ -26,6 +26,11 @@ import { runRegistrationSetup, RegistrationSetupError, type RegistrationSetupRev
 import { createNativeProject, type NativeProjectReviewV1 } from "./native-project-setup.js";
 import { listNativeProjects, registerNativeWorkspace, type NativeWorkspaceReviewV1 } from "./native-workspace-setup.js";
 import { inspectNativeSetupReadiness } from "./native-setup-readiness.js";
+import { projectNativeOperations } from "./native-operations.js";
+import { MachineOrchestratorService } from "./machine-orchestrator.js";
+import { SafetyPlanService } from "./safety-plan.js";
+import { createMachineDashboardSnapshotReader } from "./machine-dashboard-snapshot-reader.js";
+import { createInstalledViewerMachineReader } from "./installed-passive-viewer.js";
 import { runDaemonStartSetup, type DaemonStartSetupReview } from "./daemon-start-setup.js";
 import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
@@ -44,6 +49,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "setup-project-desktop",
     "list-projects-desktop",
     "readiness-desktop",
+    "operations-desktop",
     "setup-workspace-desktop",
     "setup-config",
     "setup-project",
@@ -74,6 +80,7 @@ export type ProductCliRoute =
   | { kind: "desktop_project_create"; displayName: string }
   | { kind: "desktop_project_list" }
   | { kind: "desktop_readiness" }
+  | { kind: "desktop_operations" }
   | { kind: "desktop_workspace_create" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
@@ -146,6 +153,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator setup-project-desktop <project-name>  # native Windows explicit local registry confirmation",
     "  cline-orchestrator list-projects-desktop  # read-only local project names for native selector",
     "  cline-orchestrator readiness-desktop  # read-only local setup snapshot and loopback model metadata check",
+    "  cline-orchestrator operations-desktop  # read-only local setup and bounded task visibility",
     "  cline-orchestrator setup-workspace-desktop  # native Windows confirmed workspace/Safety registration over private stdio",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
@@ -201,9 +209,9 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "desktop_project_create", displayName: rest[0]! };
   }
-  if (command === "readiness-desktop") {
+  if (command === "readiness-desktop" || command === "operations-desktop") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
-    return { kind: "desktop_readiness" };
+    return { kind: command === "readiness-desktop" ? "desktop_readiness" : "desktop_operations" };
   }
   if (command === "list-projects-desktop" || command === "setup-workspace-desktop") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -470,15 +478,29 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
-  if (route.kind === "desktop_readiness") {
+  if (route.kind === "desktop_readiness" || route.kind === "desktop_operations") {
     const stateRoot = deps.env.LOCALAPPDATA;
     if (process.platform !== "win32" || typeof stateRoot !== "string"
       || !path.win32.isAbsolute(stateRoot)) {
       throw new ProductCliError("Windows local state is unavailable", "interactive_required");
     }
-    const snapshot = await inspectNativeSetupReadiness(stateRoot,
-      deps.registrationRegistry ?? new WorkspaceRegistry());
-    process.stdout.write(JSON.stringify(snapshot) + "\n");
+    const registry = deps.registrationRegistry ?? new WorkspaceRegistry();
+    const snapshot = await inspectNativeSetupReadiness(stateRoot, registry);
+    if (route.kind === "desktop_readiness") {
+      process.stdout.write(JSON.stringify(snapshot) + "\n");
+      return undefined;
+    }
+    // Only the existing passive viewer's five observation capabilities are
+    // offered to the native aggregation path. No execution profile is resolved.
+    const machine = new MachineOrchestratorService(registry, new SafetyPlanService(registry),
+      () => { throw new Error("Native operations cannot resolve a worker"); });
+    try {
+      const reader = createMachineDashboardSnapshotReader(createInstalledViewerMachineReader(machine));
+      let visual;
+      try { visual = await reader.readSnapshot(); }
+      catch { /* Failed task history is unknown, not an empty healthy result. */ }
+      process.stdout.write(JSON.stringify(projectNativeOperations(snapshot, visual)) + "\n");
+    } finally { await machine.close(); }
     return undefined;
   }
   if (route.kind === "desktop_project_list" || route.kind === "desktop_workspace_create") {

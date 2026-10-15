@@ -40,6 +40,7 @@ internal sealed class ViewerLauncherForm : Form
     private readonly Button copyCode = new() { Text = "Copy access code", Enabled = false, AutoSize = true };
     private readonly Button openDashboard = new() { Text = "Open dashboard", Enabled = false, AutoSize = true };
     private readonly Button readiness = new() { Text = "Setup status", AutoSize = true };
+    private readonly Button operations = new() { Text = "Operations & settings", AutoSize = true };
     private readonly Button connectModel = new() { Text = "Connect local model", AutoSize = true };
     private readonly Button registerProject = new() { Text = "Register project", AutoSize = true };
     private readonly Button registerWorkspace = new() { Text = "Register workspace", AutoSize = true };
@@ -77,6 +78,7 @@ internal sealed class ViewerLauncherForm : Form
         };
         actions.Controls.Add(copyCode);
         actions.Controls.Add(openDashboard);
+        actions.Controls.Add(operations);
         actions.Controls.Add(readiness);
         actions.Controls.Add(connectModel);
         actions.Controls.Add(registerProject);
@@ -105,6 +107,13 @@ internal sealed class ViewerLauncherForm : Form
             }
             catch { status.Text = "Could not open your browser. Open http://127.0.0.1:4321/viewer manually."; }
         };
+        operations.Click += (_, _) =>
+        {
+            using var dialog = new OperationsCenterForm(
+                () => !stopping && viewer is { HasExited: false },
+                section => OpenViewerSection(section));
+            dialog.ShowDialog(this);
+        };
         readiness.Click += (_, _) =>
         {
             using var dialog = new SetupReadinessForm();
@@ -128,6 +137,14 @@ internal sealed class ViewerLauncherForm : Form
         exit.Click += (_, _) => Close();
         Shown += async (_, _) => await StartViewerAsync();
         FormClosing += (_, _) => StopOwnedViewer();
+    }
+
+    private void OpenViewerSection(string section)
+    {
+        if (stopping || viewer is null || viewer.HasExited) return;
+        if (section is not ("tasks" or "sources")) return;
+        try { Process.Start(new ProcessStartInfo(ViewerUrl + "#" + section) { UseShellExecute = true }); }
+        catch { status.Text = "Could not open task details in the local browser."; }
     }
 
     private async Task StartViewerAsync()
