@@ -1,5 +1,5 @@
 import path from "node:path";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import { checkLocalProvider } from "./local-provider-check.js";
 import { runConfigWriteSetup, type ConfigWriteReview } from "./config-write-setup.js";
 
@@ -70,14 +70,13 @@ export async function saveNativeProviderConfig(
   }
   const directory = path.resolve(request.stateDirectory);
   try {
-    const [physical, entry] = await Promise.all([realpath(directory), lstat(directory)]);
-    // Windows canonical filesystem casing is not guaranteed to match the
-    // caller's casing even when it identifies the same real directory.
-    // Keep physical alias/symlink denial; compare Windows roots case-folded.
-    const sameLocation = process.platform === "win32"
-      ? path.win32.normalize(physical).toLowerCase() === path.win32.normalize(directory).toLowerCase()
-      : physical === directory;
-    if (!sameLocation || !entry.isDirectory() || entry.isSymbolicLink()) {
+    // Direct state-root symlinks/junctions are rejected. The existing
+    // runConfigWriteSetup service independently resolves the physical parent,
+    // checks its dev/ino identity before publication and atomically links the
+    // new file create-only. Avoid comparing realpath string spellings on
+    // Windows, where platform paths may have differing canonical prefixes.
+    const entry = await lstat(directory);
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
       throw new Error("state alias");
     }
   } catch { throw new NativeProviderSaveError("scope_invalid"); }
