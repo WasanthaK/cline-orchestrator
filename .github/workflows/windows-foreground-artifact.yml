@@ -9,6 +9,7 @@ on:
       - "scripts/verify-native-desktop-config.mjs"
       - "scripts/verify-native-project-registration.mjs"
       - "scripts/verify-native-workspace-registration.mjs"
+      - "scripts/verify-native-setup-readiness.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -69,6 +70,10 @@ jobs:
           # Safety registration with explicit confirm, cancel and duplicate denial.
           & node ./scripts/verify-native-workspace-registration.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19C2B2 installed workspace registration failed' }
+          # M19C3: metadata-only installed native setup status, with an
+          # isolated user-state folder and a disposable synthetic loopback LLM.
+          & node ./scripts/verify-native-setup-readiness.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19C3 installed readiness acceptance failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
