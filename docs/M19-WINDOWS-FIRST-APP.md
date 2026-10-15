@@ -206,6 +206,29 @@ Actual transactional update code, process lease barriers, locked-file behavior,
 snapshot durability, crash recovery, Windows platform signing, independent
 human review and Linux compatibility are still **pending**.
 
+### M19E4A — Installed real-model pilot evidence gate (review candidate)
+
+A non-executing and non-installing evidence assessor enumerates the real
+Windows end-to-end pilot obligations: same exact candidate throughout the
+installed manifest and runtime, independently checked provenance/SBOM/hashes,
+**actually running** literal-loopback llama.cpp, advertised model alias and
+harmless answer, a separately approved small Cline task in a disposable
+workspace, independent validation/diff safety, reviewable task history,
+foreground stop/port release, and user-owned data preservation after uninstall.
+
+The code distinguishes actual operator observations from synthetic CI
+fixtures. Missing, failed, contradictory, or synthetic-only claims block the
+pilot. **Even all-positive unverified JSON never becomes a passing pilot or
+release approval**: the most it can indicate is "ready for independent human
+review." Raw paths, prompt text, task IDs, outputs and secrets are excluded
+from public receipts. The operator still has to perform the real pilot using
+the installed application and review actual local evidence.
+
+Task execution requires *separate explicit approval* and existing trusted
+Safety/workspace/lease boundaries. M19E4A adds no task-launch or browser
+mutation API and never installs or starts a local model. Full live Cline
+acceptance remains **not run** until actual machine evidence and human review.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

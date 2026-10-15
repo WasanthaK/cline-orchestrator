@@ -76,7 +76,7 @@ jobs:
           # M19E3A: verify negative fresh install first and protect canonical
           # external user state before any product installation.
           & ./scripts/verify-windows-install-lifecycle.ps1 -Phase BeforeInstall -InstallerPath $setup -InstallPrefix $prefix
-          if ($LASTEXITCODE -ne 0) { throw 'M19E3A pre-install refusal/ownership proof failed' }
+          if (-not $?) { throw 'M19E3A pre-install refusal/ownership proof failed' }
           $external = Join-Path $env:RUNNER_TEMP 'm19b-user-data-sentinel'
           [System.IO.File]::WriteAllText($external,'PRESERVE_M19B_USER_STATE')
           $before = (Get-FileHash -Algorithm SHA256 -LiteralPath $external).Hash
@@ -125,7 +125,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'M19D3B installed model restore acceptance failed' }
           # M19E3A: second install is a refusal, not an implicit upgrade.
           & ./scripts/verify-windows-install-lifecycle.ps1 -Phase AfterInstall -InstallerPath $setup -InstallPrefix $prefix
-          if ($LASTEXITCODE -ne 0) { throw 'M19E3A occupied-install refusal proof failed' }
+          if (-not $?) { throw 'M19E3A occupied-install refusal proof failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
@@ -135,7 +135,7 @@ jobs:
             throw 'External user data modified by install or removal'
           }
           & ./scripts/verify-windows-install-lifecycle.ps1 -Phase AfterUninstall -InstallerPath $setup -InstallPrefix $prefix
-          if ($LASTEXITCODE -ne 0) { throw 'M19E3A uninstall user-state preservation proof failed' }
+          if (-not $?) { throw 'M19E3A uninstall user-state preservation proof failed' }
           Write-Output 'M19B installed artifact/uninstall/sentinel proof passed; no service, no model, no task.'
       - name: Upload unsigned review artifacts
         if: success()
