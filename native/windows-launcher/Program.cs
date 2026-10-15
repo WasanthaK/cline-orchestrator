@@ -39,6 +39,7 @@ internal sealed class ViewerLauncherForm : Form
     };
     private readonly Button copyCode = new() { Text = "Copy access code", Enabled = false, AutoSize = true };
     private readonly Button openDashboard = new() { Text = "Open dashboard", Enabled = false, AutoSize = true };
+    private readonly Button readiness = new() { Text = "Setup status", AutoSize = true };
     private readonly Button connectModel = new() { Text = "Connect local model", AutoSize = true };
     private readonly Button registerProject = new() { Text = "Register project", AutoSize = true };
     private readonly Button registerWorkspace = new() { Text = "Register workspace", AutoSize = true };
@@ -51,7 +52,7 @@ internal sealed class ViewerLauncherForm : Form
     {
         Text = "Cline Orchestrator";
         Width = 875;
-        Height = 285;
+        Height = 350;
         MinimumSize = new System.Drawing.Size(800, 270);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.Sizable;
@@ -71,11 +72,12 @@ internal sealed class ViewerLauncherForm : Form
         };
         var actions = new FlowLayoutPanel
         {
-            Dock = DockStyle.Top, Height = 48, Padding = new Padding(12, 3, 0, 0),
+            Dock = DockStyle.Top, Height = 100, Padding = new Padding(12, 3, 0, 0),
             FlowDirection = FlowDirection.LeftToRight, WrapContents = true,
         };
         actions.Controls.Add(copyCode);
         actions.Controls.Add(openDashboard);
+        actions.Controls.Add(readiness);
         actions.Controls.Add(connectModel);
         actions.Controls.Add(registerProject);
         actions.Controls.Add(registerWorkspace);
@@ -102,6 +104,11 @@ internal sealed class ViewerLauncherForm : Form
                 Process.Start(new ProcessStartInfo(ViewerUrl) { UseShellExecute = true });
             }
             catch { status.Text = "Could not open your browser. Open http://127.0.0.1:4321/viewer manually."; }
+        };
+        readiness.Click += (_, _) =>
+        {
+            using var dialog = new SetupReadinessForm();
+            dialog.ShowDialog(this);
         };
         connectModel.Click += (_, _) =>
         {

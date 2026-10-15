@@ -25,6 +25,7 @@ import { runConfigWriteSetup, type ConfigWriteReview } from "./config-write-setu
 import { runRegistrationSetup, RegistrationSetupError, type RegistrationSetupReview } from "./registration-setup.js";
 import { createNativeProject, type NativeProjectReviewV1 } from "./native-project-setup.js";
 import { listNativeProjects, registerNativeWorkspace, type NativeWorkspaceReviewV1 } from "./native-workspace-setup.js";
+import { inspectNativeSetupReadiness } from "./native-setup-readiness.js";
 import { runDaemonStartSetup, type DaemonStartSetupReview } from "./daemon-start-setup.js";
 import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
@@ -42,6 +43,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "setup-config-desktop",
     "setup-project-desktop",
     "list-projects-desktop",
+    "readiness-desktop",
     "setup-workspace-desktop",
     "setup-config",
     "setup-project",
@@ -71,6 +73,7 @@ export type ProductCliRoute =
   | { kind: "desktop_config_save"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_project_create"; displayName: string }
   | { kind: "desktop_project_list" }
+  | { kind: "desktop_readiness" }
   | { kind: "desktop_workspace_create" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
@@ -142,6 +145,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator setup-config-desktop <provider> <model> <loopback-url>  # Windows local UI, confirmed create-only",
     "  cline-orchestrator setup-project-desktop <project-name>  # native Windows explicit local registry confirmation",
     "  cline-orchestrator list-projects-desktop  # read-only local project names for native selector",
+    "  cline-orchestrator readiness-desktop  # read-only local setup snapshot and loopback model metadata check",
     "  cline-orchestrator setup-workspace-desktop  # native Windows confirmed workspace/Safety registration over private stdio",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
@@ -196,6 +200,10 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "setup-project-desktop") {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "desktop_project_create", displayName: rest[0]! };
+  }
+  if (command === "readiness-desktop") {
+    if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_readiness" };
   }
   if (command === "list-projects-desktop" || command === "setup-workspace-desktop") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -462,6 +470,17 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
+  if (route.kind === "desktop_readiness") {
+    const stateRoot = deps.env.LOCALAPPDATA;
+    if (process.platform !== "win32" || typeof stateRoot !== "string"
+      || !path.win32.isAbsolute(stateRoot)) {
+      throw new ProductCliError("Windows local state is unavailable", "interactive_required");
+    }
+    const snapshot = await inspectNativeSetupReadiness(stateRoot,
+      deps.registrationRegistry ?? new WorkspaceRegistry());
+    process.stdout.write(JSON.stringify(snapshot) + "\n");
+    return undefined;
+  }
   if (route.kind === "desktop_project_list" || route.kind === "desktop_workspace_create") {
     if (process.platform !== "win32" || typeof deps.env.LOCALAPPDATA !== "string"
       || !path.win32.isAbsolute(deps.env.LOCALAPPDATA)) {
