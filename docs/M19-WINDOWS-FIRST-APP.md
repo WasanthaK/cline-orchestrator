@@ -165,6 +165,24 @@ authorization to install on an operator workstation. This proves **build
 inventory consistency**, not cryptographic signing, reproducible independent
 rebuilds or third-party package vulnerability-free status.
 
+### M19E3A — Disposable Windows lifecycle and upgrade refusal (review candidate)
+
+The hosted Windows acceptance suite now tests an occupied-target refusal
+**before** the real fresh installation, validates a second-install refusal
+without modifying installed binary hashes, and checks user-owned configuration,
+registry, secret-reference and task-history placeholders against exact
+SHA-256 evidence through uninstall. The script refuses to operate outside
+a GitHub-hosted Windows runner, rejects existing user state, and does not
+print paths or file contents. Full source/packaged candidate provenance,
+browser checks and settings/Safety tests remain separate acceptance gates.
+
+**Upgrade remains unsupported:** current NSIS intentionally rejects nonempty
+targets. Binary rollback is not implemented or tested by this slice.
+M19D3B model-connection recovery must never be mistaken for product
+binary rollback. Independent transactional update/rollback design, clean VM
+real-model work, human accessibility review, signing, Linux support and M18F
+release authority remain pending.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

@@ -4,7 +4,7 @@ Status: **stacked development candidate**, based on M19E1 PR #62. No signing, re
 
 ## Evidence generation
 
-The disposable Windows acceptance workflow uses `npm sbom --sbom-format cyclonedx --omit=dev` on the exact checked-out source root after pinned `npm ci`. npm's generated CycloneDX file is stored as `DEPENDENCY-SBOM.cdx.json`. This deliberately uses the **source root**, not the installed consumer prefix; npm creates an anonymous `app@` prefix root and cannot generate a valid root package URL from it.
+The disposable Windows acceptance workflow generates CycloneDX 1.5 directly from the **actual installed consumer runtime** and its package-lock graph. The generator validates installed package name/version metadata for each included dependency and omits platform-absent optional or dev-only modules. It stores the result as `DEPENDENCY-SBOM.cdx.json`. This supersedes the earlier source-checkout-only npm SBOM approach, which failed completeness verification because the consumer install has a different dependency graph.
 
 `windows-candidate-inventory.mjs create` creates a new, create-only
 `BUNDLE-INVENTORY.json` containing sorted relative product file names,

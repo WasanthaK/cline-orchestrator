@@ -14,6 +14,7 @@ on:
       - "scripts/verify-windows-foreground-evidence.mjs"
       - "scripts/verify-windows-foreground-evidence.d.mts"
       - "scripts/windows-candidate-inventory.mjs"
+      - "scripts/verify-windows-install-lifecycle.ps1"
       - "scripts/windows-candidate-inventory.d.mts"
       - "src/windows-candidate-inventory.test.ts"
       - "src/windows-foreground-evidence.test.ts"
@@ -72,6 +73,10 @@ jobs:
           if (!(Test-Path -LiteralPath $setup)) { throw 'Unsigned installer missing' }
           $prefix = Join-Path $env:LOCALAPPDATA 'Programs\ClineOrchestrator'
           if (Test-Path -LiteralPath $prefix) { throw 'Disposable installer target is not empty' }
+          # M19E3A: verify negative fresh install first and protect canonical
+          # external user state before any product installation.
+          & ./scripts/verify-windows-install-lifecycle.ps1 -Phase BeforeInstall -InstallerPath $setup -InstallPrefix $prefix
+          if ($LASTEXITCODE -ne 0) { throw 'M19E3A pre-install refusal/ownership proof failed' }
           $external = Join-Path $env:RUNNER_TEMP 'm19b-user-data-sentinel'
           [System.IO.File]::WriteAllText($external,'PRESERVE_M19B_USER_STATE')
           $before = (Get-FileHash -Algorithm SHA256 -LiteralPath $external).Hash
@@ -118,6 +123,9 @@ jobs:
           # M19D3B: consent-bound model restoration with selected backup digest and stale refusal.
           & node ./scripts/verify-native-settings-restore.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19D3B installed model restore acceptance failed' }
+          # M19E3A: second install is a refusal, not an implicit upgrade.
+          & ./scripts/verify-windows-install-lifecycle.ps1 -Phase AfterInstall -InstallerPath $setup -InstallPrefix $prefix
+          if ($LASTEXITCODE -ne 0) { throw 'M19E3A occupied-install refusal proof failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
@@ -126,6 +134,8 @@ jobs:
           if ((Get-FileHash -Algorithm SHA256 -LiteralPath $external).Hash -ne $before) {
             throw 'External user data modified by install or removal'
           }
+          & ./scripts/verify-windows-install-lifecycle.ps1 -Phase AfterUninstall -InstallerPath $setup -InstallPrefix $prefix
+          if ($LASTEXITCODE -ne 0) { throw 'M19E3A uninstall user-state preservation proof failed' }
           Write-Output 'M19B installed artifact/uninstall/sentinel proof passed; no service, no model, no task.'
       - name: Upload unsigned review artifacts
         if: success()
