@@ -8,23 +8,28 @@ const checked = (condition: boolean) => condition ? " checked" : "";
 const selected = (condition: boolean) => condition ? " selected" : "";
 export function renderAdvisorSettingsForm(
   view: AdvisorSettingsViewV1, csrf: string, projectLabel: string,
-  notice?: "saved" | "needs_refresh",
+  notice?: "saved" | "needs_refresh", projectId?: string,
 ): string {
   if (!view || view.schemaVersion!==1 || view.externalCallsEnabled!==false
     || view.grantsAuthority!==false || !/^[a-f0-9]{64}$/.test(csrf)
     || !/^[a-f0-9]{64}$/.test(view.revision)
-    || typeof projectLabel!=="string" || projectLabel.length>100) throw new Error("invalid_settings_view");
+    || typeof projectLabel!=="string" || projectLabel.length>100
+    || (projectId !== undefined && (projectId !== view.projectId
+      || !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(projectId))))
+    throw new Error("invalid_settings_view");
   return '<section aria-label="Recovery advisor settings">'
     + '<h2>AI recovery help</h2>'
     + '<p>Choose how Cline Orchestrator should handle development interruptions. '
     + 'Advice is separate from permission to run commands or change code.</p>'
     + (notice==="saved" ? '<p role="status">Settings saved. External consultations are not connected yet.</p>' :
       notice==="needs_refresh" ? '<p role="alert">Settings changed. Refresh and try again.</p>' : '')
-    + '<p><strong>Project:</strong> '+esc(projectLabel)+'</p>'
+    + '<p><strong>Project:</strong> '+esc(projectLabel)
+    + (projectId ? ' · <a href="/operator/advisor-settings">Change project</a>' : '')+'</p>'
     + (view.expired ? '<p role="status">Your previous consent expired. AI advice remains off until you renew it.</p>' : '')
     + '<form method="post" action="/operator/advisor-settings">'
     + '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
     + '<input type="hidden" name="revision" value="'+esc(view.revision)+'">'
+    + (projectId ? '<input type="hidden" name="project" value="'+esc(projectId)+'">' : '')
     + '<fieldset><legend>When Cline needs help</legend>'
     + '<label class="option"><input type="radio" name="mode" value="off"'
     + checked(view.mode==="off")+'><strong>Off</strong> — Do not contact an external advisor</label>'
