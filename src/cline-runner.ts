@@ -23,6 +23,8 @@ import type {
   WorkerConfig,
 } from "./types.js";
 import { TaskStore } from "./state.js";
+import { LiveClineRecoveryObserver, type LiveRecoveryCorrelationV1 } from "./recovery-live-cline-observer.js";
+import type { InferenceSnapshotV1 } from "./recovery-inference-monitor.js";
 
 const READ_TOOLS = new Set(["read_files", "search_codebase", "fetch_web_content"]);
 const COMMAND_TOOLS = new Set(["run_commands", "execute_command"]);
@@ -84,6 +86,12 @@ export class ClineRunner {
   private readonly contextSupervisor: ContextSupervisor;
   private readonly runtimeMode: ClineRuntimeMode;
   private readonly runtimeFactory: ClineRuntimeFactory;
+  private readonly recoveryObserver = new LiveClineRecoveryObserver();
+
+  /** Sanitized in-process observation; no backend probe starts here. */
+  getRecoveryCorrelation(backend?: InferenceSnapshotV1): LiveRecoveryCorrelationV1 | undefined {
+    return this.recoveryObserver.correlation(Date.now(), backend);
+  }
   private lastActivityAt = Date.now();
   private streamedText = "";
   private cline: ClineRuntime | undefined;
@@ -160,6 +168,7 @@ export class ClineRunner {
     this.contextRotationsUsedThisRun = 0;
     this.contextRotationLimitNotified = false;
     this.runStartedAtMs = Date.now();
+    this.recoveryObserver.begin(this.runStartedAtMs);
     this.currentRunMetrics = {
       startedAt: new Date(this.runStartedAtMs).toISOString(),
       iterations: 0,
@@ -204,6 +213,7 @@ export class ClineRunner {
 
     cline.subscribe((event: any) => {
       this.lastActivityAt = Date.now();
+      this.recoveryObserver.recordRuntimeEvent(event, this.lastActivityAt);
 
       if (event?.type === "chunk") {
         if (event?.payload?.type === "text" && event?.payload?.text) {
@@ -699,6 +709,7 @@ export class ClineRunner {
       triggered = true;
       void (async () => {
         await this.recordStall(task, silenceMs);
+        this.recoveryObserver.recordVerifiedWatchdogStall(Date.now());
         try {
           await cline.abort(sessionId, new Error(`orchestrator watchdog stall after ${silenceMs}ms`));
         } catch (abortError) {
@@ -854,6 +865,7 @@ export class ClineRunner {
       escalated.finishReason = "human_escalation";
       this.finishRunMetrics(escalated);
       await this.store.save(escalated);
+      this.recoveryObserver.finish("waiting_for_human", Date.now());
       return escalated;
     }
 
@@ -868,6 +880,7 @@ export class ClineRunner {
       task.error = undefined;
       this.finishRunMetrics(task);
       await this.store.save(task);
+      this.recoveryObserver.finish("unknown", Date.now());
       return task;
     }
 
@@ -882,6 +895,7 @@ export class ClineRunner {
 
     process.stdout.write(`\n[cline result: ${task.finishReason ?? "unknown"}]\n`);
     await this.store.save(task);
+    this.recoveryObserver.finish(task.status === "completed" ? "completed" : "unknown", Date.now());
     return task;
   }
 
@@ -892,6 +906,7 @@ export class ClineRunner {
     escalated.error = undefined;
     this.finishRunMetrics(escalated);
     await this.store.save(escalated);
+    this.recoveryObserver.finish("waiting_for_human", Date.now());
     return escalated;
   }
 
@@ -953,6 +968,9 @@ export class ClineRunner {
       }
     } finally {
       if (this.activeTask?.id === task.id) this.activeTask = undefined;
+      if (this.recoveryObserver.snapshot(Date.now())?.state === "running") {
+        this.recoveryObserver.finish("unknown", Date.now());
+      }
       this.abortRequestedTaskIds.delete(task.id);
     }
   }
@@ -1018,6 +1036,9 @@ export class ClineRunner {
       }
     } finally {
       if (this.activeTask?.id === task.id) this.activeTask = undefined;
+      if (this.recoveryObserver.snapshot(Date.now())?.state === "running") {
+        this.recoveryObserver.finish("unknown", Date.now());
+      }
       this.abortRequestedTaskIds.delete(task.id);
     }
   }

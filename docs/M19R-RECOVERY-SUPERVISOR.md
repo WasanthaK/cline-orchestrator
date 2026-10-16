@@ -86,3 +86,27 @@ Next M19R2C: bounded typed runner tool lifecycle observation and real-time
 join with M19R2A inference observations; after that, wire incident drilldown
 and eventual M19R6 notifications (#75). No opt-in external transmission,
 task retry, skip, model restart, notification delivery, or release authority.
+
+## M19R2C — live SDK tool lifecycle and inference correlation (source candidate)
+
+ClineRunner's existing trusted SDK subscription feeds a private in-process
+observer. Only paired content_start/content_end tool events (same bounded
+name, single tool in flight) count as verified tool activity. Model token
+counters, text chunks, reasoning, status updates and watchdog heartbeats do
+not count. Malformed, overlapping, unpaired or concurrent-tool events yield
+ambiguous active-tool state and never add fabricated completions.
+A completed tool is NOT proof that the resulting code/diff/validation passed.
+
+Runs reset this observer, human-escalated/finished runs seal it, and existing
+watchdog signals can be recorded without replacing the watchdog. An in-process
+getRecoveryCorrelation(optionalSnapshot) joins M19R2A's independently sampled
+backend evidence without starting any inference requests. Outputs are bounded
+numeric timestamps and counts only: no worker output, tool names, paths,
+prompts, credentials or raw logs.
+
+M19R2B's durable task evidence remains independent and explicitly reports
+tool completion history unknown. This slice does not persist SDK tool events;
+crash/restart loses its process-local observations. Later milestone work must
+review immutable bounded tool evidence, process/task binding and UI projection
+before advertising continuous monitoring or operator notifications (#75).
+No retries, restart, browser mutation, external advisor or new task authority.
