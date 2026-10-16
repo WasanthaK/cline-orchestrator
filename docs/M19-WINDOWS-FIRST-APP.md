@@ -1,6 +1,6 @@
 # M19 — Windows-first installable and configurable Cline Orchestrator
 
-Status: **active product priority, initial contract implementation only**. Decision recorded 2026-10-15. Tracking: [issue #49](https://github.com/WasanthaK/cline-orchestrator/issues/49). Target branch: `milestone-13/delegation`.
+Status: **M19 source integration merged (PR #70); physical/release acceptance pending**. Decision recorded 2026-10-15. Tracking: [issue #49](https://github.com/WasanthaK/cline-orchestrator/issues/49). Target branch: `milestone-13/delegation`.
 
 ## Product experience and scope
 
@@ -266,6 +266,26 @@ The private installed CLI reads only fixed user-local config, rejects stale
 revisions, rechecks the revision after the harmless bounded inference, and
 returns no model output. No model/task is started or settings saved. Actual
 llama.cpp pilot acceptance remains separately pending.
+
+### M19E5A — Genuine Windows pilot pre-install integrity check (review candidate)
+
+The operator preflight verifies the downloaded unsigned Windows artifact,
+the installer and portable ZIP hashes, source commit, SBOM digest, product
+manifest and every file against the recorded full-bundle inventory. It reads
+the manifest without extracting or executing software, then reports whether
+the current Windows user already has application or user-state directories.
+No network request, configuration change, process launch, installation or
+task submission is performed.
+
+Installation needs explicit separate approval; the real Cline task needs
+its own further approval. The genuine llama.cpp model must share the same
+loopback network namespace as the installed app. A host model bound to
+127.0.0.1 is not reachable from an isolated VM. Do not widen the model
+listener to make the pilot work. Read docs/M19E5-REAL-WINDOWS-PILOT.md
+for exact candidate, evidence, acceptance stages and stop conditions.
+
+The real model response, authorized Cline task, human accessibility acceptance
+and uninstall preservation are not completed by this preflight.
 
 ### M19E — Candidate acceptance and wider OS coverage
 
