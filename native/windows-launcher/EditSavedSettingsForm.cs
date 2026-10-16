@@ -15,6 +15,7 @@ internal sealed class EditSavedSettingsForm : Form
     private readonly Label recoveryStatus = new() { Dock = DockStyle.Fill, Text = "Recovery: Unknown" };
     private readonly Button review = new() { Text = "Review update", Enabled = false, AutoSize = true };
     private readonly Button refresh = new() { Text = "Refresh saved settings", AutoSize = true };
+    private readonly Button testSaved = new() { Text = "Test saved model", Enabled = false, AutoSize = true };
     private readonly Button restore = new() { Text = "Restore selected model", Enabled = false, AutoSize = true };
     private readonly ComboBox restoreChoices = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     private sealed record RestoreOption(string Revision, string ProviderId, string ModelId, string BaseUrl)
@@ -24,6 +25,7 @@ internal sealed class EditSavedSettingsForm : Form
     private readonly Button close = new() { Text = "Close", AutoSize = true };
     private string? revision;
     private bool busy;
+    private string? loadedSelection;
 
     internal EditSavedSettingsForm()
     {
@@ -37,6 +39,7 @@ internal sealed class EditSavedSettingsForm : Form
         NativeAccessibility.Name(endpoint, "Saved model endpoint", "Keyboard and screen-reader control. No task authority is granted by this control.");
         NativeAccessibility.Name(review, "Review settings update", "Keyboard and screen-reader control. This action requires separate confirmation.");
         NativeAccessibility.Name(refresh, "Refresh saved settings", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(testSaved, "Test saved model", "Sends one harmless local prompt against an unchanged saved revision. No task.");
         NativeAccessibility.Name(restoreChoices, "Verified previous model selections", "Keyboard and screen-reader control. No task authority is granted by this control.");
         NativeAccessibility.Name(restore, "Restore selected model", "Keyboard and screen-reader control. This action requires separate confirmation.");
         NativeAccessibility.Name(close, "Close saved model editor", "Keyboard and screen-reader control. No task authority is granted by this control.");
@@ -68,7 +71,7 @@ internal sealed class EditSavedSettingsForm : Form
             TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
         table.Controls.Add(restoreChoices, 1, 5);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill };
-        actions.Controls.Add(refresh); actions.Controls.Add(review); actions.Controls.Add(restore); actions.Controls.Add(close);
+        actions.Controls.Add(refresh); actions.Controls.Add(testSaved); actions.Controls.Add(review); actions.Controls.Add(restore); actions.Controls.Add(close);
         table.Controls.Add(actions, 0, 6); table.SetColumnSpan(actions, 2);
         table.Controls.Add(new Label {
             Dock = DockStyle.Fill, Text = "Updates need model verification and fresh one-time consent. Previous settings are preserved.",
@@ -77,6 +80,10 @@ internal sealed class EditSavedSettingsForm : Form
         Controls.Add(table);
         refresh.Click += async (_, _) => await RefreshAsync();
         review.Click += async (_, _) => await UpdateAsync();
+        testSaved.Click += async (_, _) => await TestSavedAsync();
+        provider.SelectedIndexChanged += (_, _) => UpdateProbeEnabled();
+        model.TextChanged += (_, _) => UpdateProbeEnabled();
+        endpoint.TextChanged += (_, _) => UpdateProbeEnabled();
         restore.Click += async (_, _) => await RestoreAsync();
         restoreChoices.SelectedIndexChanged += (_, _) => restore.Enabled = !busy && revision is not null
             && restoreChoices.SelectedItem is RestoreOption;
@@ -108,7 +115,7 @@ internal sealed class EditSavedSettingsForm : Form
         if (busy) return;
         busy = true; review.Enabled = false; refresh.Enabled = false; restore.Enabled = false;
         restoreChoices.Items.Clear();
-        revision = null;
+        revision = null; loadedSelection = null; testSaved.Enabled = false;
         state.Text = "Inspecting current local settings...";
         recoveryStatus.Text = "Recovery evidence: Unknown";
         try
@@ -144,6 +151,7 @@ internal sealed class EditSavedSettingsForm : Form
                 provider.SelectedIndex = selectedProvider == "ollama-openai" ? 1 : 0;
                 model.Text = selectedModel; endpoint.Text = selectedUrl;
                 revision = rev;
+                loadedSelection = SelectedValues();
                 state.Text = "Saved local settings loaded. Review changes before approving; updates never start tasks.";
                 review.Enabled = true;
                 await ReadRecoveryStatusAsync();
@@ -158,6 +166,7 @@ internal sealed class EditSavedSettingsForm : Form
         finally {
             busy = false; refresh.Enabled = true;
             restore.Enabled = revision is not null && restoreChoices.SelectedItem is RestoreOption;
+            UpdateProbeEnabled();
         }
     }
 
@@ -332,6 +341,65 @@ internal sealed class EditSavedSettingsForm : Form
         catch { state.Text = "Restoration was not verified. Refresh current settings before retrying."; }
         finally { busy = false; refresh.Enabled = true; }
         if (success) await RefreshAsync();
+    }
+
+    private string SelectedValues() => (provider.SelectedIndex == 1 ? "ollama-openai" : "openai-compatible")
+        + "\n" + model.Text + "\n" + endpoint.Text;
+
+    private void UpdateProbeEnabled()
+    {
+        testSaved.Enabled = !busy && revision is not null
+            && loadedSelection is not null && SelectedValues() == loadedSelection;
+    }
+
+    private async Task TestSavedAsync()
+    {
+        if (!testSaved.Enabled || busy || revision is null) return;
+        string expectedRevision = revision;
+        busy = true; testSaved.Enabled = false; refresh.Enabled = false;
+        review.Enabled = false; restore.Enabled = false;
+        state.Text = "Testing the currently saved local model without changing settings...";
+        try
+        {
+            using var child = Process.Start(Command("test-saved-model-desktop", expectedRevision))
+                ?? throw new InvalidOperationException();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+            try
+            {
+                var stdout = child.StandardOutput.ReadToEndAsync(timeout.Token);
+                var stderr = child.StandardError.ReadToEndAsync(timeout.Token);
+                await child.WaitForExitAsync(timeout.Token);
+                string raw = await stdout; _ = await stderr;
+                if (child.ExitCode != 0 || raw.Length > 4096) throw new InvalidOperationException();
+                using var parsed = JsonDocument.Parse(raw);
+                var result = parsed.RootElement;
+                if (result.GetProperty("schemaVersion").GetInt32() != 1
+                    || result.GetProperty("command").GetString() != "test-saved-model-desktop"
+                    || result.GetProperty("configSaved").GetBoolean()
+                    || result.GetProperty("grantsAuthority").GetBoolean()
+                    || result.GetProperty("taskStarted").GetBoolean()
+                    || result.GetProperty("modelStarted").GetBoolean()
+                    || result.GetProperty("modelAuthenticityVerified").GetBoolean())
+                    throw new InvalidOperationException();
+                var statusCode = result.GetProperty("status").GetString();
+                bool observed = result.GetProperty("inferenceResponseObserved").GetBoolean();
+                if (observed != (statusCode == "response_observed")) throw new InvalidOperationException();
+                state.Text = observed
+                    ? "Saved model responded. This is not a Cline task or real-model authenticity proof."
+                    : "No valid saved-model response. Check the local server and try again.";
+            }
+            catch {
+                try { if (!child.HasExited) child.Kill(entireProcessTree: true); } catch { }
+                throw;
+            }
+        }
+        catch { state.Text = "Saved-model test could not be verified. Refresh settings before retrying."; }
+        finally {
+            busy = false; refresh.Enabled = true;
+            review.Enabled = revision is not null;
+            restore.Enabled = revision is not null && restoreChoices.SelectedItem is RestoreOption;
+            UpdateProbeEnabled();
+        }
     }
 
     private async Task UpdateAsync()

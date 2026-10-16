@@ -258,6 +258,15 @@ the installed CLI and its failure boundaries, but cannot prove a real
 llama.cpp response. The independently witnessed real-model pilot remains
 pending under M19E4A.
 
+### M19E4D — Revision-bound saved model inference (review candidate)
+
+The native Edit saved model window offers an explicit Test saved model action
+only while its visible provider/model/endpoint match a loaded saved revision.
+The private installed CLI reads only fixed user-local config, rejects stale
+revisions, rechecks the revision after the harmless bounded inference, and
+returns no model output. No model/task is started or settings saved. Actual
+llama.cpp pilot acceptance remains separately pending.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.
