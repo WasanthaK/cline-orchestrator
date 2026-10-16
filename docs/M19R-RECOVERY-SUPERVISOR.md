@@ -127,3 +127,14 @@ Recovery Center. It shows bounded incident history, deduplicated episodes,
 open/resolved state and evidence limitations. The global incident source remains
 disconnected, not healthy. No task mutation, ChatGPT transmission, notification,
 automatic restart or expanded authority.
+
+## M19R3A — Advisor trust contract (source candidate)
+
+A pure zero-network validator admits only explicitly consented, bounded,
+typed incident metadata. It rejects arbitrary prompt text, paths,
+credentials, unknown fields and invalid event identities. Advisor suggestions
+are limited to an enum of non-executing proposals, always marked
+review_required with no retry, skip or task authority. This is **not** a
+ChatGPT connection, an opt-in UI, cost metering or transport: M19R3B must
+independently design authenticated transport, redaction, rate/cost budgets,
+timeout, offline fallback and consent revocation before any transmission.
