@@ -19,6 +19,7 @@ export async function consultWithDurableGrant(
   advisor: OneShotRecoveryAdvisor,
   input: AdvisorBridgeRequestV1,
   resolveCredential: () => Promise<string>,
+  beforeSend?: () => Promise<boolean>,
 ): Promise<AdvisorBridgeReceiptV1> {
   const unavailable = (reason: NonNullable<AdvisorBridgeReceiptV1["reason"]>): AdvisorBridgeReceiptV1 =>
     ({ schemaVersion:1,status:"unavailable",contacted:false,reason,
@@ -40,5 +41,6 @@ export async function consultWithDurableGrant(
     // has atomically spent this exact grant before consulting the provider.
     authorizeOnce: async () => true,
     resolveCredential,
+    ...(beforeSend ? { beforeSend } : {}),
   });
 }

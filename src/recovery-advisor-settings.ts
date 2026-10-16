@@ -135,6 +135,30 @@ export class AdvisorSettingsStore {
     };
   }
 
+  /**
+   * Protect the final consent check and one-shot consultation from a
+   * concurrent settings change. Uses the same exclusive lock as save().
+   * A Save during an active consultation fails busy, never silently changes
+   * the policy after the final check but before provider submission.
+   * No timeout or background retry is introduced.
+   */
+  async withCurrentPolicyLease<T>(
+    use: (policy: AdvisorStandingPolicyV1 | undefined) => Promise<T>,
+  ): Promise<T> {
+    if (typeof use !== "function") throw new AdvisorSettingsError("invalid");
+    await this.secureDirectory();
+    let held = false;
+    try {
+      try { await mkdir(this.lock(), { mode: 0o700 }); held = true; }
+      catch { throw new AdvisorSettingsError("busy"); }
+      const data = await this.load();
+      const policy = data ? { ...data.policy, allowedSignals: [...data.policy.allowedSignals] } : undefined;
+      return await use(policy);
+    } finally {
+      if (held) await rm(this.lock(), {recursive:true,force:true}).catch(()=>undefined);
+    }
+  }
+
   async inspect(): Promise<AdvisorSettingsViewV1> {
     await this.secureDirectory();
     const data=await this.load();

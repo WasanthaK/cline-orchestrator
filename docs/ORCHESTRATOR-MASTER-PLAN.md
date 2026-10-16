@@ -1507,6 +1507,7 @@ Tracking: [issue #72](https://github.com/WasanthaK/cline-orchestrator/issues/72)
 | M19R3F | Authenticated local operator AI guidance Settings screen, project-bound durable Off/Automatic/Ask First preferences, no runtime call activation | Source candidate; CI pending |
 | M19R3G | Native MCP operator-host project selector and per-project advisor settings binding, no external calls | Source candidate, CI pending |
 | M19R3H | Trusted runtime advisor eligibility: current project consent, durable incident provenance and quota preflight; no network, grants or execution | Source candidate; full CI pending |
+| M19R3I | Scoped consultation coordinator: current consent lease, durable grant, budget and final incident check before external send | Source candidate, CI pending |
 | M19R3 | Explicit opt-in ChatGPT/OpenAI advisor with redaction, response schema, rate/cost ceilings, offline fallback | Pending |
 | M19R4 | Trusted admission, unchanged Safety/leases/approvals, bounded recovery budget and idempotency | Pending |
 | M19R5 | Recovery Center UX, drilled-down task history, genuine Windows/Cline acceptance | Pending |
