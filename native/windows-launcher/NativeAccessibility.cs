@@ -2,7 +2,11 @@ using System.Windows.Forms;
 
 namespace ClineOrchestrator.Launcher;
 
-/// <summary>Offline-only WinForms accessibility smoke. No form is displayed.</summary>
+/// <summary>
+/// Offline WinForms accessibility smoke. Each form is constructed without
+/// showing it; no Shown handlers or child processes are invoked.
+/// Status codes are fixed numbers only, never secrets, paths or user text.
+/// </summary>
 internal static class NativeAccessibility
 {
     internal static void Name(Control control, string label, string description)
@@ -18,6 +22,10 @@ internal static class NativeAccessibility
         foreach (Control control in parent.Controls)
         {
             yield return control;
+            // NumericUpDown is a semantic input with framework-owned
+            // editing/buttons. These internal controls are not independently
+            // presented or labeled by the application.
+            if (control is NumericUpDown) continue;
             foreach (Control nested in Flatten(control)) yield return nested;
         }
     }
@@ -30,26 +38,43 @@ internal static class NativeAccessibility
         if (controls.Length == 0 ||
             controls.Any(c => string.IsNullOrWhiteSpace(c.AccessibleName) ||
                 string.IsNullOrWhiteSpace(c.AccessibleDescription))) return false;
-        var named = controls.Select(c => c.AccessibleName).ToHashSet(StringComparer.Ordinal);
-        return required.All(named.Contains);
+        var names = controls.Select(c => c.AccessibleName).ToHashSet(StringComparer.Ordinal);
+        return required.All(names.Contains);
     }
 
-    internal static bool SelfCheck()
+    private static int Step(int number, Func<Form> create, params string[] required)
     {
-        // Instantiation does not invoke any Shown handler or viewer child.
-        using var launch = new ViewerLauncherForm();
-        using var operations = new OperationsCenterForm(() => false, _ => { });
-        using var setup = new SetupReadinessForm();
-        using var edit = new EditSavedSettingsForm();
-        using var connect = new LocalModelConnectionForm();
-        using var project = new RegisterProjectForm();
-        using var workspace = new RegisterWorkspaceForm();
-        return Verify(launch, "Copy access code", "Open dashboard")
-            && Verify(operations, "Task history and evidence", "Refresh operations")
-            && Verify(setup, "Refresh setup status", "Register safe workspace")
-            && Verify(edit, "Saved model ID", "Restore selected model")
-            && Verify(connect, "Model ID", "Check model connection")
-            && Verify(project, "Project name", "Review project registration")
-            && Verify(workspace, "Workspace folder", "Safety validation commands");
+        try
+        {
+            using var form = create();
+            return Verify(form, required) ? 0 : 10 + number;
+        }
+        catch
+        {
+            // 81–87 mean form creation/inspection failed. No exception
+            // messages are disclosed from installed operator state.
+            return 80 + number;
+        }
+    }
+
+    internal static int SelfCheck()
+    {
+        var checks = new (Func<Form> Create, string[] Required)[]
+        {
+            (() => new ViewerLauncherForm(), new[] { "Copy access code", "Open dashboard" }),
+            (() => new OperationsCenterForm(() => false, _ => { }),
+                new[] { "Task history and evidence", "Refresh operations" }),
+            (() => new SetupReadinessForm(), new[] { "Refresh setup status", "Register safe workspace" }),
+            (() => new EditSavedSettingsForm(), new[] { "Saved model ID", "Restore selected model" }),
+            (() => new LocalModelConnectionForm(), new[] { "Model ID", "Check model connection" }),
+            (() => new RegisterProjectForm(), new[] { "Project name", "Review project registration" }),
+            (() => new RegisterWorkspaceForm(), new[] { "Workspace folder", "Safety validation commands" }),
+        };
+        for (var i = 0; i < checks.Length; i++)
+        {
+            int result = Step(i + 1, checks[i].Create, checks[i].Required);
+            if (result != 0) return result;
+        }
+        return 0;
     }
 }

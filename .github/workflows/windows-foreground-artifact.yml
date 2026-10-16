@@ -91,7 +91,7 @@ jobs:
           # M19E4B actual installed WinForms names and Escape navigation;
           # this self-check never shows a window or starts the viewer.
           $access = Start-Process -FilePath $launcher -ArgumentList '--accessibility-self-check' -Wait -PassThru
-          if ($access.ExitCode -ne 0) { throw 'Installed native accessibility contract failed' }
+          if ($access.ExitCode -ne 0) { throw "Installed native accessibility contract rejected (bounded diagnostic $($access.ExitCode))" }
           $version = & $node --version
           if ($version.Trim() -ne 'v22.23.3') { throw 'Unexpected bundled Node version' }
           $receipt = & $node $entry config | Out-String | ConvertFrom-Json

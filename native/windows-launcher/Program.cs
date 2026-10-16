@@ -18,8 +18,8 @@ internal static class Program
         // No message loop, viewer, model, daemon, task or file changes.
         if (args.Length == 1 && args[0] == "--accessibility-self-check")
         {
-            try { Environment.ExitCode = NativeAccessibility.SelfCheck() ? 0 : 1; }
-            catch { Environment.ExitCode = 1; }
+            try { Environment.ExitCode = NativeAccessibility.SelfCheck(); }
+            catch { Environment.ExitCode = 99; }
             return;
         }
         if (args.Length != 0) return;
