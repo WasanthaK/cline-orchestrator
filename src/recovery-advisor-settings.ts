@@ -116,6 +116,25 @@ export class AdvisorSettingsStore {
       throw new AdvisorSettingsError("unsafe");
     }
   }
+  /**
+   * Trusted host only. Re-read the protected policy before each eligibility
+   * assessment; a saved Off/expired policy cannot be reused from a UI view.
+   * This is not an authorization token and must not be returned to browsers.
+   */
+  async readCurrentPolicy(): Promise<AdvisorStandingPolicyV1 | undefined> {
+    await this.secureDirectory();
+    const data = await this.load();
+    if (!data) return undefined;
+    const at = this.now();
+    if (!validTime(at)) throw new AdvisorSettingsError("unsafe");
+    // Preserve the exact prior policy for explicit expired/Off classification.
+    // Return a defensive copy so callers cannot mutate the in-memory evidence.
+    return {
+      ...data.policy,
+      allowedSignals: [...data.policy.allowedSignals],
+    };
+  }
+
   async inspect(): Promise<AdvisorSettingsViewV1> {
     await this.secureDirectory();
     const data=await this.load();
