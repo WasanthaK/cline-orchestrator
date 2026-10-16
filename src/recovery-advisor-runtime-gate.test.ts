@@ -35,7 +35,7 @@ async function fixture(run:(s:{
     const projectId=(await registry.registerProject("Alpha")).projectId;
     const otherProjectId=(await registry.registerProject("Beta")).projectId;
     const bind=createNativeAdvisorProjectBinding(registry);
-    let now=Date.now();
+    let now=Date.now()+5000; // Virtual evidence clock is ahead of real settings issuance.
     let current:PublicTaskView={
       taskId,projectId,workspaceId,goal:"PRIVATE task goal",
       status:"stalled",createdAt:new Date(now-10000).toISOString(),
@@ -113,12 +113,12 @@ test("M19R3H default Off does not quote, reserve or contact advisor",async()=>{
  });
 });
 test("M19R3H trusted incident and current standing consent permit admission review, not network",async()=>{
- await fixture(async({gate,configure,events})=>{
+ await fixture(async({gate,configure,events,clock})=>{
   await configure("automatic_advice");
   const initial=await gate.evaluate(taskId,"a".repeat(64));
   assert.equal(initial.result,"unavailable"); // fabricated incident ID
   const digest=projectDurableRecoveryEvents({id:taskId,status:"stalled",runCount:2},
-    events,new Date().toISOString()).incidents[0]!.incidentId;
+    events,new Date(clock()).toISOString()).incidents[0]!.incidentId;
   const result=await gate.evaluate(taskId,digest);
   assert.equal(result.result,"eligible_for_admission");
   assert.equal(result.reason,"within_approved_scope");
