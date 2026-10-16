@@ -267,3 +267,35 @@ another fresh consent/evidence check and before any outbound network I/O;
 no time-of-check authorization must be carried over from a view or
 classification. Retest consent revocation at the send boundary. Installed
 physical Windows validation and M19R6 operator notifications remain gated.
+
+## M19R3I — Scoped one-shot consultation admission (source candidate)
+
+The TrustedAdmittedAdvisorConsultation is a separately invoked trusted-host
+library, NOT registered in a Cline task loop, scheduler, UI route or
+operator MCP action. Its only caller inputs are the canonical task UUID
+and trusted durable incident digest. It resolves project identity through
+the authoritative machine/registry, holds an exclusive project policy
+lease using the existing settings-save lock, rechecks the current M19R3H
+gate, and rejects Off, Ask-first, unapproved human decisions, budget
+exceptions, duplicate incidents and unavailable evidence.
+
+When eligible, it derives a minimal typed request from current verified
+task and TaskStore incident projections, verifies the shared cost quote,
+then requests one short-lived M19R3C durable grant from a project-scoped
+ledger. M19R3D consumes that grant before credential lookup. An optional
+transport beforeSend() callback revalidates task/workspace identity, the
+same still-open durable incident, exact saved consent revision, expiry
+and per-incident limit AFTER credential resolution but BEFORE HTTP send.
+Failed rechecks burn the grant without sending data. No retry or task
+execution authority is created.
+
+Saving policy Off during a consultation may return the existing busy
+response, rather than silently altering a pending send. An Off action
+cannot undo an already-sent consultation; later UI should clearly show
+in-flight state and provide a cancellation strategy. Costs are operator
+estimates, not provider billing proof. Production secret-provider
+wiring and physical installed Windows acceptance remain gated.
+
+This slice is source-level with mocked HTTP only, and does not enable
+continuous consultations, task continuation, autonomous recovery or
+operator push notifications.

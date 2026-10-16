@@ -27,6 +27,8 @@ export interface AdvisorCallAuthority {
   authorizeOnce: () => Promise<boolean>;
   /** Resolves a short-lived credential only after authorization. */
   resolveCredential: () => Promise<string>;
+  /** Optional final trusted evidence check after resolving credentials. */
+  beforeSend?: () => Promise<boolean>;
 }
 export interface AdvisorTransportReceiptV1 {
   schemaVersion: 1;
@@ -218,6 +220,15 @@ export class OneShotRecoveryAdvisor {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), this.config.timeoutMs);
     try {
+      // M19R3I: after credential resolution but before first HTTP request,
+      // fail closed if the current trusted task/incident changed. The caller
+      // holds a project settings lease while this check and request run.
+      if (authority.beforeSend) {
+        let permitted = false;
+        try { permitted = await authority.beforeSend() === true; }
+        catch { /* deny */ }
+        if (!permitted) return deny("permission_denied");
+      }
       const response = await this.http(ENDPOINT, {
         method: "POST", redirect: "error", cache: "no-store", credentials: "omit",
         headers: {
