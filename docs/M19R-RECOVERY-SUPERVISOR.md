@@ -142,3 +142,36 @@ timeout, offline fallback and consent revocation before any transmission.
 ## M19R3C — Durable advisor admission ledger (source candidate)
 
 The dormant admission ledger issues per-incident short-lived grants only after a trusted operator approval callback. It durably records one-shot consumption and conservative estimated spending reservations, with exclusive filesystem locking, monotonic clock enforcement, bounded history, explicit revocation and fail-closed state corruption. Concurrent or restarted processes cannot spend the same approval twice. Orphaned locks require manual review; no automatic unsafe lock removal. This module has no network operations and is not connected to advisor transport, runner, UI or scheduler. Its estimated budget is not proof of billed costs. Subsequent integration requires explicit consent UX, owned protected state directory, verified secret-provider binding and live end-to-end acceptance. The existing Cline execution authority remains unchanged.
+
+## M19R3E — Human-centered standing consent, not per-incident prompts
+
+Product decision (2026-10-16): the operator must NOT type an approval phrase
+each time Cline stalls. Recovery Supervisor exists to support continuous work.
+The preceding standalone M19R3E per-incident review draft was **not
+committed** and is superseded by this standing-policy design.
+
+First-run settings should offer: Off (default), Automatic advice for
+preapproved bounded low-risk incidents, or Ask before consulting.
+The operator sees the exact external destination, metadata-only disclosure,
+project scope, allowed incident types, price/rate ceilings, expiry and a clear
+Disable/Revoke control. Opt-in is project scoped and time-limited (at most
+30 days before renewal). No raw prompts, file contents, paths, model output
+or credentials are eligible for external transfer in this phase.
+
+With Automatic advice selected, verified open incidents within approved
+scope may become **eligible** for consultation without another confirmation
+dialog. Human questions, safety approvals, expired consent, new project scope,
+unexpected signals, exceeding per-incident budget or unknown evidence must
+be surfaced as exceptions to the operator, not silently approved. An
+eligible assessment alone is NOT a call: trusted current settings, a
+task-bound event source, M19R3C's durable one-shot grant and budget admission,
+and M19R3D's bounded transport must still be checked afresh on every call.
+The existing authorization/lease/Safety Plan rules for executing changes
+remain completely separate. Do not confuse permission to ask for advice
+with permission to run it.
+
+This slice implements a pure no-I/O policy evaluator and focused acceptance
+tests only. Persisting protected preferences, atomic disable/revocation,
+authenticating operator settings, secure credential setup, wiring live policy
+to the existing durable grant, UI, push notifications (#75) and physical
+Windows acceptance remain gated and are NOT claimed complete.
