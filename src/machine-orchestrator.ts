@@ -11,6 +11,7 @@ import { rollbackTask as restoreTaskCheckpoint } from "./rollback.js";
 import { SafetyPlanService, type SafetyPreviewRequest } from "./safety-plan.js";
 import { startApprovedTask } from "./safe-task-start.js";
 import { TaskNotFoundError, TaskStore } from "./state.js";
+import { readTrustedRecoveryEvents, type DurableRecoveryProjectionV1 } from "./recovery-task-event-bridge.js";
 import type {
   HumanEscalation,
   OrchestratorTask,
@@ -760,6 +761,12 @@ export class MachineOrchestratorService {
   async getTaskEvents(taskId: string): Promise<PublicTaskEvent[]> {
     const { task, store } = await this.locateTask(taskId);
     return (await store.events(task.id)).map(publicEvent);
+  }
+
+  /** Read-only, workspace-verified recovery evidence; no execution authority. */
+  async getTaskRecoveryEvidence(taskId: string): Promise<DurableRecoveryProjectionV1> {
+    const { task, store } = await this.locateTask(taskId);
+    return await readTrustedRecoveryEvents(task.id, store);
   }
 
   async getTaskDiff(taskId: string): Promise<PublicTaskDiff> {

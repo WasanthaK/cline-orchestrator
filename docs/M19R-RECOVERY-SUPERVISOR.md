@@ -53,3 +53,36 @@ This is a source-level observer/projection candidate only; no scheduling,
 persistent incidents, live ClineRunner event connection, native UI binding,
 network exposure, external advisors or physical proof are claimed. M19R2
 trusted event integration and durable deduplicated incident history remain next.
+
+## M19R2B — trusted durable-task-event incident projection candidate
+
+Reuses TaskStore's existing on-disk append-only task event ledger through the
+authenticated, workspace-binding-validating MachineOrchestratorService loader.
+No second writable event/incident store, no parallel runner, no task mutation.
+Read-only \`getTaskRecoveryEvidence(taskId)\` is a service method only; it does
+**not** add a browser action or MCP route.
+
+All events must match the exact task, be UUID-identified and timestamped,
+monotonically ordered, uniquely identified, bounded to 1,000 events, and
+carry a known type. Invalid/oversized/missing evidence returns unavailable,
+never a healthy zero. The projection reads **only** event type, event ID and
+timestamp. It cannot expose message/data or prompt, source path, command,
+credential or raw model output, even if those exist in the historical JSONL.
+Incident IDs are stable SHA-256 digests of task/event identifiers. Repeated
+occurrences of an unresolved signal coalesce until matching independently
+recorded resolution evidence; 40 most recent incidents are projected with
+explicit truncation and full count. The original TaskStore remains the
+durable audit source; this projection is reconstructible across restart.
+
+Recognized incident signals: context rotation pressure, verified watchdog
+stall, human escalation (always treated as approval-required), and failed
+validation. Resolution is evidence-based, not inferred from backend activity.
+Independent validation and diff-safety success events are counted separately:
+they are **not** proof of code changes or completed tools. The existing
+TaskStore does not record completed Cline tool calls and this slice must not
+claim otherwise. No-progress/repeated-loop fingerprints remain unverified.
+
+Next M19R2C: bounded typed runner tool lifecycle observation and real-time
+join with M19R2A inference observations; after that, wire incident drilldown
+and eventual M19R6 notifications (#75). No opt-in external transmission,
+task retry, skip, model restart, notification delivery, or release authority.
