@@ -299,3 +299,31 @@ wiring and physical installed Windows acceptance remain gated.
 This slice is source-level with mocked HTTP only, and does not enable
 continuous consultations, task continuation, autonomous recovery or
 operator push notifications.
+
+## M19R3J — Native credential-readiness and truthful operator status
+
+The installed native operator host now supplies a dedicated, fixed-name
+ORCH_RECOVERY_ADVISOR_API_KEY reference source. The authenticated AI Recovery
+Settings screen shows only whether that reference exists; it explicitly says
+'not verified with the provider' and 'external calls remain disabled'.
+The presence check never reads the key value. A separate lazy runtime
+resolver validates the credential only when a future trusted consultation
+asks for it. Neither the browser, configuration file, task ledger nor
+sanitized review receipts contain the key.
+
+If an operator tries to turn Off while a consultation holds the exclusive
+project-consent lock, the authenticated form returns a clear 409
+'existing consultation may be in progress' message. It explicitly says
+settings remain unchanged and a request already transmitted cannot be
+recalled. Once the lock is released the operator can save Off normally.
+This is truthful conflict UX, not yet an emergency abort/cancellation
+capability; do not imply instantaneous shutdown of active provider traffic.
+
+Tests validate the credential reference is checked without resolving the
+secret, that protected error paths are sanitized, and that installed
+authenticated pages correctly display configured/unconfigured reference
+status, busy/Off semantics, and never expose API key bytes. No live
+OpenAI credential, smoke test or unattended scheduler is enabled.
+Before product release, prioritize dedicated in-flight cancellation,
+real installed Windows physical smoke, secrets provisioning instructions,
+in-service status and consent-revocation behavior under active HTTP.

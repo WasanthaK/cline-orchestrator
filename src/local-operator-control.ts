@@ -168,7 +168,8 @@ export function startLocalOperatorControlServer(
           const binding = await advisorSettings.resolveProject(chosen);
           const snapshot = await binding.store.inspect();
           respond(res, 200, page("AI recovery help",
-            renderAdvisorSettingsForm(snapshot, active.csrf, binding.projectLabel, undefined, chosen)));
+            renderAdvisorSettingsForm(snapshot, active.csrf, binding.projectLabel, undefined, chosen,
+              advisorSettings.readCredentialReadiness?.())));
           return;
         }
         const snapshot = await advisorSettings.store.inspect();
@@ -232,11 +233,18 @@ export function startLocalOperatorControlServer(
             acknowledgedExternalMetadata: ack === "yes",
           });
           respond(res, 200, page("AI recovery help",
-            renderAdvisorSettingsForm(updated, active.csrf, binding.projectLabel, "saved", boundProject)));
+            renderAdvisorSettingsForm(updated, active.csrf, binding.projectLabel, "saved", boundProject,
+              "listProjects" in advisorSettings ? advisorSettings.readCredentialReadiness?.() : undefined)));
         } catch (error) {
           const status = error instanceof AdvisorSettingsError && error.code === "invalid" ? 400 : 409;
+          const busy = error instanceof AdvisorSettingsError && error.code === "busy";
           respond(res, status, page("Settings not saved",
-            '<p>No settings were changed. <a href="/operator/advisor-settings">Review current settings</a>.</p>'));
+            (busy
+              ? '<p role="alert">A consultation may be in progress for this project. '
+                + 'Your preference has not changed. A request already sent to the advisor cannot be recalled. '
+                + 'Review the current state before trying again.</p>'
+              : '<p>No settings were changed.</p>')
+            + '<p><a href="/operator/advisor-settings">Review current settings</a>.</p>'));
         }
         return;
       }
