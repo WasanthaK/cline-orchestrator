@@ -16,6 +16,7 @@ const eventLabels = {
   session_recovered: "Worker session recovered",
   context_handoff_created: "Context handoff created",
   context_rotating: "Context rotating",
+  recovery_tool_progress: "Tool activity milestone (outcome unverified)",
   stalled: "Work stalled",
   retrying: "Retry started",
   human_escalation_requested: "Human review requested",

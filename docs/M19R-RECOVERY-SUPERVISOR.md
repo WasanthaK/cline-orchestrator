@@ -110,3 +110,20 @@ crash/restart loses its process-local observations. Later milestone work must
 review immutable bounded tool evidence, process/task binding and UI projection
 before advertising continuous monitoring or operator notifications (#75).
 No retries, restart, browser mutation, external advisor or new task authority.
+
+## M19R2D — Durable tool milestones and Recovery Center candidate
+
+The trusted Cline runner appends bounded numeric-only recovery_tool_progress
+events at power-of-two milestones of paired SDK tool lifecycles. Events are
+serialized and flushed on normal run exit. A failed append disables further
+observer writes, not Cline execution. A crash can lose in-flight samples;
+absence means unknown. Tool activity never proves edited code, validation
+success, or task completion.
+
+The existing TaskStore event projector now counts these milestones separately
+from independent validation and diff checks. The workspace-bound read-only
+getTaskRecoveryEvidence method is exposed only to the authenticated task detail
+Recovery Center. It shows bounded incident history, deduplicated episodes,
+open/resolved state and evidence limitations. The global incident source remains
+disconnected, not healthy. No task mutation, ChatGPT transmission, notification,
+automatic restart or expanded authority.

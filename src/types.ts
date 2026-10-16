@@ -316,6 +316,7 @@ export type TaskEventType =
   | "session_recovered"
   | "context_handoff_created"
   | "context_rotating"
+  | "recovery_tool_progress"
   | "stalled"
   | "retrying"
   | "human_escalation_requested"

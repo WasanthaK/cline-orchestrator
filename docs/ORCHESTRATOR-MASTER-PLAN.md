@@ -1501,6 +1501,7 @@ Tracking: [issue #72](https://github.com/WasanthaK/cline-orchestrator/issues/72)
 | M19R2A | Read-only optional backend probes (`llama.cpp`, Ollama, vLLM, generic OpenAI-compatible) and typed Cline/backend progress correlation | Source candidate; not yet wired to runner or viewer |
 | M19R2B | Read-only trusted TaskStore event projection, bounded incident deduplication, independent validation proof, no raw messages | Source candidate; no tool-level event capture or active alerts |
 | M19R2C | Live Cline SDK tool lifecycle + optional inference correlation, process-local and read-only | Source candidate; no background polling or durable tool history |
+| M19R2D | Durable sanitized tool milestones and read-only task Recovery Center | Source candidate; CI pending |
 | M19R2 | Instrument trusted event stream, progress fingerprints and incident audit, no raw model output | Pending |
 | M19R3 | Explicit opt-in ChatGPT/OpenAI advisor with redaction, response schema, rate/cost ceilings, offline fallback | Pending |
 | M19R4 | Trusted admission, unchanged Safety/leases/approvals, bounded recovery budget and idempotency | Pending |

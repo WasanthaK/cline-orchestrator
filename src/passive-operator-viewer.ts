@@ -7,6 +7,7 @@ import type { OperatorVisualizationV1 } from "./operator-visualization.js";
 import { renderTaskGroupHtml, renderTaskDetailHtml } from "./operator-task-drilldown-html.js";
 import { taskGroup, safeTaskHref } from "./operator-task-groups.js";
 import { unavailableTaskTimeline, type SanitizedTaskTimelineV1 } from "./operator-task-timeline.js";
+import { unavailableRecoveryEvidence, type DurableRecoveryProjectionV1 } from "./recovery-task-event-bridge.js";
 
 const COOKIE = "orch_viewer";
 const SESSION_MS = 10 * 60_000;
@@ -45,6 +46,9 @@ export interface TrustedPassiveSnapshotReader {
   readTaskTimeline?(identity: {
     taskId: string; projectId: string; workspaceId: string; updatedAt: string;
   }): Promise<SanitizedTaskTimelineV1>;
+  readTaskRecoveryEvidence?(identity: {
+    taskId: string; projectId: string; workspaceId: string; updatedAt: string;
+  }): Promise<DurableRecoveryProjectionV1>;
 }
 export class PassiveViewerError extends Error {
   constructor(public readonly code: "config_invalid" | "snapshot_invalid") {
@@ -209,7 +213,16 @@ export async function startPassiveOperatorViewer(
                   timeline = unavailableTaskTimeline("read_failed");
                 }
               }
-              html = renderTaskDetailHtml(view, detailId, timeline);
+              let recovery = unavailableRecoveryEvidence("not_connected");
+              if (reader.readTaskRecoveryEvidence) {
+                try {
+                  recovery = await reader.readTaskRecoveryEvidence({
+                    taskId: task.taskId, projectId: task.projectId,
+                    workspaceId: task.workspaceId, updatedAt: task.updatedAt,
+                  });
+                } catch { recovery = unavailableRecoveryEvidence("read_failed"); }
+              }
+              html = renderTaskDetailHtml(view, detailId, timeline, recovery);
             } else {
               html = statusSlug ? renderTaskGroupHtml(view, statusSlug)
                 : renderOperatorVisualizationHtml(view);

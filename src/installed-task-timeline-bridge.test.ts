@@ -60,6 +60,12 @@ test("M18E installed viewer reads bound task history only after login, without l
       message: "Bearer PRIVATE_EVENT_MESSAGE and C:\\sensitive\\local",
       data: { apiKey: "PRIVATE_RAW_EVENT_DATA" },
     });
+    await store.appendEvent(taskId, "context_rotating", {
+      status: "running", message: "PRIVATE_CONTEXT_DETAIL",
+    });
+    await store.appendEvent(taskId, "recovery_tool_progress", {
+      status: "running", data: { pairedToolCompletions: 2, secret: "PRIVATE_TOOL_DATA" },
+    });
     await store.save({
       id: legacyId, goal: "PRIVATE_UNBOUND_LEGACY_GOAL", workspace: workspaceRoot,
       status: "waiting", createdAt: at, updatedAt: at,
@@ -103,8 +109,11 @@ test("M18E installed viewer reads bound task history only after login, without l
     const detailHtml = await detail.text();
     assert.match(detailHtml, /Run started/);
     assert.match(detailHtml, /Execution timeline/);
+    assert.match(detailHtml, /Recovery Center/);
+    assert.match(detailHtml, /context pressure/);
+    assert.match(detailHtml, /Tool progress milestones/);
     assert.doesNotMatch(detailHtml,
-      /PRIVATE_GOAL|PRIVATE_EVENT_MESSAGE|PRIVATE_RAW_EVENT_DATA|sensitive|<script|<button|<form/i);
+      /PRIVATE_GOAL|PRIVATE_EVENT_MESSAGE|PRIVATE_RAW_EVENT_DATA|PRIVATE_CONTEXT_DETAIL|PRIVATE_TOOL_DATA|sensitive|<script|<button|<form/i);
 
     const unbound = await fetch(viewer.origin + "/viewer/task/" + legacyId, {
       headers: { Cookie: cookie! },
