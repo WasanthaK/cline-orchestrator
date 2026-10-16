@@ -78,6 +78,30 @@ const format = {
   },
 } as const;
 
+/**
+ * M19R3D: exact shared request serialization and conservative rate quote.
+ * The quote is not provider billing evidence, merely the upper estimate
+ * expected by the durable admission ledger for this fixed request body.
+ */
+function encodeAdvisorPayload(config: AdvisorTransportConfigV1,
+  input: NonNullable<ReturnType<typeof validateAdvisorRequest>>): string {
+  return JSON.stringify({
+    model: config.model, store: false, stream: false,
+    tools: [], max_output_tokens: config.maxOutputTokens,
+    text: { format },
+    input: [
+      { role: "system", content:
+        "Review typed incident metadata only. Return a review-only suggestion. "
+        + "Never infer an absent tool result or grant execution authority." },
+      { role: "user", content: JSON.stringify(input) },
+    ],
+  });
+}
+function estimatedAdvisorCostCents(config: AdvisorTransportConfigV1, bytes: number): number {
+  return Math.max(1, Math.ceil(100 *
+    (bytes * config.inputUsdPerMillionTokens
+    + config.maxOutputTokens * config.outputUsdPerMillionTokens) / 1_000_000));
+}
 async function readSmallBody(response: Response): Promise<string | undefined> {
   if (!response.body) return undefined;
   const reader = response.body.getReader();
@@ -133,6 +157,19 @@ export class OneShotRecoveryAdvisor {
     private readonly clock: () => number = Date.now,
   ) {}
 
+  /**
+   * Shared with the durable admission bridge. No I/O, no authorization and
+   * no credentials. Returns undefined for invalid or oversized requests.
+   */
+  quoteEstimatedCents(raw: unknown): number | undefined {
+    if (!validConfig(this.config)) return undefined;
+    const input = validateAdvisorRequest(raw);
+    if (!input) return undefined;
+    const bytes = Buffer.byteLength(encodeAdvisorPayload(this.config, input), "utf8");
+    if (bytes > 4096) return undefined;
+    return estimatedAdvisorCostCents(this.config, bytes);
+  }
+
   async consult(raw: unknown, authority: AdvisorCallAuthority):
     Promise<AdvisorTransportReceiptV1> {
     if (!validConfig(this.config)) return deny("invalid_config");
@@ -140,26 +177,14 @@ export class OneShotRecoveryAdvisor {
     if (!input) return deny("invalid_request");
     if (!authority || typeof authority.authorizeOnce !== "function"
       || typeof authority.resolveCredential !== "function") return deny("permission_denied");
-    const body = JSON.stringify({
-      model: this.config.model, store: false, stream: false,
-      tools: [], max_output_tokens: this.config.maxOutputTokens,
-      text: { format },
-      input: [
-        { role: "system", content:
-          "Review typed incident metadata only. Return a review-only suggestion. "
-          + "Never infer an absent tool result or grant execution authority." },
-        { role: "user", content: JSON.stringify(input) },
-      ],
-    });
+    const body = encodeAdvisorPayload(this.config, input);
     const bytes = Buffer.byteLength(body, "utf8");
     if (bytes > 4096) return deny("invalid_request");
     const now = this.clock();
     if (!inRange(now, 0, Number.MAX_SAFE_INTEGER)) return deny("invalid_config");
     if (this.startedAt !== undefined && now < this.startedAt) return deny("budget_exceeded");
     const freshWindow = this.startedAt === undefined || now - this.startedAt >= 3_600_000;
-    const cost = Math.max(1, Math.ceil(100 *
-      (bytes * this.config.inputUsdPerMillionTokens
-      + this.config.maxOutputTokens * this.config.outputUsdPerMillionTokens) / 1_000_000));
+    const cost = estimatedAdvisorCostCents(this.config, bytes);
     if (!freshWindow && (this.calls >= this.config.maxCallsPerHour
       || this.reservedCents + cost > this.config.maxEstimatedCentsPerHour))
       return deny("budget_exceeded");
