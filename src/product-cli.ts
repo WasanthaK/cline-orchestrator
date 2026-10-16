@@ -6,6 +6,7 @@ import { exportOfflineSetupView } from "./offline-setup-view-export.js";
 import { startInstalledPassiveViewer } from "./installed-passive-viewer.js";
 import { checkLocalProvider } from "./local-provider-check.js";
 import { testLocalInference } from "./native-local-inference.js";
+import { testSavedModel } from "./native-saved-model-probe.js";
 import { saveNativeProviderConfig } from "./native-provider-config-save.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
@@ -50,6 +51,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "viewer",
     "check-provider",
     "test-local-inference",
+    "test-saved-model-desktop",
     "setup-config-desktop",
     "setup-project-desktop",
     "list-projects-desktop",
@@ -87,6 +89,7 @@ export type ProductCliRoute =
   | { kind: "viewer" }
   | { kind: "provider_check"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "local_inference_probe"; providerId: string; modelId: string; baseUrl: string }
+  | { kind: "desktop_saved_model_probe"; expectedRevision: string }
   | { kind: "desktop_config_save"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_project_create"; displayName: string }
   | { kind: "desktop_project_list" }
@@ -222,6 +225,10 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "check-provider") {
     if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "provider_check", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
+  }
+  if (command === "test-saved-model-desktop") {
+    if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_saved_model_probe", expectedRevision: rest[0]! };
   }
   if (command === "test-local-inference") {
     if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -546,7 +553,7 @@ export async function runProductCli(
     } finally { await machine.close(); }
     return undefined;
   }
-  if (route.kind === "desktop_settings_read" || route.kind === "desktop_settings_update"
+  if (route.kind === "desktop_saved_model_probe" || route.kind === "desktop_settings_read" || route.kind === "desktop_settings_update"
     || route.kind === "desktop_recovery" || route.kind === "desktop_restore_choices"
     || route.kind === "desktop_model_restore") {
     const stateRoot = deps.env.LOCALAPPDATA;
@@ -555,6 +562,10 @@ export async function runProductCli(
       throw new ProductCliError("Native settings require Windows local user state", "interactive_required");
     }
     const directory = path.win32.join(stateRoot, "ClineOrchestrator");
+    if (route.kind === "desktop_saved_model_probe") {
+      process.stdout.write(JSON.stringify(await testSavedModel(directory, route.expectedRevision)) + "\n");
+      return undefined;
+    }
     if (route.kind === "desktop_settings_read") {
       process.stdout.write(JSON.stringify(await inspectNativeSettings(directory)) + "\n");
       return undefined;
