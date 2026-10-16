@@ -209,3 +209,28 @@ one-use advisor grant/budget reservation, enforce a credential resolver and
 confirm physical Windows installed behavior. Saving Automatic advice in
 this slice does not make any network calls or permit task execution.
 Operator notifications (#75) remain a separate later capability.
+
+## M19R3G — Installed native host project binding
+
+The existing optional authenticated loopback operator control server now
+receives an explicit, native-host-injected project Settings capability from
+MCP startup. Its source of truth is the registered WorkspaceRegistry,
+not any path, project label, workspace ID or configured URL from a browser.
+
+With one project the Settings link opens it directly. With multiple
+projects an authenticated HTML selector lists their safe display names
+and opens the chosen project's own Settings form. Selection is checked
+against the trusted registry again before every save; unregistered,
+duplicate, malformed and unknown project IDs are refused. Each project's
+preferences live in its own protected local-user state directory beneath
+the trusted registry's parent, with no per-project secret files or
+application task permissions attached to the form.
+
+This does not start a new listener, register a passive dashboard mutation
+or consult the model. Existing local operator login, origin, CSRF,
+authentication, short sessions and revision-checked writes still apply.
+Settings can be saved and switched Off with a normal click. The main
+app's live advisor path remains disconnected until independent policy,
+durable one-use admission, credential-ref binding, provider smoke tests,
+consent revocation/restart behavior and installed Windows acceptance are
+verified. No task execution/safety/lease authority is changed.

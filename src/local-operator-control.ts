@@ -4,6 +4,7 @@ import { MachineGatewayError, type MachineOrchestratorService } from "./machine-
 import { OperatorActionError, OperatorActionService } from "./operator-action.js";
 import { AdvisorSettingsStore, AdvisorSettingsError } from "./recovery-advisor-settings.js";
 import { renderAdvisorSettingsForm } from "./recovery-advisor-settings-html.js";
+import type { NativeAdvisorProjectBinding } from "./native-advisor-project-binding.js";
 
 const COOKIE = "orch_operator";
 const SESSION_MS = 15 * 60_000;
@@ -78,7 +79,7 @@ export function startLocalOperatorControlServer(
   service: Pick<MachineOrchestratorService, "getTask" | "rejectEscalation">,
   config: LocalOperatorConfig,
   /** Optional host-injected, project-bound local settings capability. */
-  advisorSettings?: { store: AdvisorSettingsStore; projectLabel: string },
+  advisorSettings?: { store: AdvisorSettingsStore; projectLabel: string } | NativeAdvisorProjectBinding,
 ): Server {
   if (config.host !== "127.0.0.1" || !Number.isInteger(config.port) || config.port < 1 || config.port > 65535 || config.token.length < 32 || config.token.length > 4096 || config.token.trim() !== config.token) {
     throw new Error("Operator control must use a configured loopback address, port and strong token");
@@ -139,6 +140,37 @@ export function startLocalOperatorControlServer(
         return;
       }
       if (path === "/operator/advisor-settings" && req.method === "GET" && advisorSettings) {
+        if ("listProjects" in advisorSettings) {
+          const projects = await advisorSettings.listProjects();
+          if (url.searchParams.size > 1 ||
+            (url.searchParams.size === 1 && !url.searchParams.has("project"))) {
+            respond(res, 400, page("Invalid project selection", "<p>Choose a registered project.</p>"));
+            return;
+          }
+          const requested = url.searchParams.get("project");
+          if (!requested && projects.length !== 1) {
+            const options = projects.map(item =>
+              '<option value="' + escapeHtml(item.projectId) + '">'
+              + escapeHtml(item.displayName) + '</option>').join("");
+            respond(res, 200, page("AI recovery help",
+              projects.length === 0 ? "<p>No registered projects yet. Create a project first.</p>"
+              : '<p>Choose the project whose AI recovery preferences you want to edit.</p>'
+                + '<form method="get" action="/operator/advisor-settings">'
+                + '<label>Project <select name="project">' + options + '</select></label>'
+                + '<button type="submit">Open settings</button></form>'));
+            return;
+          }
+          const chosen = requested || projects[0]?.projectId;
+          if (!chosen || !projects.some(item => item.projectId === chosen)) {
+            respond(res, 404, page("Project not found", "<p>Project is not registered.</p>"));
+            return;
+          }
+          const binding = await advisorSettings.resolveProject(chosen);
+          const snapshot = await binding.store.inspect();
+          respond(res, 200, page("AI recovery help",
+            renderAdvisorSettingsForm(snapshot, active.csrf, binding.projectLabel, undefined, chosen)));
+          return;
+        }
         const snapshot = await advisorSettings.store.inspect();
         respond(res, 200, page("AI recovery help",
           renderAdvisorSettingsForm(snapshot, active.csrf, advisorSettings.projectLabel)));
@@ -161,7 +193,8 @@ export function startLocalOperatorControlServer(
       if (path === "/operator/advisor-settings" && advisorSettings) {
         // This is operator settings only; no task action, advisor API call or
         // durable recovery grant is created by saving the preferences.
-        const allowed = new Set(["csrf","revision","mode","cents","days","acknowledge"]);
+        const allowed = new Set(["csrf","revision","mode","cents","days","acknowledge",
+          ...("listProjects" in advisorSettings ? ["project"] : [])]);
         if ([...data.keys()].some(key => !allowed.has(key))
           || [...data.keys()].some(key => data.getAll(key).length !== 1)) {
           respond(res, 400, page("Settings not saved", "<p>Invalid form data.</p>"));
@@ -177,7 +210,21 @@ export function startLocalOperatorControlServer(
           return;
         }
         try {
-          const updated = await advisorSettings.store.save({
+          let binding: { store: AdvisorSettingsStore; projectLabel: string };
+          let boundProject: string | undefined;
+          if ("listProjects" in advisorSettings) {
+            const selected = data.get("project") ?? "";
+            const projects = await advisorSettings.listProjects();
+            if (!projects.some(project => project.projectId === selected)) {
+              respond(res, 404, page("Project not found", "<p>Project is not registered.</p>"));
+              return;
+            }
+            binding = await advisorSettings.resolveProject(selected);
+            boundProject = selected;
+          } else {
+            binding = advisorSettings;
+          }
+          const updated = await binding.store.save({
             expectedRevision: data.get("revision") ?? "",
             mode: mode as "off" | "ask_before_consulting" | "automatic_advice",
             maxEstimatedCentsPerIncident: cents,
@@ -185,7 +232,7 @@ export function startLocalOperatorControlServer(
             acknowledgedExternalMetadata: ack === "yes",
           });
           respond(res, 200, page("AI recovery help",
-            renderAdvisorSettingsForm(updated, active.csrf, advisorSettings.projectLabel, "saved")));
+            renderAdvisorSettingsForm(updated, active.csrf, binding.projectLabel, "saved", boundProject)));
         } catch (error) {
           const status = error instanceof AdvisorSettingsError && error.code === "invalid" ? 400 : 409;
           respond(res, status, page("Settings not saved",
