@@ -169,3 +169,19 @@ test("M19R3I saving Off while provider is active fails closed, without silent ch
   assert.equal((await consult()).outcome,"disabled");
  });
 });
+
+test("M19R3K durable Stop during credential lookup blocks outbound consultation",async()=>{
+ await fixture(async({consult,configure,counters,store,setSecretHook})=>{
+  await configure("automatic_advice");
+  setSecretHook(async()=>{await store.stopNow();});
+  const r=await consult();
+  assert.equal(r.outcome,"unavailable");
+  assert.equal(r.contacted,false);
+  assert.notEqual(r.reason,"advice_ready");
+  safe(r);
+  assert.deepEqual(counters(),{sent:0,keys:1});
+  assert.equal((await store.inspect()).mode,"off");
+  assert.equal((await consult()).outcome,"disabled");
+  assert.deepEqual(counters(),{sent:0,keys:1});
+ });
+});

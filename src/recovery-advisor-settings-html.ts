@@ -28,6 +28,9 @@ export function renderAdvisorSettingsForm(
     + '<p><strong>Project:</strong> '+esc(projectLabel)
     + (projectId ? ' · <a href="/operator/advisor-settings">Change project</a>' : '')+'</p>'
     + (view.expired ? '<p role="status">Your previous consent expired. AI advice remains off until you renew it.</p>' : '')
+    + (view.stopLatched ? '<p role="alert">Emergency Stop is active for this project. '
+      + 'New consultations are blocked. Cancellation of in-flight requests was requested; '
+      + 'data already sent cannot be recalled. Re-enabling requires a separate trusted reset.</p>' : '')
     + '<form method="post" action="/operator/advisor-settings">'
     + '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
     + '<input type="hidden" name="revision" value="'+esc(view.revision)+'">'
@@ -69,6 +72,12 @@ export function renderAdvisorSettingsForm(
     + '</fieldset>'
     + '<p><button type="submit">Save settings</button> <a href="/operator">Back to operator control</a></p>'
     + '</form>'
+    + (!view.stopLatched && projectId && view.mode!=="off"
+      ? '<form method="post" action="/operator/advisor-stop">'
+        + '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
+        + '<input type="hidden" name="project" value="'+esc(projectId)+'">'
+        + '<button class="danger" type="submit">Stop AI advisor now</button></form>'
+      : '')
     + '<p class="minor">External advice is not active in the installed supervisor yet. '
     + 'Saving this preference does not enable network calls or execute recovery actions.</p>'
     + '</section>';

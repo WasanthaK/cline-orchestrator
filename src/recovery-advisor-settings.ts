@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import { mkdir, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AdvisorPolicyMode, AdvisorStandingPolicyV1 } from "./recovery-advisor-policy.js";
+import { DurableAdvisorStop, type AdvisorStopResultV1 } from "./recovery-advisor-stop.js";
 
 export const ADVISOR_SETTINGS_CONTRACT = Object.freeze({
   schemaVersion: 1 as const, defaultMode: "off" as const,
@@ -41,6 +42,7 @@ export interface AdvisorSettingsViewV1 {
   consentExpiresAt?: string;
   expired: boolean;
   externalCallsEnabled: false;
+  stopLatched: boolean;
   grantsAuthority: false;
 }
 export interface AdvisorSettingsEditV1 {
@@ -93,6 +95,13 @@ export class AdvisorSettingsStore {
   private dir() { return path.resolve(this.directory); }
   private file() { return path.join(this.dir(),"recovery-advisor-settings-v1.json"); }
   private lock() { return path.join(this.dir(),".recovery-advisor-settings-lock"); }
+  private emergency() { return new DurableAdvisorStop(this.dir(),this.projectId); }
+  /** Durable one-click stop independent of the consultation policy lease. */
+  async stopNow(): Promise<AdvisorStopResultV1> { return this.emergency().stopNow(); }
+  watchImmediateStop(intervalMs?:number):{signal:AbortSignal;close:()=>void} {
+    return this.emergency().watch(intervalMs);
+  }
+  async isEmergencyStopped():Promise<boolean> { return this.emergency().isStopped(); }
   private async secureDirectory(): Promise<void> {
     try {
       await mkdir(this.dir(),{recursive:true,mode:0o700});
@@ -123,6 +132,7 @@ export class AdvisorSettingsStore {
    */
   async readCurrentPolicy(): Promise<AdvisorStandingPolicyV1 | undefined> {
     await this.secureDirectory();
+    if (await this.isEmergencyStopped()) return undefined;
     const data = await this.load();
     if (!data) return undefined;
     const at = this.now();
@@ -152,7 +162,8 @@ export class AdvisorSettingsStore {
       try { await mkdir(this.lock(), { mode: 0o700 }); held = true; }
       catch { throw new AdvisorSettingsError("busy"); }
       const data = await this.load();
-      const policy = data ? { ...data.policy, allowedSignals: [...data.policy.allowedSignals] } : undefined;
+      const stopped=await this.isEmergencyStopped();
+      const policy = data && !stopped ? { ...data.policy, allowedSignals: [...data.policy.allowedSignals] } : undefined;
       return await use(policy);
     } finally {
       if (held) await rm(this.lock(), {recursive:true,force:true}).catch(()=>undefined);
@@ -164,15 +175,16 @@ export class AdvisorSettingsStore {
     const data=await this.load();
     const at=this.now();
     if (!validTime(at)) throw new AdvisorSettingsError("unsafe");
+    const stopped=await this.isEmergencyStopped();
     const expired=!!data && data.policy.expiresAtMs<=at;
     return Object.freeze({
       schemaVersion:1, projectId:this.projectId,
-      mode:expired?"off":data?.policy.mode ?? "off",
+      mode:stopped||expired?"off":data?.policy.mode ?? "off",
       maxEstimatedCentsPerIncident:data?.policy.maxEstimatedCentsPerIncident ?? 100,
       durationDays:data && data.policy.expiresAtMs-data.policy.approvedAtMs===7*86400000?7:30,
       revision:data?.policy.revision ?? OFF_REVISION,
       ...(data?{consentExpiresAt:new Date(data.policy.expiresAtMs).toISOString()}:{}),
-      expired,externalCallsEnabled:false,grantsAuthority:false,
+      expired,stopLatched:stopped,externalCallsEnabled:false,grantsAuthority:false,
     });
   }
   async save(input:AdvisorSettingsEditV1): Promise<AdvisorSettingsViewV1> {
@@ -184,10 +196,16 @@ export class AdvisorSettingsStore {
       throw new AdvisorSettingsError("invalid");
     }
     await this.secureDirectory();
+    // A normal Save may not implicitly clear emergency revocation.
+    if (await this.isEmergencyStopped()) {
+      if(input.mode!=="off") throw new AdvisorSettingsError("unsafe");
+      return this.inspect();
+    }
     let acquired=false;
     try {
       try { await mkdir(this.lock(),{mode:0o700});acquired=true; }
       catch { throw new AdvisorSettingsError("busy"); }
+      if (await this.isEmergencyStopped())throw new AdvisorSettingsError("unsafe");
       const previous=await this.load();
       if ((previous?.policy.revision ?? OFF_REVISION)!==input.expectedRevision)
         throw new AdvisorSettingsError("stale");

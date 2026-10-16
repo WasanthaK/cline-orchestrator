@@ -97,7 +97,7 @@ export function startLocalOperatorControlServer(
       const url = new URL(req.url ?? "/", origin);
       const path = url.pathname;
       if (!["/operator", "/operator/login", "/operator/preview", "/operator/confirm", "/operator/logout",
-        ...(advisorSettings ? ["/operator/advisor-settings"] : [])].includes(path)) {
+        ...(advisorSettings ? ["/operator/advisor-settings", "/operator/advisor-stop"] : [])].includes(path)) {
         respond(res, 404, page("Not found", "<p>Unknown operator page.</p>"));
         return;
       }
@@ -189,6 +189,35 @@ export function startLocalOperatorControlServer(
       const data = await form(req);
       if (!equalSecret(data.get("csrf") ?? "", active.csrf)) {
         respond(res, 403, page("Forbidden", "<p>Invalid confirmation session.</p>"));
+        return;
+      }
+      if (path === "/operator/advisor-stop" && advisorSettings && "listProjects" in advisorSettings) {
+        // Emergency stop is independent of the normal long-lived policy lease.
+        // Only the authenticated, same-origin, CSRF-checked operator can latch it.
+        if ([...data.keys()].sort().join("|") !== "csrf|project"
+          || data.getAll("project").length !== 1 || data.getAll("csrf").length !== 1) {
+          respond(res, 400, page("Invalid stop request", "<p>Choose a registered project.</p>"));
+          return;
+        }
+        const projectId = data.get("project") ?? "";
+        try {
+          const projects = await advisorSettings.listProjects();
+          if (!projects.some(project => project.projectId === projectId)) {
+            respond(res, 404, page("Project not found", "<p>Project is not registered.</p>"));
+            return;
+          }
+          const project = await advisorSettings.resolveProject(projectId);
+          await project.store.stopNow();
+          respond(res, 200, page("AI advisor stopped",
+            '<p role="status">AI advisor stopped for this project. New consultations are blocked.</p>'
+            + '<p>Cancellation of in-flight requests was requested. Data already transmitted to an '
+            + 'external provider cannot be recalled. Re-enable requires a separate trusted reset.</p>'
+            + '<p><a href="/operator/advisor-settings?project=' + escapeHtml(projectId)
+            + '">Review settings</a></p>'));
+        } catch {
+          respond(res, 503, page("Stop status unverified",
+            "<p>Could not verify durable Stop state. External advisor state must be treated as unavailable.</p>"));
+        }
         return;
       }
       if (path === "/operator/advisor-settings" && advisorSettings) {
