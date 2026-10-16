@@ -1,6 +1,7 @@
 import type { OperatorVisualizationV1 } from "./operator-visualization.js";
 import { taskGroup, tasksInGroup, safeTaskHref, taskStatusGroup } from "./operator-task-groups.js";
 import type { SanitizedTaskTimelineV1 } from "./operator-task-timeline.js";
+import type { DurableRecoveryProjectionV1 } from "./recovery-task-event-bridge.js";
 
 type Task = OperatorVisualizationV1["taskBoard"][number];
 function esc(v: unknown): string {
@@ -38,7 +39,8 @@ export function renderTaskGroupHtml(view: OperatorVisualizationV1, slug: string)
     : '<p>No matching tasks in this bounded sample. This does not establish that none exist elsewhere.</p>';
   return shell(g.label + ' tasks', tasks.length + ' matching records in this bounded snapshot', '<section><h2>' + esc(g.label) + ' tasks</h2>' + sourceWarning(view) + '<p class="minor">The filter applies to visible sanitized task records, not lifetime history.</p>' + table + '</section>', view.generatedAt);
 }
-export function renderTaskDetailHtml(view: OperatorVisualizationV1, id: string, timeline?: SanitizedTaskTimelineV1): string {
+export function renderTaskDetailHtml(view: OperatorVisualizationV1, id: string, timeline?: SanitizedTaskTimelineV1,
+  recovery?: DurableRecoveryProjectionV1): string {
   if (!safeTaskHref(id) || !view.readOnly || view.actions.length) throw new Error("invalid read-only task");
   const matches = view.taskBoard.filter(t => t.taskId === id);
   if (matches.length !== 1) throw new Error("task not uniquely present in snapshot");
@@ -54,6 +56,27 @@ export function renderTaskDetailHtml(view: OperatorVisualizationV1, id: string, 
       ? '<p class="minor">' + esc(timeline.totalObserved ?? 0) + ' recorded events · ' + (timeline.truncated ? 'Last 40 shown; earlier events omitted.' : 'All observed records shown.') + ' Event labels and timestamps only; raw messages and logs are excluded.</p>'
         + (timeline.events.length ? '<ol class="event-list">' + timeline.events.map(event => '<li><strong>' + esc(event.label) + '</strong><br><time datetime="' + esc(event.at) + '">' + esc(event.at) + '</time></li>').join('') + '</ol>' : '<p>No recorded events were returned; absence of history does not prove no execution.</p>')
       : '<p class="minor">Event history unavailable (' + esc(timeline?.reason ?? "not_connected") + '). Run and recovery counts are aggregate evidence, not a verified timeline.</p>') + '</section>'
+    + '<section aria-label="Recovery Center"><h2>Recovery Center</h2>'
+    + (recovery?.availability === "available" && recovery.schemaVersion === 1
+        && recovery.readOnly === true && recovery.taskId === id
+        && recovery.grantsAuthority === false && Array.isArray(recovery.incidents)
+      ? '<p class="minor">' + esc(recovery.totalIncidents ?? 0) + ' recorded incidents · '
+        + (recovery.truncated ? 'Last episodes shown; history truncated.' : 'Bounded durable history.')
+        + ' Tool activity does not establish a successful edit or validation.</p>'
+        + '<dl>' + field('Tool progress milestones', recovery.toolCompletionEvidenceAvailable
+          ? recovery.toolProgressMilestonesRecorded ?? 'Unknown' : 'Not available')
+        + field('Latest tool milestone', recovery.lastToolProgressAt ?? 'Not available')
+        + field('Validation pass events', recovery.validationPassedEvents ?? 'Unknown')
+        + field('Diff safety pass events', recovery.diffSafetyPassedEvents ?? 'Unknown') + '</dl>'
+        + (recovery.incidents.length
+          ? '<ol class="event-list">' + recovery.incidents.map(incident =>
+            '<li><strong>' + esc(incident.signal.replaceAll('_', ' ')) + '</strong> · '
+            + esc(incident.state) + ' · ' + esc(incident.occurrences)
+            + ' occurrence(s)<p class="minor">' + esc(incident.firstSeenAt)
+            + ' – ' + esc(incident.lastSeenAt) + '</p></li>').join('') + '</ol>'
+          : '<p>No recovery incidents in the available bounded history.</p>')
+      : '<p class="notice">Recovery evidence unavailable (' + esc(recovery?.reason ?? 'not_connected')
+        + '). This does not establish healthy operation or zero incidents.</p>') + '</section>'
     + '<section><h2>Technical identifiers</h2><dl>' + field('Task ID', t.taskId) + field('Project ID', t.projectId) + field('Workspace ID', t.workspaceId) + '</dl></section>'
     + '<p><a href="/viewer/status/' + esc(taskStatusGroup(t.status)) + '">← Status-filtered tasks</a></p>';
   return shell('Task …' + t.taskId.slice(-8), 'Read-only task details and available evidence', body, view.generatedAt);

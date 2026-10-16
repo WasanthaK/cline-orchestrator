@@ -35,7 +35,7 @@ export interface DurableRecoveryProjectionV1 {
   source: "trusted_task_store";
   coverage: "durable_events_only";
   availability: "available" | "unavailable";
-  reason?: "invalid_task" | "invalid_event_source" | "history_over_limit" | "read_failed";
+  reason?: "invalid_task" | "invalid_event_source" | "history_over_limit" | "read_failed" | "not_connected" | "task_changed";
   taskId?: string;
   taskStatus?: TaskStatus;
   capturedAt?: string;
@@ -46,7 +46,9 @@ export interface DurableRecoveryProjectionV1 {
   validationPassedEvents?: number;
   diffSafetyPassedEvents?: number;
   lastIndependentCheckAt?: string;
-  toolCompletionEvidenceAvailable: false;
+  toolCompletionEvidenceAvailable: boolean;
+  toolProgressMilestonesRecorded?: number;
+  lastToolProgressAt?: string;
   noProgressFingerprintVerified: false;
   incidents: DurableRecoveryIncidentV1[];
   grantsAuthority: false;
@@ -55,7 +57,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const validTypes: readonly TaskEventType[] = [
   "queued", "resume_queued", "git_snapshot", "checkpoint_created",
   "checkpoint_unavailable", "run_started", "session_started", "session_recovered",
-  "context_handoff_created", "context_rotating", "stalled", "retrying",
+  "context_handoff_created", "context_rotating", "recovery_tool_progress", "stalled", "retrying",
   "human_escalation_requested", "human_escalation_approved", "human_escalation_rejected",
   "validation_started", "validation_passed", "validation_failed",
   "validation_repairing", "diff_safety_started", "diff_safety_warning",
@@ -87,7 +89,7 @@ function validIso(value: unknown, capturedMs: number): value is string {
   return Number.isFinite(timestampMs) && timestampMs <= capturedMs
     && new Date(timestampMs).toISOString() === value;
 }
-function unavailable(reason: NonNullable<DurableRecoveryProjectionV1["reason"]>): DurableRecoveryProjectionV1 {
+export function unavailableRecoveryEvidence(reason: NonNullable<DurableRecoveryProjectionV1["reason"]>): DurableRecoveryProjectionV1 {
   return {
     schemaVersion: 1, readOnly: true, source: "trusted_task_store",
     coverage: "durable_events_only", availability: "unavailable", reason,
@@ -118,24 +120,24 @@ export function projectDurableRecoveryEvents(
   if (!Number.isFinite(now) || !validIso(capturedAt, now)
     || !task || !uuid.test(task.id) || !validStatuses.includes(task.status)
     || (task.runCount !== undefined && (!Number.isSafeInteger(task.runCount)
-      || task.runCount < 0 || task.runCount > 100000))) return unavailable("invalid_task");
-  if (!Array.isArray(rawEvents)) return unavailable("invalid_event_source");
+      || task.runCount < 0 || task.runCount > 100000))) return unavailableRecoveryEvidence("invalid_task");
+  if (!Array.isArray(rawEvents)) return unavailableRecoveryEvidence("invalid_event_source");
   if (rawEvents.length > RECOVERY_EVENT_LIMITS.maxSourceEvents) {
-    return unavailable("history_over_limit");
+    return unavailableRecoveryEvidence("history_over_limit");
   }
   const events: Array<Pick<TaskEvent, "id" | "type" | "timestamp">> = [];
   const seen = new Set<string>();
   let prevMs = -1;
   for (const raw of rawEvents as unknown[]) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return unavailable("invalid_event_source");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return unavailableRecoveryEvidence("invalid_event_source");
     const e = raw as Partial<TaskEvent>;
     if (!uuid.test(e.id ?? "") || e.taskId !== task.id
       || typeof e.type !== "string" || !validTypes.includes(e.type as TaskEventType)
       || !validIso(e.timestamp, now) || seen.has(e.id!)) {
-      return unavailable("invalid_event_source");
+      return unavailableRecoveryEvidence("invalid_event_source");
     }
     const ms = Date.parse(e.timestamp!);
-    if (ms < prevMs) return unavailable("invalid_event_source");
+    if (ms < prevMs) return unavailableRecoveryEvidence("invalid_event_source");
     prevMs = ms;
     seen.add(e.id!);
     // Strict projection: never retain source data/message/paths/approval detail.
@@ -145,8 +147,14 @@ export function projectDurableRecoveryEvents(
   const incidents: DurableRecoveryIncidentV1[] = [];
   const open = new Map<RelevantSignal, DurableRecoveryIncidentV1>();
   let validationPassedEvents = 0, diffSafetyPassedEvents = 0;
+  let toolProgressMilestonesRecorded = 0;
+  let lastToolProgressAt: string | undefined;
   let lastIndependentCheckAt: string | undefined;
   for (const e of events) {
+    if (e.type === "recovery_tool_progress") {
+      toolProgressMilestonesRecorded++;
+      lastToolProgressAt = e.timestamp;
+    }
     if (e.type === "validation_passed" || e.type === "diff_safety_passed") {
       if (e.type === "validation_passed") validationPassedEvents++;
       else diffSafetyPassedEvents++;
@@ -195,7 +203,9 @@ export function projectDurableRecoveryEvents(
     truncated: incidents.length > shown.length,
     validationPassedEvents, diffSafetyPassedEvents,
     ...(lastIndependentCheckAt ? { lastIndependentCheckAt } : {}),
-    toolCompletionEvidenceAvailable: false,
+    toolCompletionEvidenceAvailable: toolProgressMilestonesRecorded > 0,
+    toolProgressMilestonesRecorded,
+    ...(lastToolProgressAt ? { lastToolProgressAt } : {}),
     noProgressFingerprintVerified: false,
     incidents: shown.map(i => Object.freeze({...i})), grantsAuthority: false,
   };
@@ -210,13 +220,13 @@ export async function readTrustedRecoveryEvents(
   taskId: string, source: TrustedRecoveryTaskEventSource,
   capturedAt = new Date().toISOString(),
 ): Promise<DurableRecoveryProjectionV1> {
-  if (!uuid.test(taskId)) return unavailable("invalid_task");
+  if (!uuid.test(taskId)) return unavailableRecoveryEvidence("invalid_task");
   try {
     const task = await source.load(taskId);
-    if (task.id !== taskId) return unavailable("invalid_task");
+    if (task.id !== taskId) return unavailableRecoveryEvidence("invalid_task");
     return projectDurableRecoveryEvents(task, await source.events(taskId), capturedAt);
   } catch {
     // No filesystem path, upstream text, error stack or message can leak.
-    return unavailable("read_failed");
+    return unavailableRecoveryEvidence("read_failed");
   }
 }

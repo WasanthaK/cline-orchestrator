@@ -12,7 +12,7 @@ export const INSTALLED_VIEWER_CONTRACT = Object.freeze({
   portSource: "ORCH_VIEWER_PORT" as const,
   host: "127.0.0.1" as const,
   defaultPort: 4321 as const,
-  readOnlyMachineMethods: ["listProjects", "listWorkspaces", "findTasks", "getTask", "getTaskEvents"] as const,
+  readOnlyMachineMethods: ["listProjects", "listWorkspaces", "findTasks", "getTask", "getTaskEvents", "getTaskRecoveryEvidence"] as const,
   noWorkerProfileResolution: true as const,
   noDaemonStartup: true as const,
   noTaskMutation: true as const,
@@ -45,14 +45,14 @@ export function installedViewerConfigFromEnvironment(env: Record<string, string 
 }
 
 /**
- * Pass only the exact five observation capabilities to the installed viewer.
+ * Pass only the exact six observation capabilities to the installed viewer.
  * Task details and events stay behind registered Safety/task bindings, and
  * the downstream timeline projection drops raw messages and identifiers.
  * No execution, approval, TaskStore, or worker profile capability escapes.
  */
 export function createInstalledViewerMachineReader(
   machine: Pick<MachineOrchestratorService,
-    "listProjects" | "listWorkspaces" | "findTasks" | "getTask" | "getTaskEvents">,
+    "listProjects" | "listWorkspaces" | "findTasks" | "getTask" | "getTaskEvents" | "getTaskRecoveryEvidence">,
 ): TrustedDashboardMachineReader {
   return {
     listProjects: () => machine.listProjects(),
@@ -60,6 +60,7 @@ export function createInstalledViewerMachineReader(
     findTasks: (options) => machine.findTasks(options),
     getTask: (taskId) => machine.getTask(taskId),
     getTaskEvents: (taskId) => machine.getTaskEvents(taskId),
+    getTaskRecoveryEvidence: (taskId) => machine.getTaskRecoveryEvidence(taskId),
   };
 }
 
