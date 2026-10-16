@@ -21,6 +21,7 @@ on:
       - "scripts/verify-native-settings-update.mjs"
       - "scripts/verify-native-settings-recovery.mjs"
       - "scripts/verify-native-settings-restore.mjs"
+      - "scripts/verify-native-local-inference.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -102,6 +103,10 @@ jobs:
           # create-only config; no service, task, external model or new permissions.
           & node ./scripts/verify-native-desktop-config.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19C2 installed configuration smoke failed' }
+          # M19E4C: explicit native harmless inference with mock loopback,
+          # testing the actual installed Node/product CLI only.
+          & node ./scripts/verify-native-local-inference.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19E4C installed local inference smoke failed' }
           # M19C2B1: actual installed CLI, private project review and user
           # registry create/cancel; no workspace, model invocation or task.
           & node ./scripts/verify-native-project-registration.mjs $node $entry
