@@ -1,0 +1,178 @@
+/**
+ * M19R3F: local operator settings for AI recovery guidance.
+ *
+ * These preferences are NOT transport authorization. The runtime is not
+ * connected; any future consultation must reload current consent and pass
+ * durable per-incident admission and the existing Safety/lease gates.
+ */
+import crypto from "node:crypto";
+import { mkdir, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { AdvisorPolicyMode, AdvisorStandingPolicyV1 } from "./recovery-advisor-policy.js";
+
+export const ADVISOR_SETTINGS_CONTRACT = Object.freeze({
+  schemaVersion: 1 as const, defaultMode: "off" as const,
+  allowedDays: [7, 30] as const, allowedCents: [10, 50, 100, 500] as const,
+  localOperatorOnly: true as const, defaultExternalCalls: false as const,
+  browserTaskActions: false as const, grantsAuthority: false as const,
+});
+const MODES: readonly AdvisorPolicyMode[] =
+  ["off", "ask_before_consulting", "automatic_advice"];
+const OFF_REVISION = "0".repeat(64);
+const isId = (s: unknown): s is string => typeof s === "string"
+  && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(s);
+const isRevision = (v: unknown): v is string =>
+  typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
+const validTime = (n: unknown): n is number =>
+  Number.isSafeInteger(n) && (n as number) >= 0;
+
+export class AdvisorSettingsError extends Error {
+  constructor(readonly code: "invalid" | "unsafe" | "stale" | "busy") {
+    super(code); this.name = "AdvisorSettingsError";
+  }
+}
+export interface AdvisorSettingsViewV1 {
+  schemaVersion: 1;
+  projectId: string;
+  mode: AdvisorPolicyMode;
+  maxEstimatedCentsPerIncident: number;
+  durationDays: 7 | 30;
+  revision: string;
+  consentExpiresAt?: string;
+  expired: boolean;
+  externalCallsEnabled: false;
+  grantsAuthority: false;
+}
+export interface AdvisorSettingsEditV1 {
+  expectedRevision: string;
+  mode: AdvisorPolicyMode;
+  maxEstimatedCentsPerIncident: number;
+  durationDays: 7 | 30;
+  acknowledgedExternalMetadata: boolean;
+}
+interface StoredSettings {
+  schemaVersion: 1;
+  policy: AdvisorStandingPolicyV1;
+}
+function exactKeys(v: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(v).sort().join("|") === keys.sort().join("|");
+}
+function validStored(raw: unknown, projectId: string): raw is StoredSettings {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const s = raw as Record<string, unknown>;
+  if (!exactKeys(s, ["schemaVersion","policy"]) || s.schemaVersion !== 1
+    || !s.policy || typeof s.policy !== "object" || Array.isArray(s.policy)) return false;
+  const p=s.policy as Record<string, unknown>;
+  return exactKeys(p, ["schemaVersion","source","projectId","mode","destination","disclosure",
+    "approvedAtMs","expiresAtMs","revision","allowedSignals",
+    "maxEstimatedCentsPerIncident","operatorAcknowledgedExternalTransfer"])
+    && p.schemaVersion===1 && p.source==="operator_approved_settings"
+    && p.projectId===projectId && MODES.includes(p.mode as AdvisorPolicyMode)
+    && p.destination==="openai_responses_api" && p.disclosure==="incident_metadata_only"
+    && validTime(p.approvedAtMs) && validTime(p.expiresAtMs)
+    && (p.expiresAtMs as number) > (p.approvedAtMs as number)
+    && (p.expiresAtMs as number) - (p.approvedAtMs as number) <= 30*86400000
+    && isRevision(p.revision) && p.revision!==OFF_REVISION
+    && p.operatorAcknowledgedExternalTransfer === true
+    && ADVISOR_SETTINGS_CONTRACT.allowedCents.includes(p.maxEstimatedCentsPerIncident as never)
+    && Array.isArray(p.allowedSignals)
+    && JSON.stringify(p.allowedSignals) === JSON.stringify(
+      ["context_pressure","watchdog_stall","validation_failure"]);
+}
+export class AdvisorSettingsStore {
+  constructor(
+    private readonly directory: string,
+    private readonly projectId: string,
+    private readonly now: () => number = Date.now,
+  ) {
+    if (!path.isAbsolute(directory) || directory.includes("\0")
+      || !isId(projectId) || path.resolve(directory) === path.parse(path.resolve(directory)).root) {
+      throw new AdvisorSettingsError("unsafe");
+    }
+  }
+  private dir() { return path.resolve(this.directory); }
+  private file() { return path.join(this.dir(),"recovery-advisor-settings-v1.json"); }
+  private lock() { return path.join(this.dir(),".recovery-advisor-settings-lock"); }
+  private async secureDirectory(): Promise<void> {
+    try {
+      await mkdir(this.dir(),{recursive:true,mode:0o700});
+      const s=await lstat(this.dir());
+      if (!s.isDirectory() || s.isSymbolicLink()
+        || (process.platform!=="win32" && (s.mode & 0o077)!==0))
+        throw new Error("unsafe-dir");
+    } catch { throw new AdvisorSettingsError("unsafe"); }
+  }
+  private async load(): Promise<StoredSettings | undefined> {
+    try {
+      const s=await lstat(this.file());
+      if (!s.isFile() || s.isSymbolicLink() || s.size>8192
+        || (process.platform!=="win32" && (s.mode&0o077)!==0))
+        throw new Error("invalid-file");
+      const value:unknown=JSON.parse(await readFile(this.file(),"utf8"));
+      if (!validStored(value,this.projectId)) throw new Error("invalid-policy");
+      return value;
+    } catch(e) {
+      if ((e as NodeJS.ErrnoException)?.code==="ENOENT") return undefined;
+      throw new AdvisorSettingsError("unsafe");
+    }
+  }
+  async inspect(): Promise<AdvisorSettingsViewV1> {
+    await this.secureDirectory();
+    const data=await this.load();
+    const at=this.now();
+    if (!validTime(at)) throw new AdvisorSettingsError("unsafe");
+    const expired=!!data && data.policy.expiresAtMs<=at;
+    return Object.freeze({
+      schemaVersion:1, projectId:this.projectId,
+      mode:expired?"off":data?.policy.mode ?? "off",
+      maxEstimatedCentsPerIncident:data?.policy.maxEstimatedCentsPerIncident ?? 100,
+      durationDays:data && data.policy.expiresAtMs-data.policy.approvedAtMs===7*86400000?7:30,
+      revision:data?.policy.revision ?? OFF_REVISION,
+      ...(data?{consentExpiresAt:new Date(data.policy.expiresAtMs).toISOString()}:{}),
+      expired,externalCallsEnabled:false,grantsAuthority:false,
+    });
+  }
+  async save(input:AdvisorSettingsEditV1): Promise<AdvisorSettingsViewV1> {
+    if (!input || !isRevision(input.expectedRevision) || !MODES.includes(input.mode)
+      || !ADVISOR_SETTINGS_CONTRACT.allowedCents.includes(input.maxEstimatedCentsPerIncident as never)
+      || !ADVISOR_SETTINGS_CONTRACT.allowedDays.includes(input.durationDays as never)
+      || (input.mode!=="off" && input.acknowledgedExternalMetadata!==true)
+      || typeof input.acknowledgedExternalMetadata!=="boolean") {
+      throw new AdvisorSettingsError("invalid");
+    }
+    await this.secureDirectory();
+    let acquired=false;
+    try {
+      try { await mkdir(this.lock(),{mode:0o700});acquired=true; }
+      catch { throw new AdvisorSettingsError("busy"); }
+      const previous=await this.load();
+      if ((previous?.policy.revision ?? OFF_REVISION)!==input.expectedRevision)
+        throw new AdvisorSettingsError("stale");
+      const at=this.now();
+      if (!validTime(at)) throw new AdvisorSettingsError("unsafe");
+      const policy:AdvisorStandingPolicyV1={
+        schemaVersion:1,source:"operator_approved_settings",
+        projectId:this.projectId,mode:input.mode,
+        destination:"openai_responses_api",disclosure:"incident_metadata_only",
+        approvedAtMs:at,expiresAtMs:at+input.durationDays*86400000,
+        revision:crypto.randomBytes(32).toString("hex"),
+        allowedSignals:["context_pressure","watchdog_stall","validation_failure"],
+        maxEstimatedCentsPerIncident:input.maxEstimatedCentsPerIncident,
+        operatorAcknowledgedExternalTransfer:true,
+      };
+      const temporary=path.join(this.dir(),".recovery-advisor-"+crypto.randomUUID()+".tmp");
+      try {
+        await writeFile(temporary,JSON.stringify({schemaVersion:1,policy}),{
+          encoding:"utf8",flag:"wx",mode:0o600,
+        });
+        await rename(temporary,this.file());
+      } catch {
+        await rm(temporary,{force:true}).catch(()=>undefined);
+        throw new AdvisorSettingsError("unsafe");
+      }
+    } finally {
+      if (acquired) await rm(this.lock(),{recursive:true,force:true}).catch(()=>undefined);
+    }
+    return this.inspect();
+  }
+}

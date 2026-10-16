@@ -175,3 +175,37 @@ tests only. Persisting protected preferences, atomic disable/revocation,
 authenticating operator settings, secure credential setup, wiring live policy
 to the existing durable grant, UI, push notifications (#75) and physical
 Windows acceptance remain gated and are NOT claimed complete.
+
+## M19R3F — Operator AI recovery Settings screen (candidate)
+
+Adds an optional project-bound Settings capability to the **existing**
+loopback-only authenticated operator control surface; the passive task
+dashboard remains completely read-only. The trusted host must explicitly
+inject an AdvisorSettingsStore + project display name. Existing installations
+that do not supply this capability expose no additional route. No new
+listener, port, service or external connection is opened.
+
+Simple operator choices are **Off** (default), **Automatic advice**, and
+**Ask me first**, with clear project scope, incident-metadata-only privacy
+disclosure, time-limited permission (7 or 30 days), per-consultation estimated
+cost cap and an ordinary Save settings button. It does not ask for technical
+confirmation phrases on each incident. Non-off selection requires one
+explicit checkbox acknowledging external metadata disclosure. The operator
+may switch back to Off without a disclosure checkbox. Expired preferences
+display Off until renewed.
+
+The persisted policy is local-user-owned, protected, revision-checked and
+atomic; symlink/state corruption, stale updates, invalid fields and
+concurrent writers all fail closed. The authenticated operator route
+requires its existing session cookie, same-origin POST and CSRF protection.
+No project ID, state path or secret comes from the browser; it is bound by
+the trusted host at startup. The rendered page never contains credentials,
+workspace source, prompts or model responses.
+
+**This is settings persistence and an authenticated UI, not runtime
+enablement.** The future runtime integration must reload current policy
+and revocation before every consultation, then consume a separate durable
+one-use advisor grant/budget reservation, enforce a credential resolver and
+confirm physical Windows installed behavior. Saving Automatic advice in
+this slice does not make any network calls or permit task execution.
+Operator notifications (#75) remain a separate later capability.

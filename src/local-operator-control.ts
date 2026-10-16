@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { MachineGatewayError, type MachineOrchestratorService } from "./machine-orchestrator.js";
 import { OperatorActionError, OperatorActionService } from "./operator-action.js";
+import { AdvisorSettingsStore, AdvisorSettingsError } from "./recovery-advisor-settings.js";
+import { renderAdvisorSettingsForm } from "./recovery-advisor-settings-html.js";
 
 const COOKIE = "orch_operator";
 const SESSION_MS = 15 * 60_000;
@@ -40,7 +42,7 @@ function escapeHtml(value: string): string {
 }
 
 function page(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{font:16px system-ui;max-width:650px;margin:3rem auto;padding:0 1rem;line-height:1.5}form{margin:1rem 0}input,button{font:inherit;padding:.5rem}input[type=text],input[type=password]{width:100%;box-sizing:border-box}button{cursor:pointer}.danger{background:#9b1c1c;color:white;border:0}code{overflow-wrap:anywhere}</style></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{font:16px system-ui;max-width:650px;margin:3rem auto;padding:0 1rem;line-height:1.5}form{margin:1rem 0}input,button{font:inherit;padding:.5rem}input[type=text],input[type=password]{width:100%;box-sizing:border-box}button{cursor:pointer}.option{display:block;padding:.75rem;margin:.5rem 0;border:1px solid #d0d7de;border-radius:10px}fieldset{border:1px solid #d0d7de;border-radius:12px;margin:1.25rem 0;padding:1rem}fieldset label{display:block;margin:.65rem 0}select{font:inherit;padding:.4rem;margin-left:.5rem}input[type=radio],input[type=checkbox]{accent-color:#2563eb;margin-right:.4rem}a{color:#175cd3}.minor{color:#475569;font-size:.9rem}button{background:#175cd3;color:white;border:0;border-radius:8px;padding:.65rem 1rem}.danger{background:#9b1c1c;color:white;border:0}code{overflow-wrap:anywhere}</style></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`;
 }
 
 function respond(res: ServerResponse, status: number, body: string, cookie?: string): void {
@@ -75,6 +77,8 @@ interface Session { csrf: string; expiresAt: number }
 export function startLocalOperatorControlServer(
   service: Pick<MachineOrchestratorService, "getTask" | "rejectEscalation">,
   config: LocalOperatorConfig,
+  /** Optional host-injected, project-bound local settings capability. */
+  advisorSettings?: { store: AdvisorSettingsStore; projectLabel: string },
 ): Server {
   if (config.host !== "127.0.0.1" || !Number.isInteger(config.port) || config.port < 1 || config.port > 65535 || config.token.length < 32 || config.token.length > 4096 || config.token.trim() !== config.token) {
     throw new Error("Operator control must use a configured loopback address, port and strong token");
@@ -91,7 +95,8 @@ export function startLocalOperatorControlServer(
       }
       const url = new URL(req.url ?? "/", origin);
       const path = url.pathname;
-      if (!["/operator", "/operator/login", "/operator/preview", "/operator/confirm", "/operator/logout"].includes(path)) {
+      if (!["/operator", "/operator/login", "/operator/preview", "/operator/confirm", "/operator/logout",
+        ...(advisorSettings ? ["/operator/advisor-settings"] : [])].includes(path)) {
         respond(res, 404, page("Not found", "<p>Unknown operator page.</p>"));
         return;
       }
@@ -133,8 +138,15 @@ export function startLocalOperatorControlServer(
         respond(res, 401, page("Sign in required", '<p>Session expired.</p><a href="/operator">Sign in</a>'));
         return;
       }
+      if (path === "/operator/advisor-settings" && req.method === "GET" && advisorSettings) {
+        const snapshot = await advisorSettings.store.inspect();
+        respond(res, 200, page("AI recovery help",
+          renderAdvisorSettingsForm(snapshot, active.csrf, advisorSettings.projectLabel)));
+        return;
+      }
       if (path === "/operator" && req.method === "GET") {
-        respond(res, 200, page("Operator control", `<p>Reject a pending safety escalation. This closes the task and grants no wider scope.</p><form method="post" action="/operator/preview"><input type="hidden" name="csrf" value="${active.csrf}"><label>Task ID<input type="text" name="task_id" required pattern="[0-9a-fA-F-]{36}"></label><button>Review rejection</button></form><form method="post" action="/operator/logout"><input type="hidden" name="csrf" value="${active.csrf}"><button>Sign out</button></form>`));
+        respond(res, 200, page("Operator control", `<p>Reject a pending safety escalation. This closes the task and grants no wider scope.</p><form method="post" action="/operator/preview"><input type="hidden" name="csrf" value="${active.csrf}"><label>Task ID<input type="text" name="task_id" required pattern="[0-9a-fA-F-]{36}"></label><button>Review rejection</button></form>${advisorSettings
+          ? '<p><a href="/operator/advisor-settings">AI recovery help settings</a></p>' : ''}<form method="post" action="/operator/logout"><input type="hidden" name="csrf" value="${active.csrf}"><button>Sign out</button></form>`));
         return;
       }
       if (req.method !== "POST") {
@@ -144,6 +156,41 @@ export function startLocalOperatorControlServer(
       const data = await form(req);
       if (!equalSecret(data.get("csrf") ?? "", active.csrf)) {
         respond(res, 403, page("Forbidden", "<p>Invalid confirmation session.</p>"));
+        return;
+      }
+      if (path === "/operator/advisor-settings" && advisorSettings) {
+        // This is operator settings only; no task action, advisor API call or
+        // durable recovery grant is created by saving the preferences.
+        const allowed = new Set(["csrf","revision","mode","cents","days","acknowledge"]);
+        if ([...data.keys()].some(key => !allowed.has(key))
+          || [...data.keys()].some(key => data.getAll(key).length !== 1)) {
+          respond(res, 400, page("Settings not saved", "<p>Invalid form data.</p>"));
+          return;
+        }
+        const mode = data.get("mode");
+        const cents = Number(data.get("cents"));
+        const days = Number(data.get("days"));
+        const ack = data.get("acknowledge");
+        if ((ack !== null && ack !== "yes") || !["off","ask_before_consulting","automatic_advice"].includes(mode ?? "")
+          || ![10,50,100,500].includes(cents) || ![7,30].includes(days)) {
+          respond(res, 400, page("Settings not saved", "<p>Invalid settings choices.</p>"));
+          return;
+        }
+        try {
+          const updated = await advisorSettings.store.save({
+            expectedRevision: data.get("revision") ?? "",
+            mode: mode as "off" | "ask_before_consulting" | "automatic_advice",
+            maxEstimatedCentsPerIncident: cents,
+            durationDays: days as 7 | 30,
+            acknowledgedExternalMetadata: ack === "yes",
+          });
+          respond(res, 200, page("AI recovery help",
+            renderAdvisorSettingsForm(updated, active.csrf, advisorSettings.projectLabel, "saved")));
+        } catch (error) {
+          const status = error instanceof AdvisorSettingsError && error.code === "invalid" ? 400 : 409;
+          respond(res, status, page("Settings not saved",
+            '<p>No settings were changed. <a href="/operator/advisor-settings">Review current settings</a>.</p>'));
+        }
         return;
       }
       if (path === "/operator/logout") {
