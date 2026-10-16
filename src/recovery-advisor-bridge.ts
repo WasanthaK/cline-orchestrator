@@ -20,6 +20,7 @@ export async function consultWithDurableGrant(
   input: AdvisorBridgeRequestV1,
   resolveCredential: () => Promise<string>,
   beforeSend?: () => Promise<boolean>,
+  cancellationSignal?: AbortSignal,
 ): Promise<AdvisorBridgeReceiptV1> {
   const unavailable = (reason: NonNullable<AdvisorBridgeReceiptV1["reason"]>): AdvisorBridgeReceiptV1 =>
     ({ schemaVersion:1,status:"unavailable",contacted:false,reason,
@@ -42,5 +43,6 @@ export async function consultWithDurableGrant(
     authorizeOnce: async () => true,
     resolveCredential,
     ...(beforeSend ? { beforeSend } : {}),
+    ...(cancellationSignal ? { cancellationSignal } : {}),
   });
 }

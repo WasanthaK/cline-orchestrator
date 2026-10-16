@@ -29,13 +29,15 @@ export interface AdvisorCallAuthority {
   resolveCredential: () => Promise<string>;
   /** Optional final trusted evidence check after resolving credentials. */
   beforeSend?: () => Promise<boolean>;
+  /** Trusted project-wide stop monitor, never supplied by a browser. */
+  cancellationSignal?: AbortSignal;
 }
 export interface AdvisorTransportReceiptV1 {
   schemaVersion: 1;
   status: "review_required" | "unavailable";
   contacted: boolean;
   reason?: "invalid_config" | "invalid_request" | "permission_denied"
-    | "credential_unavailable" | "budget_exceeded" | "transport_failed"
+    | "credential_unavailable" | "budget_exceeded" | "transport_failed" | "cancelled"
     | "invalid_response";
   advice?: AdvisorDecisionV1;
   retryAuthorized: false;
@@ -218,34 +220,40 @@ export class OneShotRecoveryAdvisor {
     this.attemptedIncidents.add(input.incidentId);
 
     const abort = new AbortController();
+    const signal=authority.cancellationSignal
+      ? AbortSignal.any([abort.signal,authority.cancellationSignal]) : abort.signal;
     const timer = setTimeout(() => abort.abort(), this.config.timeoutMs);
     try {
       // M19R3I: after credential resolution but before first HTTP request,
       // fail closed if the current trusted task/incident changed. The caller
       // holds a project settings lease while this check and request run.
+      if (signal.aborted) return deny("cancelled");
       if (authority.beforeSend) {
         let permitted = false;
         try { permitted = await authority.beforeSend() === true; }
         catch { /* deny */ }
         if (!permitted) return deny("permission_denied");
       }
+      if (signal.aborted) return deny("cancelled");
       const response = await this.http(ENDPOINT, {
         method: "POST", redirect: "error", cache: "no-store", credentials: "omit",
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer " + credential,
         },
-        body, signal: abort.signal,
+        body, signal,
       });
+      if (signal.aborted) return deny("cancelled", true);
       if (!response.ok) return deny("transport_failed", true);
       const result = await readSmallBody(response);
+      if (signal.aborted) return deny("cancelled", true);
       const advice = result === undefined ? undefined : parseAdvice(result);
       if (!advice) return deny("invalid_response", true);
       return Object.freeze({
         schemaVersion: 1, status: "review_required", contacted: true, advice,
         retryAuthorized: false, skipExecutionPermitted: false, grantsAuthority: false,
       });
-    } catch { return deny("transport_failed", true); }
+    } catch { return deny(signal.aborted && !abort.signal.aborted ? "cancelled" : "transport_failed", true); }
     finally {
       clearTimeout(timer);
       credential = "";

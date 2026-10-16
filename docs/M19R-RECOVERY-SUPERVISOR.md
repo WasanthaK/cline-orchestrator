@@ -327,3 +327,34 @@ OpenAI credential, smoke test or unattended scheduler is enabled.
 Before product release, prioritize dedicated in-flight cancellation,
 real installed Windows physical smoke, secrets provisioning instructions,
 in-service status and consent-revocation behavior under active HTTP.
+
+## M19R3K — Immediate Stop and best-effort in-flight cancellation
+
+A new durable, per-project Stop marker is written with exclusive creation
+and fsync independently of the consultation's long-lived settings lock.
+Any verified marker forces the effective Settings mode to Off, makes trusted
+policy reads return no active consent and blocks normal re-enablement.
+The marker survives restarts, and corrupt/unreadable state fails closed.
+A separate deliberate trusted reset mechanism is needed before re-enabling.
+No silent reset occurs through a normal Save or process restart.
+
+An authenticated, CSRF/same-origin-guarded operator POST gives one-click
+Stop for a registry-verified project. No filesystem path is supplied by the
+browser, and the read-only task dashboard still has no mutation endpoint.
+The operator screen clearly distinguishes saved Stop state, requested
+best-effort cancellation, and the impossibility of recalling information
+already delivered to an external service.
+
+The one-shot transport now accepts a trusted AbortSignal, composes it with
+its timeout signal, refuses to send if cancelled and drops any advice
+returned after cancellation. A running consultation establishes a bounded
+per-project watcher (100ms by default) that detects the persistent Stop
+marker across processes and aborts local provider HTTP. No task execution
+authority is granted and no unattended advisor connection is enabled.
+
+Limitations: a provider may already have processed a transmitted request.
+Cancellation is best-effort at the HTTP client; the durable marker
+guarantees deny-on-next-check, not remote erasure. An in-flight cross-process
+send can race the propagation interval; real installed Windows process and
+network cancellation tests remain a release gate. The emergency Stop is
+intentionally one-way until an explicit secure rearm workflow is reviewed.

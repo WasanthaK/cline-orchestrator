@@ -17,7 +17,7 @@ import type { AdvisorDecisionV1, AdvisorRequestV1 } from "./recovery-advisor-con
 type Outcome="review_required"|"disabled"|"operator_attention"|"already_handled"|"unavailable";
 type Reason="advice_ready"|"consent_disabled"|"operator_review"|"duplicate_incident"|
   "budget_exceeded"|"permission_denied"|"trusted_evidence_changed"|
-  "credential_unavailable"|"provider_unavailable"|"invalid_response"|"state_unavailable";
+  "credential_unavailable"|"provider_unavailable"|"invalid_response"|"state_unavailable"|"consultation_cancelled";
 export interface AdvisorAdmittedConsultationV1 {
   schemaVersion:1;
   outcome:Outcome;
@@ -117,7 +117,11 @@ export class TrustedAdmittedAdvisorConsultation {
       if(original.taskId!==taskId||!uuid.test(original.projectId)||!uuid.test(original.workspaceId))
         return answer("unavailable","state_unavailable");
       const registered=await this.projects.resolveProject(original.projectId);
+      const monitor=registered.store.watchImmediateStop();
+      try {
       return await registered.store.withCurrentPolicyLease(async locked=>{
+        if(monitor.signal.aborted || await registered.store.isEmergencyStopped())
+          return answer("disabled","consent_disabled");
         const preliminary=await this.gate.evaluate(taskId,incidentId);
         if(preliminary.result==="disabled")return answer("disabled","consent_disabled");
         if(preliminary.result==="already_recorded")
@@ -152,6 +156,7 @@ export class TrustedAdmittedAdvisorConsultation {
         catch {return answer("unavailable","state_unavailable");}
         const finalEvidence=async():Promise<boolean>=>{
           try {
+            if(monitor.signal.aborted || await registered.store.isEmergencyStopped())return false;
             const now=this.clock();
             if(!policyCurrent(locked,task.projectId,now,cents))return false;
             const [latest,latestProof,current]=await Promise.all([
@@ -170,10 +175,11 @@ export class TrustedAdmittedAdvisorConsultation {
         };
         const receipt=await consultWithDurableGrant(scope.ledger,this.transport,{
           grantId:grant.grantId,incident:request,
-        },this.secret,finalEvidence);
+        },this.secret,finalEvidence,monitor.signal);
         if(receipt.status==="review_required"&&receipt.advice)
           return answer("review_required","advice_ready",receipt.contacted,receipt.advice);
-        const reason:Reason=receipt.reason==="permission_denied"
+        const reason:Reason=receipt.reason==="cancelled"?"consultation_cancelled"
+          : receipt.reason==="permission_denied"
           ? "trusted_evidence_changed"
           : receipt.reason==="budget_exceeded"?"budget_exceeded"
           : receipt.reason==="credential_unavailable"?"credential_unavailable"
@@ -181,6 +187,7 @@ export class TrustedAdmittedAdvisorConsultation {
           : receipt.contacted?"provider_unavailable":"state_unavailable";
         return answer("unavailable",reason,receipt.contacted);
       });
+      } finally {monitor.close();}
     } catch {
       return answer("unavailable","state_unavailable");
     }
