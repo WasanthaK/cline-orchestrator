@@ -138,3 +138,7 @@ review_required with no retry, skip or task authority. This is **not** a
 ChatGPT connection, an opt-in UI, cost metering or transport: M19R3B must
 independently design authenticated transport, redaction, rate/cost budgets,
 timeout, offline fallback and consent revocation before any transmission.
+
+## M19R3C — Durable advisor admission ledger (source candidate)
+
+The dormant admission ledger issues per-incident short-lived grants only after a trusted operator approval callback. It durably records one-shot consumption and conservative estimated spending reservations, with exclusive filesystem locking, monotonic clock enforcement, bounded history, explicit revocation and fail-closed state corruption. Concurrent or restarted processes cannot spend the same approval twice. Orphaned locks require manual review; no automatic unsafe lock removal. This module has no network operations and is not connected to advisor transport, runner, UI or scheduler. Its estimated budget is not proof of billed costs. Subsequent integration requires explicit consent UX, owned protected state directory, verified secret-provider binding and live end-to-end acceptance. The existing Cline execution authority remains unchanged.
