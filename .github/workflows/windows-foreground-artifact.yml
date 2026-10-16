@@ -15,6 +15,7 @@ on:
       - "scripts/verify-windows-foreground-evidence.d.mts"
       - "scripts/windows-candidate-inventory.mjs"
       - "scripts/verify-windows-install-lifecycle.ps1"
+      - "scripts/verify-m19e5-windows-pilot-preflight.ps1"
       - "scripts/windows-candidate-inventory.d.mts"
       - "src/windows-candidate-inventory.test.ts"
       - "src/windows-foreground-evidence.test.ts"
@@ -66,6 +67,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Candidate inventory creation failed' }
           & node ./scripts/windows-candidate-inventory.mjs verify $out $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Candidate inventory or runtime SBOM verification failed' }
+      - name: M19E5A read-only exact-candidate pilot preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'm19b-output'
+          & ./scripts/verify-m19e5-windows-pilot-preflight.ps1 -ArtifactDirectory $out -ExpectedCommit $env:GITHUB_SHA
+          if (-not $?) { throw 'M19E5A preflight failed' }
       - name: Smoke installed user executable and external data preservation
         shell: pwsh
         run: |
