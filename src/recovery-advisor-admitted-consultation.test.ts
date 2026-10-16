@@ -78,7 +78,7 @@ async function fixture(action:(f:{
    maxCallsPerHour:2,maxEstimatedCentsPerHour:10,maxGrantCents:10,
   },now);
   let sent=0,keys=0;
-  let secretHook=async()=>undefined;
+  let secretHook:()=>Promise<void>=async()=>undefined;
   const resolver=async()=>{keys++;await secretHook();return "x".repeat(40)};
   const transport=new OneShotRecoveryAdvisor(config,(async()=>{
    sent++;return response();
