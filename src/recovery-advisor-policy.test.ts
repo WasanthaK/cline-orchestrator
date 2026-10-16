@@ -49,7 +49,7 @@ test("M19R3E budget, scope, disallowed signal and expiry notify only on exceptio
     ...event,projectId:otherProject},now).reason,"outside_approved_scope");
   assert.equal(evaluateStandingAdvisorPolicy(policy,{
     ...event,signal:"repeated_attempt"},now).reason,"outside_approved_scope");
-  assert.equal(evaluateStandingAdvisorPolicy(policy,event,policy.expiresAtMs).reason,"consent_expired");
+  assert.equal(evaluateStandingAdvisorPolicy(policy,{...event,observedAtMs:policy.expiresAtMs-1000},policy.expiresAtMs).reason,"consent_expired");
 });
 test("M19R3E optional ask-first mode exists, but no phrase is required",()=>{
   const ask=evaluateStandingAdvisorPolicy({...policy,mode:"ask_before_consulting"},event,now);
