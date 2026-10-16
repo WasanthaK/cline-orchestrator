@@ -97,7 +97,7 @@ export function startLocalOperatorControlServer(
       const url = new URL(req.url ?? "/", origin);
       const path = url.pathname;
       if (!["/operator", "/operator/login", "/operator/preview", "/operator/confirm", "/operator/logout",
-        ...(advisorSettings ? ["/operator/advisor-settings", "/operator/advisor-stop"] : [])].includes(path)) {
+        ...(advisorSettings ? ["/operator/advisor-settings", "/operator/advisor-stop", "/operator/advisor-reset"] : [])].includes(path)) {
         respond(res, 404, page("Not found", "<p>Unknown operator page.</p>"));
         return;
       }
@@ -189,6 +189,43 @@ export function startLocalOperatorControlServer(
       const data = await form(req);
       if (!equalSecret(data.get("csrf") ?? "", active.csrf)) {
         respond(res, 403, page("Forbidden", "<p>Invalid confirmation session.</p>"));
+        return;
+      }
+      if (path === "/operator/advisor-reset" && advisorSettings && "listProjects" in advisorSettings) {
+        // Explicit authenticated operator intent, and stale-revision guard.
+        // This resets ONLY the Stop latch; it does not re-enable consultations.
+        if([...data.keys()].sort().join("|")!=="csrf|project|revision"
+          || ["csrf","project","revision"].some(key=>data.getAll(key).length!==1)) {
+          respond(res,400,page("Invalid reset request","<p>Choose a registered project.</p>"));
+          return;
+        }
+        const id=data.get("project")??"";
+        try {
+          const projects=await advisorSettings.listProjects();
+          if(!projects.some(project=>project.projectId===id)) {
+            respond(res,404,page("Project not found","<p>Project is not registered.</p>"));
+            return;
+          }
+          const project=await advisorSettings.resolveProject(id);
+          const state=await project.store.resetStop(data.get("revision")??"");
+          if(state.stopLatched || state.mode!=="off") {
+            respond(res,409,page("Reset not completed","<p>AI advisor remains stopped.</p>"));
+            return;
+          }
+          respond(res,200,page("Emergency Stop reset",
+            '<p role="status">Stop was reset. AI recovery help remains Off.</p>'
+            + '<p>Fresh opt-in is required before external advice can be used again. '
+            + 'No consultation was started.</p>'
+            + '<p><a href="/operator/advisor-settings?project='+escapeHtml(id)
+            +'">Review settings</a></p>'));
+        }catch(error) {
+          const status=error instanceof AdvisorSettingsError
+            ? error.code==="invalid"?400:error.code==="busy"||error.code==="stale"?409:503
+            : 503;
+          respond(res,status,page("Reset not completed",
+            '<p>Stop has not been confirmed clear. If a consultation is still active, '
+            + 'finish cancellation first. <a href="/operator/advisor-settings">Review settings</a>.</p>'));
+        }
         return;
       }
       if (path === "/operator/advisor-stop" && advisorSettings && "listProjects" in advisorSettings) {

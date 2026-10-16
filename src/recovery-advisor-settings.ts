@@ -6,7 +6,7 @@
  * durable per-incident admission and the existing Safety/lease gates.
  */
 import crypto from "node:crypto";
-import { mkdir, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, lstat, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AdvisorPolicyMode, AdvisorStandingPolicyV1 } from "./recovery-advisor-policy.js";
 import { DurableAdvisorStop, type AdvisorStopResultV1 } from "./recovery-advisor-stop.js";
@@ -187,6 +187,58 @@ export class AdvisorSettingsStore {
       expired,stopLatched:stopped,externalCallsEnabled:false,grantsAuthority:false,
     });
   }
+  /**
+   * M19R3L: authenticated operator reset, not advisor re-authorization.
+   * Locks out consultation, writes a NEW Off consent revision durably before
+   * clearing Stop, and requires a subsequent fresh operator Save to opt in.
+   * A crash before clearing Stop remains fail-closed.
+   */
+  async resetStop(expectedRevision:string):Promise<AdvisorSettingsViewV1> {
+    if(!isRevision(expectedRevision))throw new AdvisorSettingsError("invalid");
+    await this.secureDirectory();
+    let held=false;
+    try {
+      try {await mkdir(this.lock(),{mode:0o700});held=true;}
+      catch {throw new AdvisorSettingsError("busy");}
+      const previous=await this.load();
+      if((previous?.policy.revision ?? OFF_REVISION)!==expectedRevision)
+        throw new AdvisorSettingsError("stale");
+      if(!await this.isEmergencyStopped())throw new AdvisorSettingsError("stale");
+      const now=this.now();
+      if(!validTime(now))throw new AdvisorSettingsError("unsafe");
+      const policy:AdvisorStandingPolicyV1={
+        schemaVersion:1,source:"operator_approved_settings",
+        projectId:this.projectId,mode:"off",destination:"openai_responses_api",
+        disclosure:"incident_metadata_only",approvedAtMs:now,
+        expiresAtMs:now+7*86400000,
+        revision:crypto.randomBytes(32).toString("hex"),
+        allowedSignals:["context_pressure","watchdog_stall","validation_failure"],
+        maxEstimatedCentsPerIncident:previous?.policy.maxEstimatedCentsPerIncident ?? 100,
+        operatorAcknowledgedExternalTransfer:true,
+      };
+      const temp=path.join(this.dir(),".advisor-off-"+crypto.randomUUID()+".tmp");
+      let file:Awaited<ReturnType<typeof open>>|undefined;
+      try {
+        file=await open(temp,"wx",0o600);
+        await file.writeFile(JSON.stringify({schemaVersion:1,policy}),"utf8");
+        await file.sync();
+        await file.close();file=undefined;
+        await rename(temp,this.file());
+      }catch {
+        await file?.close().catch(()=>undefined);
+        await rm(temp,{force:true}).catch(()=>undefined);
+        throw new AdvisorSettingsError("unsafe");
+      }
+      // Never clear Stop if the protected Off commit failed. A concurrent
+      // Stop cannot falsely return success during this transition.
+      try {await this.emergency().clearAfterOffCommitted();}
+      catch {throw new AdvisorSettingsError("unsafe");}
+    }finally {
+      if(held)await rm(this.lock(),{recursive:true,force:true}).catch(()=>undefined);
+    }
+    return this.inspect();
+  }
+
   async save(input:AdvisorSettingsEditV1): Promise<AdvisorSettingsViewV1> {
     if (!input || !isRevision(input.expectedRevision) || !MODES.includes(input.mode)
       || !ADVISOR_SETTINGS_CONTRACT.allowedCents.includes(input.maxEstimatedCentsPerIncident as never)

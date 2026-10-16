@@ -358,3 +358,43 @@ guarantees deny-on-next-check, not remote erasure. An in-flight cross-process
 send can race the propagation interval; real installed Windows process and
 network cancellation tests remain a release gate. The emergency Stop is
 intentionally one-way until an explicit secure rearm workflow is reviewed.
+
+## M19R3L — Trusted reset to Off and focused Windows acceptance
+
+The optional authenticated local operator control page displays
+"Reset Stop (leave AI advice off)" only for a project with a verified
+emergency Stop marker. Submission requires the existing local session,
+same-origin and CSRF checks, a registered project identity and the
+current saved preference revision. There is no technical typed phrase
+or repeated incident approval dialog. A reset is NOT an opt-in and does
+NOT trigger an advisor call or task execution.
+
+The reset acquires the exclusive project Settings lease, so no live
+consultation may retain that lease during reset. It creates a new
+revision with mode Off and writes/fsyncs it before clearing the Stop
+marker. If that write fails, Stop remains active. Reset and Stop
+transitions have their own short exclusive lock, independent of the
+consultation lease. A contending Stop cannot be falsely acknowledged
+as persisted and a transition lock is treated as stopped by all
+readers. An orphaned transition lock fails closed and requires trusted
+administrative repair; there is no timeout-based unsafe lock stealing.
+Existing packed metadata or a corrupt Stop marker cannot be mistaken
+for permission to consult. A fresh operator Save with explicit metadata
+disclosure is required before Automatic advice could become eligible.
+
+Focused acceptance includes source-level cross-process-lock contention,
+restart-safe Stop/reset, stale revision and corruption rejection,
+authenticated local multi-project UI and forged CSRF/origin refusal.
+A new path-filtered hosted Windows job exercises those cases and
+imports the actual packed runtime module from an extracted exact-head
+npm tarball. This is disposable hosted-Windows evidence, not a claim
+that the user's physical Windows desktop / Cline runtime has passed
+manual installation, a real inference-server test or a real OpenAI
+provider smoke. The advisor is still not connected for unattended use.
+
+Release gates remaining include physical installed Windows proof,
+provider credential provisioning/rotation, security review,
+cross-process adversarial races, an approved policy-driven live
+advisor consultation, and operator notifications for exceptional
+interruptions. Nothing in this slice grants Cline new task,
+filesystem, execution, retry or validation authority.

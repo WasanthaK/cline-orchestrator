@@ -1510,6 +1510,7 @@ Tracking: [issue #72](https://github.com/WasanthaK/cline-orchestrator/issues/72)
 | M19R3I | Scoped consultation coordinator: current consent lease, durable grant, budget and final incident check before external send | Source candidate, CI pending |
 | M19R3J | Native credential reference readiness, operator connection status, truthful in-flight Off response; real-provider smoke pending | Source candidate; CI pending |
 | M19R3K | Durable emergency Stop independent of settings lock, per-project HTTP cancellation signal and authenticated one-click UI | Source candidate; CI pending |
+| M19R3L | Authenticated deliberate Stop reset to Off, reset/Stop transition serialization and focused Windows packed-module acceptance | Source candidate; CI pending |
 | M19R3 | Explicit opt-in ChatGPT/OpenAI advisor with redaction, response schema, rate/cost ceilings, offline fallback | Pending |
 | M19R4 | Trusted admission, unchanged Safety/leases/approvals, bounded recovery budget and idempotency | Pending |
 | M19R5 | Recovery Center UX, drilled-down task history, genuine Windows/Cline acceptance | Pending |

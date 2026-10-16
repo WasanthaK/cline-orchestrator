@@ -31,6 +31,13 @@ export function renderAdvisorSettingsForm(
     + (view.stopLatched ? '<p role="alert">Emergency Stop is active for this project. '
       + 'New consultations are blocked. Cancellation of in-flight requests was requested; '
       + 'data already sent cannot be recalled. Re-enabling requires a separate trusted reset.</p>' : '')
+    + (view.stopLatched && projectId
+      ? '<form method="post" action="/operator/advisor-reset">'
+        + '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
+        + '<input type="hidden" name="revision" value="'+esc(view.revision)+'">'
+        + '<input type="hidden" name="project" value="'+esc(projectId)+'">'
+        + '<button type="submit">Reset Stop (leave AI advice off)</button></form>'
+      : '')
     + '<form method="post" action="/operator/advisor-settings">'
     + '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
     + '<input type="hidden" name="revision" value="'+esc(view.revision)+'">'

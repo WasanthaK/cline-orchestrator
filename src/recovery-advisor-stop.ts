@@ -6,11 +6,12 @@
  * of in-flight HTTP. Re-enabling deliberately requires a later trusted,
  * explicit reset mechanism; saving "Automatic advice" cannot clear a stop.
  */
-import { mkdir, lstat, open, readFile } from "node:fs/promises";
+import { mkdir, lstat, open, readFile, rm, unlink } from "node:fs/promises";
 import path from "node:path";
 
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const STOP_FILE="recovery-advisor-stopped-v1.json";
+const MUTEX=".recovery-advisor-stop-transition";
 export class AdvisorStopError extends Error {
   constructor(readonly code:"invalid"|"state_unavailable"|"state_corrupt") {
     super(code);this.name="AdvisorStopError";
@@ -34,18 +35,14 @@ export class DurableAdvisorStop {
       throw new AdvisorStopError("invalid");
   }
   private filename(){return path.join(path.resolve(this.directory),STOP_FILE);}
-  private async prepare() {
-    try {
-      await mkdir(this.directory,{recursive:true,mode:0o700});
-      const st=await lstat(this.directory);
-      if(!st.isDirectory()||st.isSymbolicLink()
-        || (process.platform!=="win32"&&(st.mode&0o077)!==0))
-        throw new Error("unsafe");
-    }catch{throw new AdvisorStopError("state_unavailable");}
+  private mutex(){return path.join(path.resolve(this.directory),MUTEX);}
+  private async locked<T>(fn:()=>Promise<T>):Promise<T>{
+    try {await mkdir(this.mutex(),{mode:0o700});}
+    catch {throw new AdvisorStopError("state_unavailable");}
+    try {return await fn();}
+    finally {await rm(this.mutex(),{recursive:true,force:true}).catch(()=>undefined);}
   }
-  /** Missing marker is the only healthy/unstopped state. Corrupt != clear. */
-  async isStopped():Promise<boolean> {
-    await this.prepare();
+  private async marker():Promise<boolean>{
     try {
       const st=await lstat(this.filename());
       if(!st.isFile()||st.isSymbolicLink()||st.size>512
@@ -65,26 +62,66 @@ export class DurableAdvisorStop {
       throw new AdvisorStopError("state_unavailable");
     }
   }
+  private async prepare() {
+    try {
+      await mkdir(this.directory,{recursive:true,mode:0o700});
+      const st=await lstat(this.directory);
+      if(!st.isDirectory()||st.isSymbolicLink()
+        || (process.platform!=="win32"&&(st.mode&0o077)!==0))
+        throw new Error("unsafe");
+    }catch{throw new AdvisorStopError("state_unavailable");}
+  }
+  /** Missing marker is the only healthy/unstopped state. Corrupt != clear. */
+  async isStopped():Promise<boolean> {
+    await this.prepare();
+    // A Stop/reset transition is itself a deny-all state, even before
+    // the marker is created or while it is being cleared after Off persists.
+    try {
+      await lstat(this.mutex());
+      return true;
+    } catch(e) {
+      if((e as NodeJS.ErrnoException).code!=="ENOENT")throw new AdvisorStopError("state_unavailable");
+    }
+    return this.marker();
+  }
   /** Idempotent concurrent stop; never waits for a live consultation lock. */
   async stopNow():Promise<AdvisorStopResultV1>{
     await this.prepare();
-    let handle:Awaited<ReturnType<typeof open>>|undefined;
-    try {
-      handle=await open(this.filename(),"wx",0o600);
-      await handle.writeFile(JSON.stringify({
-        schemaVersion:1,projectId:this.projectId,stopped:true,
-      }),"utf8");
-      await handle.sync();
-    }catch(e) {
-      if((e as NodeJS.ErrnoException).code!=="EEXIST")
-        throw new AdvisorStopError("state_unavailable");
-    }finally{await handle?.close().catch(()=>undefined);}
-    // A preexisting or partially written marker must never count as success.
+    await this.locked(async()=>{
+      let handle:Awaited<ReturnType<typeof open>>|undefined;
+      try {
+        handle=await open(this.filename(),"wx",0o600);
+        await handle.writeFile(JSON.stringify({
+          schemaVersion:1,projectId:this.projectId,stopped:true,
+        }),"utf8");
+        await handle.sync();
+      }catch(e) {
+        if((e as NodeJS.ErrnoException).code!=="EEXIST")
+          throw new AdvisorStopError("state_unavailable");
+      }finally{await handle?.close().catch(()=>undefined);}
+      if(!await this.marker())throw new AdvisorStopError("state_unavailable");
+    });
+    // A stopped marker must remain, independently of the mutex.
     if(!await this.isStopped())throw new AdvisorStopError("state_unavailable");
     return Object.freeze({schemaVersion:1,status:"stopped",persisted:true,
       cancellationRequested:true,deliveryCanBeRecalled:false,
       externalCallsEnabled:false,grantsAuthority:false});
   }
+  /**
+   * M19R3L: called only by AdvisorSettingsStore.resetStop() after it has
+   * acquired the settings lease and durably committed a NEW Off revision.
+   * The independent transition lock serializes reset against Stop.
+   * A contending Stop fails closed; it is never silently acknowledged.
+   */
+  async clearAfterOffCommitted():Promise<void>{
+    await this.prepare();
+    await this.locked(async()=>{
+      if(!await this.marker())throw new AdvisorStopError("state_unavailable");
+      try {await unlink(this.filename());}
+      catch {throw new AdvisorStopError("state_unavailable");}
+    });
+  }
+
   /** Optional per-process observer. Fail-closed on any state-read failure. */
   watch(intervalMs=100):{signal:AbortSignal;close:()=>void} {
     if(!Number.isSafeInteger(intervalMs)||intervalMs<50||intervalMs>1000)
