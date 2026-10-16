@@ -7,6 +7,7 @@ import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { AdvisorSettingsStore } from "./recovery-advisor-settings.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
+import type { NativeAdvisorCredentialSource, AdvisorCredentialReadinessV1 } from "./native-advisor-credential.js";
 
 export const NATIVE_ADVISOR_BINDING_CONTRACT = Object.freeze({
   schemaVersion: 1 as const, registeredProjectsOnly: true as const,
@@ -20,6 +21,7 @@ export interface AdvisorProjectOptionV1 {
 }
 export interface NativeAdvisorProjectBinding {
   listProjects(): Promise<AdvisorProjectOptionV1[]>;
+  readCredentialReadiness?(): AdvisorCredentialReadinessV1;
   resolveProject(projectId: string): Promise<{ store: AdvisorSettingsStore; projectLabel: string }>;
 }
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -31,6 +33,7 @@ function validLabel(s: unknown): s is string {
 /** Supplied only by the trusted native MCP host, never via the HTTP request. */
 export function createNativeAdvisorProjectBinding(
   registry: WorkspaceRegistry,
+  credential?: Pick<NativeAdvisorCredentialSource, "readiness">,
 ): NativeAdvisorProjectBinding {
   const root = path.dirname(path.resolve(registry.path));
   const parent = path.join(root, "advisor-preferences");
@@ -50,6 +53,7 @@ export function createNativeAdvisorProjectBinding(
   };
   return Object.freeze({
     listProjects: load,
+    ...(credential ? { readCredentialReadiness: () => credential.readiness() } : {}),
     async resolveProject(projectId: string) {
       if (!UUID.test(projectId)) throw new Error("advisor_project_unavailable");
       // Never trust the project ID or display label supplied by the browser.

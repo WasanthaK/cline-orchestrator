@@ -1,5 +1,6 @@
 /** Server-rendered native operator Settings screen. No JavaScript or network. */
 import { type AdvisorSettingsViewV1 } from "./recovery-advisor-settings.js";
+import type { AdvisorCredentialReadinessV1 } from "./native-advisor-credential.js";
 function esc(v: unknown): string {
   return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;")
     .replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
@@ -9,6 +10,7 @@ const selected = (condition: boolean) => condition ? " selected" : "";
 export function renderAdvisorSettingsForm(
   view: AdvisorSettingsViewV1, csrf: string, projectLabel: string,
   notice?: "saved" | "needs_refresh", projectId?: string,
+  credential?: AdvisorCredentialReadinessV1,
 ): string {
   if (!view || view.schemaVersion!==1 || view.externalCallsEnabled!==false
     || view.grantsAuthority!==false || !/^[a-f0-9]{64}$/.test(csrf)
@@ -30,6 +32,17 @@ export function renderAdvisorSettingsForm(
     + '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
     + '<input type="hidden" name="revision" value="'+esc(view.revision)+'">'
     + (projectId ? '<input type="hidden" name="project" value="'+esc(projectId)+'">' : '')
+    + '<section aria-label="Advisor connection readiness"><h3>Connection readiness</h3>'
+    + (credential && credential.schemaVersion===1
+       && credential.externalCallsEnabled===false && credential.grantsAuthority===false
+       && credential.validatedWithProvider===false
+      ? (credential.state==="reference_present_unverified"
+          ? '<p role="status">Credential reference found, but not verified with the provider.</p>'
+          : '<p role="status">Advisor credential has not been configured in the native host.</p>')
+      : '<p role="status">Credential status unavailable.</p>')
+    + '<p>The native host uses the dedicated ORCH_RECOVERY_ADVISOR_API_KEY reference. '
+    + 'The value is never entered in this form or displayed. External calls remain disabled.</p>'
+    + '</section>'
     + '<fieldset><legend>When Cline needs help</legend>'
     + '<label class="option"><input type="radio" name="mode" value="off"'
     + checked(view.mode==="off")+'><strong>Off</strong> — Do not contact an external advisor</label>'
