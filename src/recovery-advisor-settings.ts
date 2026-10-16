@@ -203,7 +203,10 @@ export class AdvisorSettingsStore {
       const previous=await this.load();
       if((previous?.policy.revision ?? OFF_REVISION)!==expectedRevision)
         throw new AdvisorSettingsError("stale");
-      if(!await this.isEmergencyStopped())throw new AdvisorSettingsError("stale");
+      let stopped=false;
+      try {stopped=await this.isEmergencyStopped();}
+      catch {throw new AdvisorSettingsError("unsafe");}
+      if(!stopped)throw new AdvisorSettingsError("stale");
       const now=this.now();
       if(!validTime(now))throw new AdvisorSettingsError("unsafe");
       const policy:AdvisorStandingPolicyV1={
