@@ -223,9 +223,9 @@ export class OneShotRecoveryAdvisor {
       // M19R3I: after credential resolution but before first HTTP request,
       // fail closed if the current trusted task/incident changed. The caller
       // holds a project settings lease while this check and request run.
-      if (caller.beforeSend) {
+      if (authority.beforeSend) {
         let permitted = false;
-        try { permitted = await caller.beforeSend() === true; }
+        try { permitted = await authority.beforeSend() === true; }
         catch { /* deny */ }
         if (!permitted) return deny("permission_denied");
       }
