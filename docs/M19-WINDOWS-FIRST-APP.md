@@ -38,6 +38,235 @@ Welcome/runtime readiness → choose provider, model and loopback URL → explic
 
 Use design-thinking language: activity gauges for current system health, trend graphs only where time-series evidence is available, task lifecycle with independent validation and diff safety, source coverage notices showing **Unknown** vs verified zero, and deliberate drilldown for identifiers/technical details. Settings include provider/model endpoint, runtime limits, workspace registrations/Safety revisions, diagnostics, version and foreground lifecycle, with the same trusted backend services.
 
+### M19D1 — Native integrated operations & settings (review candidate)
+
+The Windows launcher offers an Operations & settings entry. Its read-only local
+summary composes existing verified native setup states with the same trusted
+sanitized task dashboard reader used by the passive browser viewer. It displays
+bounded sample counts ONLY when the task source is verified, and explicitly
+uses Unknown for unavailable, stale or truncated results. Other disconnected
+workflow/incident/writer sources stay labeled unconnected.
+
+The screen links to authenticated localhost task history and source quality
+drilldowns, and reuses the existing confirmed setup dialog for settings and
+registration. It adds no browser mutation, task, model, daemon or service
+authority; create-only settings remain create-only. More complete revision-safe
+settings editing, trend history and lifecycle management belong to later M19D
+work and M19E review.
+
+### M19D2 — Revision-checked native saved-model editor (review candidate)
+
+From Operations & settings, Setup status or the launcher, the native editor
+can inspect a saved local provider, model and literal /v1 endpoint with its
+file revision. Credentials and private paths do not leave the native child.
+
+Changes require fresh loopback model metadata, exact prior file revision,
+the existing 60-second single-use setup review, and explicit UPDATE CONFIG.
+A successful write atomically replaces verified user-owned config with a
+create-only hash-named previous version retained for future rollback. Only
+provider/model/endpoint fields change. Cancellation, stale state, symlinks,
+unapproved runtimes, remote endpoints and unavailable models fail closed.
+The original create-only first-run flow is unchanged.
+
+Explicit restore/rollback UI and physical multi-process concurrency proof
+remain pending. Preserving a previous version is not rollback acceptance.
+No browser mutation or task/daemon/service/release authority is added.
+
+### M19D3A — Verified recovery visibility (review candidate)
+
+Saved previous settings are only *potential* recovery material. The native
+settings editor now checks their filesystem type, immutable candidate name,
+actual content SHA-256, bounded size, product configuration policy, disabled
+automatic approvals, and literal-loopback provider endpoint. Missing or
+corrupt current settings, untrusted backup names, aliases and partial reads
+never report a verified zero or a restorable backup. The output is only a
+bounded count and one of four explicit statuses; filenames, secrets, paths
+and previous configuration content remain private.
+
+**No restore action is implemented by M19D3A.** Real rollback requires a
+separate exact prior-version selection/provenance, current revision lease,
+human preview, crash-safe commit/retention, and fail-closed concurrent
+writer/rollback acceptance. The current UI explicitly labels restore as
+not enabled, even when backup bytes pass verification.
+
+### M19D3B — Controlled restore of a verified local model (review candidate)
+
+The native saved-model editor now offers a **Restore selected model** selector
+populated only from verified bounded previous versions. The operator must
+select an exact digest and approve a short-lived, single-use **RESTORE CONFIG**
+review. Both the current file revision and backup hash/policy are rechecked
+immediately before saving, and the restored loopback model must pass a fresh
+metadata preflight. No remote model selection is allowed.
+
+Restore changes *only* provider ID/model ID/local endpoint in the current
+settings. Current runtime parameters, daemon and Safety permissions are
+preserved and automatic approval remains disabled. The old current file is
+retained as a create-only previous version. Stale revisions, corrupt backups,
+concurrent modifications or failed verification refuse to restore; cancellation
+leaves both files untouched. No browser action can reach this path.
+
+No claim is made about adversarial OS-level compare-and-swap atomicity,
+full historical rollback, or physical operator-machine acceptance. Those
+remain release gates, along with signed release and M19E rollout.
+
+### M19D4 — Installed Operations & Settings acceptance (review candidate)
+
+The actual Windows-installed `operations-desktop` command must be exercised
+in disposable **fresh**, **synthetic loopback connected**, **offline** and
+**corrupt settings** scenarios. It may report a verified 0-task sample only
+when the bounded task source is complete, never when missing, truncated or
+saturated at the 100-record cap. No task IDs, raw paths, model identifiers,
+credentials, execution authority or task-control routes may appear.
+
+The native Operations screen labels disabled task-history and data-quality
+drill-downs with the action the operator must take: open the separate
+foreground dashboard. Browser viewer remains authenticated and read-only.
+Source proof covers the full installed CLI; desktop interaction and
+accessibility still require the M19E operator-machine walkthrough. Running
+on disposable Windows CI does not install on an actual operator computer.
+
+### M19E1 — Candidate provenance preflight (review candidate)
+
+The disposable Windows CI must independently verify that its unsigned package
+really corresponds to the checked-out exact Git SHA before installing it on
+the disposable runner. The read-only verifier checks the embedded product
+manifest against BUILD-EVIDENCE.json, pinned official Node 22.23.3 SHA-256,
+the launcher and product CLI hash declarations, ZIP and unsigned installer
+digests, and the packaged regular-file count. It rejects symlinked package
+entries, any mismatch, an unsafe manifest claim, or an unknown/invalid
+commit. The provenance check runs **before** CI installation.
+
+The verification report is intentionally sanitized and says
+`releaseAuthorized: false`, `signed: false`, and
+`installationPerformed: false`. It does not publish artifacts, start
+models/tasks, or install on the operator workstation.
+
+This is **not** complete release provenance: a dependency SBOM, full
+payload file-hash inventory, reproducible independent rebuild comparison,
+clean-machine update/rollback and human Windows/Linux acceptance remain
+open. M19E1 cannot be interpreted as signing or production approval.
+
+### M19E2 — Runtime dependency SBOM and complete product file inventory (review candidate)
+
+The disposable Windows artifact workflow now produces npm's **CycloneDX**
+SBOM from the checked-out versioned source lockfile, explicitly omitting dev
+dependencies. A separate verifier reads the actual installed consumer
+`app/package-lock.json` and refuses the candidate when any installed
+runtime dependency name/version is absent from the SBOM. It then hashes every
+regular file in the installed Windows product bundle (not just the three
+M19E1 core binaries) and records a deterministic, sorted manifest with SHA-256
+and byte lengths.
+
+The source Git SHA, bundle manifest, build evidence, runtime dependency
+coverage, and SBOM digest must agree; symlinks, aliases, mismatched files,
+unknown or malformed dependencies, and outdated manifests fail closed.
+The SBOM and inventory are CI review artifacts only, not public releases or
+authorization to install on an operator workstation. This proves **build
+inventory consistency**, not cryptographic signing, reproducible independent
+rebuilds or third-party package vulnerability-free status.
+
+### M19E3A — Disposable Windows lifecycle and upgrade refusal (review candidate)
+
+The hosted Windows acceptance suite now tests an occupied-target refusal
+**before** the real fresh installation, validates a second-install refusal
+without modifying installed binary hashes, and checks user-owned configuration,
+registry, secret-reference and task-history placeholders against exact
+SHA-256 evidence through uninstall. The script refuses to operate outside
+a GitHub-hosted Windows runner, rejects existing user state, and does not
+print paths or file contents. Full source/packaged candidate provenance,
+browser checks and settings/Safety tests remain separate acceptance gates.
+
+**Upgrade remains unsupported:** current NSIS intentionally rejects nonempty
+targets. Binary rollback is not implemented or tested by this slice.
+M19D3B model-connection recovery must never be mistaken for product
+binary rollback. Independent transactional update/rollback design, clean VM
+real-model work, human accessibility review, signing, Linux support and M18F
+release authority remain pending.
+
+### M19E3B — Binary upgrade/rollback design rehearsal (review candidate)
+
+A pure in-memory candidate assessment and fault-transition simulation maps
+the necessary Windows **upgrade** prerequisites without performing an upgrade.
+The shipped unsigned installer still **refuses existing targets**. Candidate
+source revision, installed product hash, version increase, exact signed
+candidate and trusted signer, runtime SBOM/whole-bundle inventory, immutable
+prior product snapshot, separate user-data integrity, no active viewer/writer,
+explicit owner consent and independent M18F release approval are all required
+before a real implementation may even be reviewed.
+
+The model always returns `upgradeAvailable: false`,
+`rollbackAvailable: false`, `releaseAuthorized: false` and
+`grantsAuthority: false`. Even externally asserted perfect evidence only
+advances to *independent implementation review*, never executable authority.
+Fault rehearsal describes discard-before-switch vs restoring owned binaries
+after an interrupted switch; it cannot do either action in the OS.
+Any missing immutable prior snapshot requires manual recovery review.
+
+Actual transactional update code, process lease barriers, locked-file behavior,
+snapshot durability, crash recovery, Windows platform signing, independent
+human review and Linux compatibility are still **pending**.
+
+### M19E4A — Installed real-model pilot evidence gate (review candidate)
+
+A non-executing and non-installing evidence assessor enumerates the real
+Windows end-to-end pilot obligations: same exact candidate throughout the
+installed manifest and runtime, independently checked provenance/SBOM/hashes,
+**actually running** literal-loopback llama.cpp, advertised model alias and
+harmless answer, a separately approved small Cline task in a disposable
+workspace, independent validation/diff safety, reviewable task history,
+foreground stop/port release, and user-owned data preservation after uninstall.
+
+The code distinguishes actual operator observations from synthetic CI
+fixtures. Missing, failed, contradictory, or synthetic-only claims block the
+pilot. **Even all-positive unverified JSON never becomes a passing pilot or
+release approval**: the most it can indicate is "ready for independent human
+review." Raw paths, prompt text, task IDs, outputs and secrets are excluded
+from public receipts. The operator still has to perform the real pilot using
+the installed application and review actual local evidence.
+
+Task execution requires *separate explicit approval* and existing trusted
+Safety/workspace/lease boundaries. M19E4A adds no task-launch or browser
+mutation API and never installs or starts a local model. Full live Cline
+acceptance remains **not run** until actual machine evidence and human review.
+
+### M19E4B — Installed native accessibility baseline (review candidate)
+
+All seven native forms have meaningful keyboard and screen-reader control
+names, descriptions and Escape-to-close dialog behavior. The compiled Windows
+launcher supports an **offline-only** `--accessibility-self-check` argument:
+it constructs/disposes the actual controls without displaying a form or
+starting any viewer, model, Cline task, daemon or installer. Hosted disposable
+Windows acceptance executes this check from the installed binary.
+
+This is a basic automated accessibility contract, NOT human approval, WCAG
+certification, real screen-reader testing, display scaling or high-contrast
+review. Those remain explicit release blockers.
+
+### M19E4C — Explicit native localhost inference test (review candidate)
+
+After a successful model metadata check, the Windows connection screen now
+enables a separate **Test inference** button. It sends one fixed, harmless,
+12-token-max chat-completion request to the selected strict literal-loopback
+HTTP /v1 model endpoint with a 20-second network timeout, no redirects,
+credentials, or arbitrary prompt. The installed CLI returns only a bounded
+status and no raw model text, task identity, secrets or private files.
+
+This is deliberate, *user-triggered inference*, not a setup side effect.
+It neither starts a local model nor starts a Cline task, daemon, installer
+or viewer. A synthetic loopback service in disposable Windows CI validates
+the installed CLI and its failure boundaries, but cannot prove a real
+llama.cpp response. The independently witnessed real-model pilot remains
+pending under M19E4A.
+
+### M19E4D — Revision-bound saved model inference (review candidate)
+
+The native Edit saved model window offers an explicit Test saved model action
+only while its visible provider/model/endpoint match a loaded saved revision.
+The private installed CLI reads only fixed user-local config, rejects stale
+revisions, rechecks the revision after the harmless bounded inference, and
+returns no model output. No model/task is started or settings saved. Actual
+llama.cpp pilot acceptance remains separately pending.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.

@@ -46,6 +46,20 @@ internal sealed class RegisterWorkspaceForm : Form
         Width = 850; Height = 800;
         MinimumSize = new Size(670, 610);
         StartPosition = FormStartPosition.CenterParent;
+        CancelButton = close;
+        NativeAccessibility.Name(projects, "Existing projects", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(displayName, "Workspace name", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(rootPath, "Workspace folder", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(profile, "Worker profile ID", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(maxFiles, "Maximum changed files", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(allow, "Safety allowed file patterns", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(protect, "Safety protected file patterns", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(validate, "Safety validation commands", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(refresh, "Refresh projects", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(browse, "Browse folder", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(register, "Review workspace and Safety", "Keyboard and screen-reader control. This action requires separate confirmation.");
+        NativeAccessibility.Name(close, "Close workspace registration", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        status.AccessibleName = "Workspace registration status";
         var table = new TableLayoutPanel
         { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 2, RowCount = 12 };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));

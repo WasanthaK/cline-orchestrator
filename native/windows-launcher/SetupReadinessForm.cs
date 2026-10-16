@@ -38,6 +38,11 @@ internal sealed class SetupReadinessForm : Form
         Height = 540;
         MinimumSize = new Size(620, 490);
         StartPosition = FormStartPosition.CenterParent;
+        CancelButton = close;
+        NativeAccessibility.Name(refresh, "Refresh setup status", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(close, "Close setup status", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        headline.AccessibleName = "Local setup headline";
+        counts.AccessibleName = "Project and workspace counts";
 
         var body = new TableLayoutPanel
         {
@@ -79,6 +84,13 @@ internal sealed class SetupReadinessForm : Form
                 Text = actionLabels[i], AutoSize = false, Dock = DockStyle.Fill,
                 Margin = new Padding(3, 15, 3, 15),
             };
+            NativeAccessibility.Name(setup[i], i switch {
+                0 => "Connect local model",
+                1 => "Review model settings",
+                2 => "Register project",
+                _ => "Register safe workspace",
+            }, "Opens a separate confirmed setup step; no task permission.");
+            states[i].AccessibleName = labels[i] + " readiness";
             body.Controls.Add(label, 0, i);
             body.Controls.Add(states[i], 1, i);
             body.Controls.Add(setup[i], 2, i);
@@ -92,7 +104,7 @@ internal sealed class SetupReadinessForm : Form
         };
         setup[1].Click += async (_, _) =>
         {
-            using var dialog = new LocalModelConnectionForm();
+            using var dialog = new EditSavedSettingsForm();
             dialog.ShowDialog(this);
             await RefreshAsync();
         };

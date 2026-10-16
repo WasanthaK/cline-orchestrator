@@ -5,6 +5,8 @@ import { scheduleManagedRunExitDiagnostic } from "./managed-exit-diagnostics.js"
 import { exportOfflineSetupView } from "./offline-setup-view-export.js";
 import { startInstalledPassiveViewer } from "./installed-passive-viewer.js";
 import { checkLocalProvider } from "./local-provider-check.js";
+import { testLocalInference } from "./native-local-inference.js";
+import { testSavedModel } from "./native-saved-model-probe.js";
 import { saveNativeProviderConfig } from "./native-provider-config-save.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
@@ -26,6 +28,14 @@ import { runRegistrationSetup, RegistrationSetupError, type RegistrationSetupRev
 import { createNativeProject, type NativeProjectReviewV1 } from "./native-project-setup.js";
 import { listNativeProjects, registerNativeWorkspace, type NativeWorkspaceReviewV1 } from "./native-workspace-setup.js";
 import { inspectNativeSetupReadiness } from "./native-setup-readiness.js";
+import { projectNativeOperations } from "./native-operations.js";
+import { inspectNativeSettings, updateNativeSettings, type NativeSettingsReviewV1 } from "./native-settings-update.js";
+import { inspectNativeSettingsRecovery } from "./native-settings-recovery.js";
+import { inspectNativeRestoreChoices, restoreNativeModelSelection, type NativeRestoreReviewV1 } from "./native-settings-restore.js";
+import { MachineOrchestratorService } from "./machine-orchestrator.js";
+import { SafetyPlanService } from "./safety-plan.js";
+import { createMachineDashboardSnapshotReader } from "./machine-dashboard-snapshot-reader.js";
+import { createInstalledViewerMachineReader } from "./installed-passive-viewer.js";
 import { runDaemonStartSetup, type DaemonStartSetupReview } from "./daemon-start-setup.js";
 import { productExecutionEnvironment } from "./product-execution-config.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
@@ -40,10 +50,18 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "setup-view",
     "viewer",
     "check-provider",
+    "test-local-inference",
+    "test-saved-model-desktop",
     "setup-config-desktop",
     "setup-project-desktop",
     "list-projects-desktop",
     "readiness-desktop",
+    "operations-desktop",
+    "settings-desktop",
+    "recovery-desktop",
+    "restore-choices-desktop",
+    "restore-model-desktop",
+    "update-settings-desktop",
     "setup-workspace-desktop",
     "setup-config",
     "setup-project",
@@ -70,10 +88,18 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 export type ProductCliRoute =
   | { kind: "viewer" }
   | { kind: "provider_check"; providerId: string; modelId: string; baseUrl: string }
+  | { kind: "local_inference_probe"; providerId: string; modelId: string; baseUrl: string }
+  | { kind: "desktop_saved_model_probe"; expectedRevision: string }
   | { kind: "desktop_config_save"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_project_create"; displayName: string }
   | { kind: "desktop_project_list" }
   | { kind: "desktop_readiness" }
+  | { kind: "desktop_operations" }
+  | { kind: "desktop_settings_read" }
+  | { kind: "desktop_recovery" }
+  | { kind: "desktop_restore_choices" }
+  | { kind: "desktop_model_restore"; expectedRevision: string; backupRevision: string }
+  | { kind: "desktop_settings_update"; expectedRevision: string; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_workspace_create" }
   | { kind: "setup_view"; workspace: string; outputFile: string; configPath?: string }
   | { kind: "setup_start"; workspaceId: string; configPath?: string }
@@ -142,10 +168,17 @@ export function productCliUsage(): string {
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
     "  cline-orchestrator viewer  # explicit foreground, localhost-only read-only dashboard",
     "  cline-orchestrator check-provider <openai-compatible> <model-id> <http://127.0.0.1:port/v1>  # metadata-only loopback preflight",
+    "  cline-orchestrator test-local-inference <provider> <model-id> <loopback-url>  # explicit fixed harmless prompt; no task",
     "  cline-orchestrator setup-config-desktop <provider> <model> <loopback-url>  # Windows local UI, confirmed create-only",
     "  cline-orchestrator setup-project-desktop <project-name>  # native Windows explicit local registry confirmation",
     "  cline-orchestrator list-projects-desktop  # read-only local project names for native selector",
     "  cline-orchestrator readiness-desktop  # read-only local setup snapshot and loopback model metadata check",
+    "  cline-orchestrator operations-desktop  # read-only local setup and bounded task visibility",
+    "  cline-orchestrator settings-desktop  # private native saved provider review",
+    "  cline-orchestrator recovery-desktop  # verify previous versions without restoring anything",
+    "  cline-orchestrator restore-choices-desktop  # read-only verified local-model snapshots",
+    "  cline-orchestrator restore-model-desktop <current-sha256> <backup-sha256>  # explicit native confirmed restore",
+    "  cline-orchestrator update-settings-desktop <revision> <provider> <model> <loopback-url>  # confirmed revision update",
     "  cline-orchestrator setup-workspace-desktop  # native Windows confirmed workspace/Safety registration over private stdio",
     "  cline-orchestrator [--config <file>] setup-view <workspace> <new-file.html>  # passive offline snapshot",
     "  cline-orchestrator setup-config <input.json> <new-output.json>  # interactive config creation",
@@ -193,6 +226,14 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
     if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "provider_check", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
   }
+  if (command === "test-saved-model-desktop") {
+    if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_saved_model_probe", expectedRevision: rest[0]! };
+  }
+  if (command === "test-local-inference") {
+    if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "local_inference_probe", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
+  }
   if (command === "setup-config-desktop") {
     if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "desktop_config_save", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
@@ -201,9 +242,26 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
     if (rest.length !== 1) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "desktop_project_create", displayName: rest[0]! };
   }
-  if (command === "readiness-desktop") {
+  if (command === "settings-desktop" || command === "recovery-desktop") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
-    return { kind: "desktop_readiness" };
+    return { kind: command === "settings-desktop" ? "desktop_settings_read" : "desktop_recovery" };
+  }
+  if (command === "restore-choices-desktop") {
+    if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_restore_choices" };
+  }
+  if (command === "restore-model-desktop") {
+    if (rest.length !== 2) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_model_restore", expectedRevision: rest[0]!, backupRevision: rest[1]! };
+  }
+  if (command === "update-settings-desktop") {
+    if (rest.length !== 4) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "desktop_settings_update", expectedRevision: rest[0]!,
+      providerId: rest[1]!, modelId: rest[2]!, baseUrl: rest[3]! };
+  }
+  if (command === "readiness-desktop" || command === "operations-desktop") {
+    if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: command === "readiness-desktop" ? "desktop_readiness" : "desktop_operations" };
   }
   if (command === "list-projects-desktop" || command === "setup-workspace-desktop") {
     if (rest.length !== 0) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -470,15 +528,85 @@ export async function runProductCli(
   deps: ProductCliDependencies = defaultDependencies(),
 ): Promise<ProductCliNativeResult | undefined> {
   const route = routeProductCli(argv);
-  if (route.kind === "desktop_readiness") {
+  if (route.kind === "desktop_readiness" || route.kind === "desktop_operations") {
     const stateRoot = deps.env.LOCALAPPDATA;
     if (process.platform !== "win32" || typeof stateRoot !== "string"
       || !path.win32.isAbsolute(stateRoot)) {
       throw new ProductCliError("Windows local state is unavailable", "interactive_required");
     }
-    const snapshot = await inspectNativeSetupReadiness(stateRoot,
-      deps.registrationRegistry ?? new WorkspaceRegistry());
-    process.stdout.write(JSON.stringify(snapshot) + "\n");
+    const registry = deps.registrationRegistry ?? new WorkspaceRegistry();
+    const snapshot = await inspectNativeSetupReadiness(stateRoot, registry);
+    if (route.kind === "desktop_readiness") {
+      process.stdout.write(JSON.stringify(snapshot) + "\n");
+      return undefined;
+    }
+    // Only the existing passive viewer's five observation capabilities are
+    // offered to the native aggregation path. No execution profile is resolved.
+    const machine = new MachineOrchestratorService(registry, new SafetyPlanService(registry),
+      () => { throw new Error("Native operations cannot resolve a worker"); });
+    try {
+      const reader = createMachineDashboardSnapshotReader(createInstalledViewerMachineReader(machine));
+      let visual;
+      try { visual = await reader.readSnapshot(); }
+      catch { /* Failed task history is unknown, not an empty healthy result. */ }
+      process.stdout.write(JSON.stringify(projectNativeOperations(snapshot, visual)) + "\n");
+    } finally { await machine.close(); }
+    return undefined;
+  }
+  if (route.kind === "desktop_saved_model_probe" || route.kind === "desktop_settings_read" || route.kind === "desktop_settings_update"
+    || route.kind === "desktop_recovery" || route.kind === "desktop_restore_choices"
+    || route.kind === "desktop_model_restore") {
+    const stateRoot = deps.env.LOCALAPPDATA;
+    if (process.platform !== "win32" || typeof stateRoot !== "string"
+      || !path.win32.isAbsolute(stateRoot)) {
+      throw new ProductCliError("Native settings require Windows local user state", "interactive_required");
+    }
+    const directory = path.win32.join(stateRoot, "ClineOrchestrator");
+    if (route.kind === "desktop_saved_model_probe") {
+      process.stdout.write(JSON.stringify(await testSavedModel(directory, route.expectedRevision)) + "\n");
+      return undefined;
+    }
+    if (route.kind === "desktop_settings_read") {
+      process.stdout.write(JSON.stringify(await inspectNativeSettings(directory)) + "\n");
+      return undefined;
+    }
+    if (route.kind === "desktop_recovery") {
+      process.stdout.write(JSON.stringify(await inspectNativeSettingsRecovery(directory)) + "\n");
+      return undefined;
+    }
+    if (route.kind === "desktop_restore_choices") {
+      process.stdout.write(JSON.stringify(await inspectNativeRestoreChoices(directory)) + "\n");
+      return undefined;
+    }
+    if (route.kind === "desktop_model_restore") {
+      const confirmRestore = async (review: NativeRestoreReviewV1) => {
+        process.stdout.write(JSON.stringify(review) + "\n");
+        const terminal = createInterface({ input: process.stdin, crlfDelay: Infinity });
+        try {
+          return await terminal.question("", { signal: AbortSignal.timeout(55_000) }) === "RESTORE CONFIG";
+        } catch { return false; }
+        finally { terminal.close(); }
+      };
+      const result = await restoreNativeModelSelection({ stateDirectory: directory,
+        expectedRevision: route.expectedRevision, backupRevision: route.backupRevision }, confirmRestore);
+      process.stdout.write(JSON.stringify(result) + "\n");
+      return undefined;
+    }
+    // One exact private host confirmation; no browser access or config path args.
+    const confirm = async (review: NativeSettingsReviewV1) => {
+      process.stdout.write(JSON.stringify(review) + "\n");
+      const terminal = createInterface({ input: process.stdin, crlfDelay: Infinity });
+      try {
+        const phrase = await terminal.question("", { signal: AbortSignal.timeout(55_000) });
+        return phrase === "UPDATE CONFIG";
+      } catch { return false; }
+      finally { terminal.close(); }
+    };
+    const result = await updateNativeSettings({
+      stateDirectory: directory, expectedRevision: route.expectedRevision,
+      selection: { providerId: route.providerId, modelId: route.modelId, baseUrl: route.baseUrl },
+    }, confirm);
+    process.stdout.write(JSON.stringify(result) + "\n");
     return undefined;
   }
   if (route.kind === "desktop_project_list" || route.kind === "desktop_workspace_create") {
@@ -566,6 +694,11 @@ export async function runProductCli(
   if (route.kind === "provider_check") {
     const result = await checkLocalProvider(route);
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return undefined;
+  }
+  if (route.kind === "local_inference_probe") {
+    const result = await testLocalInference(route);
+    process.stdout.write(JSON.stringify(result) + "\n");
     return undefined;
   }
   if (route.kind === "viewer") {

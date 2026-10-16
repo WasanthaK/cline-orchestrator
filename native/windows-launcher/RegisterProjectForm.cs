@@ -29,6 +29,13 @@ internal sealed class RegisterProjectForm : Form
         Width = 620; Height = 330;
         MinimumSize = new Size(540, 310);
         StartPosition = FormStartPosition.CenterParent;
+        CancelButton = close;
+        NativeAccessibility.Name(name, "Project name", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(projectId, "Registered project identifier", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(create, "Review project registration", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(copyId, "Copy project ID", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(close, "Close project registration", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        status.AccessibleName = "Project registration status";
         var table = new TableLayoutPanel
         {
             Dock = DockStyle.Fill, Padding = new Padding(18),

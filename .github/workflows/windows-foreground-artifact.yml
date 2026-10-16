@@ -10,6 +10,19 @@ on:
       - "scripts/verify-native-project-registration.mjs"
       - "scripts/verify-native-workspace-registration.mjs"
       - "scripts/verify-native-setup-readiness.mjs"
+      - "scripts/verify-native-operations.mjs"
+      - "scripts/verify-windows-foreground-evidence.mjs"
+      - "scripts/verify-windows-foreground-evidence.d.mts"
+      - "scripts/windows-candidate-inventory.mjs"
+      - "scripts/verify-windows-install-lifecycle.ps1"
+      - "scripts/windows-candidate-inventory.d.mts"
+      - "src/windows-candidate-inventory.test.ts"
+      - "src/windows-foreground-evidence.test.ts"
+      - "scripts/verify-native-settings-update.mjs"
+      - "scripts/verify-native-settings-recovery.mjs"
+      - "scripts/verify-native-settings-restore.mjs"
+      - "scripts/verify-native-local-inference.mjs"
+      - "scripts/verify-native-saved-model-inference.mjs"
       - ".github/workflows/windows-foreground-artifact.yml"
   workflow_dispatch:
 
@@ -32,6 +45,27 @@ jobs:
         shell: pwsh
         run: |
           & ./scripts/build-windows-foreground-bundle.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'm19b-output') -Installer
+      - name: Check exact-commit unsigned candidate provenance (no installation)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'm19b-output'
+          & node ./scripts/verify-windows-foreground-evidence.mjs $out $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'M19E1 source provenance and artifact hashes were not verified' }
+      - name: Generate dependency SBOM and verify full installed file inventory (disposable only)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'm19b-output'
+          $target = Join-Path $out 'DEPENDENCY-SBOM.cdx.json'
+          # Derive CycloneDX from actual packaged runtime package.json files
+          # and the consumer lockfile, rather than the source dev tree.
+          & node ./scripts/windows-candidate-inventory.mjs sbom $out $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Installed runtime CycloneDX creation failed' }
+          & node ./scripts/windows-candidate-inventory.mjs create $out $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate inventory creation failed' }
+          & node ./scripts/windows-candidate-inventory.mjs verify $out $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate inventory or runtime SBOM verification failed' }
       - name: Smoke installed user executable and external data preservation
         shell: pwsh
         run: |
@@ -41,6 +75,10 @@ jobs:
           if (!(Test-Path -LiteralPath $setup)) { throw 'Unsigned installer missing' }
           $prefix = Join-Path $env:LOCALAPPDATA 'Programs\ClineOrchestrator'
           if (Test-Path -LiteralPath $prefix) { throw 'Disposable installer target is not empty' }
+          # M19E3A: verify negative fresh install first and protect canonical
+          # external user state before any product installation.
+          & ./scripts/verify-windows-install-lifecycle.ps1 -Phase BeforeInstall -InstallerPath $setup -InstallPrefix $prefix
+          if (-not $?) { throw 'M19E3A pre-install refusal/ownership proof failed' }
           $external = Join-Path $env:RUNNER_TEMP 'm19b-user-data-sentinel'
           [System.IO.File]::WriteAllText($external,'PRESERVE_M19B_USER_STATE')
           $before = (Get-FileHash -Algorithm SHA256 -LiteralPath $external).Hash
@@ -52,6 +90,10 @@ jobs:
           if (!(Test-Path -LiteralPath $launcher) -or !(Test-Path -LiteralPath $node) -or !(Test-Path -LiteralPath $entry)) {
             throw 'Native launcher or bundled product runtime missing'
           }
+          # M19E4B actual installed WinForms names and Escape navigation;
+          # this self-check never shows a window or starts the viewer.
+          $access = Start-Process -FilePath $launcher -ArgumentList '--accessibility-self-check' -Wait -PassThru
+          if ($access.ExitCode -ne 0) { throw "Installed native accessibility contract rejected (bounded diagnostic $($access.ExitCode))" }
           $version = & $node --version
           if ($version.Trim() -ne 'v22.23.3') { throw 'Unexpected bundled Node version' }
           $receipt = & $node $entry config | Out-String | ConvertFrom-Json
@@ -62,6 +104,14 @@ jobs:
           # create-only config; no service, task, external model or new permissions.
           & node ./scripts/verify-native-desktop-config.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19C2 installed configuration smoke failed' }
+          # M19E4C: explicit native harmless inference with mock loopback,
+          # testing the actual installed Node/product CLI only.
+          & node ./scripts/verify-native-local-inference.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19E4C installed local inference smoke failed' }
+          # M19E4D: fixed saved config, exact revision and native read-only
+          # inference, synthetic server only, never a real task.
+          & node ./scripts/verify-native-saved-model-inference.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19E4D installed saved-model acceptance failed' }
           # M19C2B1: actual installed CLI, private project review and user
           # registry create/cancel; no workspace, model invocation or task.
           & node ./scripts/verify-native-project-registration.mjs $node $entry
@@ -74,6 +124,22 @@ jobs:
           # isolated user-state folder and a disposable synthetic loopback LLM.
           & node ./scripts/verify-native-setup-readiness.mjs $node $entry
           if ($LASTEXITCODE -ne 0) { throw 'M19C3 installed readiness acceptance failed' }
+          # M19D4: directly prove installed native operations/status UX is
+          # bounded, sanitized, read-only and fail-closed in isolated state.
+          & node ./scripts/verify-native-operations.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19D4 installed operations acceptance failed' }
+          # M19D2: private revision-checked confirmed local config update.
+          & node ./scripts/verify-native-settings-update.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19D2 installed settings update acceptance failed' }
+          # M19D3A: read-only recovery visibility with exact backup digest proofs.
+          & node ./scripts/verify-native-settings-recovery.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19D3A installed recovery inspection failed' }
+          # M19D3B: consent-bound model restoration with selected backup digest and stale refusal.
+          & node ./scripts/verify-native-settings-restore.mjs $node $entry
+          if ($LASTEXITCODE -ne 0) { throw 'M19D3B installed model restore acceptance failed' }
+          # M19E3A: second install is a refusal, not an implicit upgrade.
+          & ./scripts/verify-windows-install-lifecycle.ps1 -Phase AfterInstall -InstallerPath $setup -InstallPrefix $prefix
+          if (-not $?) { throw 'M19E3A occupied-install refusal proof failed' }
           $uninstaller = Join-Path $prefix 'Uninstall.exe'
           if (!(Test-Path -LiteralPath $uninstaller)) { throw 'Uninstaller missing' }
           $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
@@ -82,6 +148,8 @@ jobs:
           if ((Get-FileHash -Algorithm SHA256 -LiteralPath $external).Hash -ne $before) {
             throw 'External user data modified by install or removal'
           }
+          & ./scripts/verify-windows-install-lifecycle.ps1 -Phase AfterUninstall -InstallerPath $setup -InstallPrefix $prefix
+          if (-not $?) { throw 'M19E3A uninstall user-state preservation proof failed' }
           Write-Output 'M19B installed artifact/uninstall/sentinel proof passed; no service, no model, no task.'
       - name: Upload unsigned review artifacts
         if: success()
@@ -92,4 +160,6 @@ jobs:
             ${{ runner.temp }}/m19b-output/ClineOrchestrator-Setup-unsigned.exe
             ${{ runner.temp }}/m19b-output/ClineOrchestrator-win-x64-portable.zip
             ${{ runner.temp }}/m19b-output/BUILD-EVIDENCE.json
+            ${{ runner.temp }}/m19b-output/DEPENDENCY-SBOM.cdx.json
+            ${{ runner.temp }}/m19b-output/BUNDLE-INVENTORY.json
           retention-days: 14

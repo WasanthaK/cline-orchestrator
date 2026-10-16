@@ -10,11 +10,19 @@ namespace ClineOrchestrator.Launcher;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         if (!OperatingSystem.IsWindows()) return;
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        // No message loop, viewer, model, daemon, task or file changes.
+        if (args.Length == 1 && args[0] == "--accessibility-self-check")
+        {
+            try { Environment.ExitCode = NativeAccessibility.SelfCheck(); }
+            catch { Environment.ExitCode = 99; }
+            return;
+        }
+        if (args.Length != 0) return;
         Application.Run(new ViewerLauncherForm());
     }
 }
@@ -40,6 +48,8 @@ internal sealed class ViewerLauncherForm : Form
     private readonly Button copyCode = new() { Text = "Copy access code", Enabled = false, AutoSize = true };
     private readonly Button openDashboard = new() { Text = "Open dashboard", Enabled = false, AutoSize = true };
     private readonly Button readiness = new() { Text = "Setup status", AutoSize = true };
+    private readonly Button operations = new() { Text = "Operations & settings", AutoSize = true };
+    private readonly Button editSettings = new() { Text = "Edit saved model", AutoSize = true };
     private readonly Button connectModel = new() { Text = "Connect local model", AutoSize = true };
     private readonly Button registerProject = new() { Text = "Register project", AutoSize = true };
     private readonly Button registerWorkspace = new() { Text = "Register workspace", AutoSize = true };
@@ -57,6 +67,17 @@ internal sealed class ViewerLauncherForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
+        CancelButton = exit;
+        NativeAccessibility.Name(accessCode, "Viewer access code", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(copyCode, "Copy access code", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(openDashboard, "Open dashboard", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(readiness, "Setup status", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(operations, "Operations and settings", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(editSettings, "Edit saved model", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(connectModel, "Connect local model", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(registerProject, "Register project", "Keyboard and screen-reader control. This action requires separate confirmation.");
+        NativeAccessibility.Name(registerWorkspace, "Register workspace", "Keyboard and screen-reader control. This action requires separate confirmation.");
+        NativeAccessibility.Name(exit, "Stop viewer and close", "Keyboard and screen-reader control. No task authority is granted by this control.");
 
         var heading = new Label
         {
@@ -77,6 +98,8 @@ internal sealed class ViewerLauncherForm : Form
         };
         actions.Controls.Add(copyCode);
         actions.Controls.Add(openDashboard);
+        actions.Controls.Add(operations);
+        actions.Controls.Add(editSettings);
         actions.Controls.Add(readiness);
         actions.Controls.Add(connectModel);
         actions.Controls.Add(registerProject);
@@ -105,6 +128,18 @@ internal sealed class ViewerLauncherForm : Form
             }
             catch { status.Text = "Could not open your browser. Open http://127.0.0.1:4321/viewer manually."; }
         };
+        operations.Click += (_, _) =>
+        {
+            using var dialog = new OperationsCenterForm(
+                () => !stopping && viewer is { HasExited: false },
+                section => OpenViewerSection(section));
+            dialog.ShowDialog(this);
+        };
+        editSettings.Click += (_, _) =>
+        {
+            using var dialog = new EditSavedSettingsForm();
+            dialog.ShowDialog(this);
+        };
         readiness.Click += (_, _) =>
         {
             using var dialog = new SetupReadinessForm();
@@ -128,6 +163,14 @@ internal sealed class ViewerLauncherForm : Form
         exit.Click += (_, _) => Close();
         Shown += async (_, _) => await StartViewerAsync();
         FormClosing += (_, _) => StopOwnedViewer();
+    }
+
+    private void OpenViewerSection(string section)
+    {
+        if (stopping || viewer is null || viewer.HasExited) return;
+        if (section is not ("tasks" or "sources")) return;
+        try { Process.Start(new ProcessStartInfo(ViewerUrl + "#" + section) { UseShellExecute = true }); }
+        catch { status.Text = "Could not open task details in the local browser."; }
     }
 
     private async Task StartViewerAsync()
