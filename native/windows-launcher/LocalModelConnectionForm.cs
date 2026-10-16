@@ -18,6 +18,7 @@ internal sealed class LocalModelConnectionForm : Form
     private readonly Label status = new() { AutoSize = false, Dock = DockStyle.Fill, Text = "No connection checked yet." };
     private readonly ListBox models = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly Button check = new() { Text = "Check connection", AutoSize = true };
+    private readonly Button probe = new() { Text = "Test inference", Enabled = false, AutoSize = true };
     private readonly Button save = new() { Text = "Save verified settings", Enabled = false, AutoSize = true };
     private string? verifiedSelection;
     private readonly Button close = new() { Text = "Close", AutoSize = true };
@@ -36,6 +37,7 @@ internal sealed class LocalModelConnectionForm : Form
         NativeAccessibility.Name(endpoint, "Local model API URL", "Keyboard and screen-reader control. No task authority is granted by this control.");
         NativeAccessibility.Name(models, "Discovered local models", "Keyboard and screen-reader control. No task authority is granted by this control.");
         NativeAccessibility.Name(check, "Check model connection", "Keyboard and screen-reader control. No task authority is granted by this control.");
+        NativeAccessibility.Name(probe, "Test inference", "Sends one fixed harmless prompt to the verified loopback model. Never runs Cline.");
         NativeAccessibility.Name(save, "Save verified settings", "Keyboard and screen-reader control. This action requires separate confirmation.");
         NativeAccessibility.Name(close, "Close model connection", "Keyboard and screen-reader control. No task authority is granted by this control.");
         status.AccessibleName = "Model connection status";
@@ -83,6 +85,7 @@ internal sealed class LocalModelConnectionForm : Form
 
         var actions = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, Dock = DockStyle.Fill };
         actions.Controls.Add(check);
+        actions.Controls.Add(probe);
         actions.Controls.Add(save);
         actions.Controls.Add(close);
         table.Controls.Add(actions, 0, 7);
@@ -98,6 +101,7 @@ internal sealed class LocalModelConnectionForm : Form
         Controls.Add(table);
 
         check.Click += async (_, _) => await CheckConnectionAsync();
+        probe.Click += async (_, _) => await TestInferenceAsync();
         save.Click += async (_, _) => await SaveVerifiedSettingsAsync();
         provider.SelectedIndexChanged += (_, _) => InvalidateVerification();
         model.TextChanged += (_, _) => InvalidateVerification();
@@ -119,6 +123,7 @@ internal sealed class LocalModelConnectionForm : Form
     {
         verifiedSelection = null;
         save.Enabled = false;
+        probe.Enabled = false;
     }
 
     private async Task CheckConnectionAsync()
@@ -190,6 +195,7 @@ internal sealed class LocalModelConnectionForm : Form
                 {
                     verifiedSelection = CurrentSelection();
                     save.Enabled = true;
+                    probe.Enabled = true;
                 }
                 status.Text = ok ? "Model verified. Choose Save verified settings to review a create-only configuration."
                     : code == "model_not_found" ? "Server reached, but selected model was not reported. Check the model ID."
@@ -216,6 +222,82 @@ internal sealed class LocalModelConnectionForm : Form
                 provider.Enabled = true;
                 model.Enabled = true;
                 endpoint.Enabled = true;
+            }
+        }
+    }
+
+    private async Task TestInferenceAsync()
+    {
+        if (checking || verifiedSelection is null || verifiedSelection != CurrentSelection()) return;
+        checking = true;
+        check.Enabled = false; probe.Enabled = false; save.Enabled = false;
+        provider.Enabled = false; model.Enabled = false; endpoint.Enabled = false;
+        status.Text = "Sending one harmless test prompt to the local model...";
+        try
+        {
+            var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+            var node = Path.Combine(root, "runtime", "node.exe");
+            var entry = Path.Combine(root, "app", "node_modules",
+                "cline-orchestrator", "dist", "product-cli.js");
+            if (!File.Exists(node) || !File.Exists(entry)) throw new InvalidOperationException();
+            var psi = new ProcessStartInfo(node) {
+                UseShellExecute = false, CreateNoWindow = true,
+                WorkingDirectory = root, RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            foreach (string arg in new[] {
+                entry, "test-local-inference",
+                provider.SelectedIndex == 1 ? "ollama-openai" : "openai-compatible",
+                model.Text, endpoint.Text,
+            }) psi.ArgumentList.Add(arg);
+            foreach (string key in psi.Environment.Keys.Cast<string>().ToArray())
+                if (key.StartsWith("ORCH_", StringComparison.OrdinalIgnoreCase))
+                    psi.Environment.Remove(key);
+            using var child = Process.Start(psi) ?? throw new InvalidOperationException();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+            try
+            {
+                var output = child.StandardOutput.ReadToEndAsync(timeout.Token);
+                var error = child.StandardError.ReadToEndAsync(timeout.Token);
+                await child.WaitForExitAsync(timeout.Token);
+                var raw = await output; _ = await error;
+                if (child.ExitCode != 0 || raw.Length > 4096) throw new InvalidOperationException();
+                using var doc = JsonDocument.Parse(raw);
+                var result = doc.RootElement;
+                if (result.GetProperty("schemaVersion").GetInt32() != 1
+                    || result.GetProperty("command").GetString() != "test-local-inference"
+                    || result.GetProperty("grantsAuthority").GetBoolean()
+                    || result.GetProperty("configSaved").GetBoolean()
+                    || result.GetProperty("modelStarted").GetBoolean()
+                    || result.GetProperty("taskStarted").GetBoolean()
+                    || result.GetProperty("modelAuthenticityVerified").GetBoolean())
+                    throw new InvalidOperationException();
+                bool observed = result.GetProperty("inferenceResponseObserved").GetBoolean();
+                string? outcome = result.GetProperty("status").GetString();
+                if (observed != (outcome == "response_observed")) throw new InvalidOperationException();
+                status.Text = observed
+                    ? "A model response was observed on localhost. This is not a Cline task or real-model authenticity proof."
+                    : outcome == "metadata_not_ready"
+                        ? "Model metadata changed or the selected alias is unavailable. Check connection again."
+                    : outcome is "provider_unavailable" or "invalid_response"
+                        ? "No valid inference response received. Check that the local model is ready."
+                    : throw new InvalidOperationException();
+            }
+            catch {
+                try { if (!child.HasExited) child.Kill(entireProcessTree: true); } catch { }
+                throw;
+            }
+        }
+        catch { status.Text = "Inference test unavailable. No model or task was started by the app."; }
+        finally
+        {
+            if (!IsDisposed && !Disposing) {
+                checking = false;
+                check.Enabled = true; provider.Enabled = true;
+                model.Enabled = true; endpoint.Enabled = true;
+                bool selectionIsCurrent = verifiedSelection == CurrentSelection();
+                save.Enabled = selectionIsCurrent;
+                probe.Enabled = selectionIsCurrent;
             }
         }
     }

@@ -5,6 +5,7 @@ import { scheduleManagedRunExitDiagnostic } from "./managed-exit-diagnostics.js"
 import { exportOfflineSetupView } from "./offline-setup-view-export.js";
 import { startInstalledPassiveViewer } from "./installed-passive-viewer.js";
 import { checkLocalProvider } from "./local-provider-check.js";
+import { testLocalInference } from "./native-local-inference.js";
 import { saveNativeProviderConfig } from "./native-provider-config-save.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
@@ -48,6 +49,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
     "setup-view",
     "viewer",
     "check-provider",
+    "test-local-inference",
     "setup-config-desktop",
     "setup-project-desktop",
     "list-projects-desktop",
@@ -84,6 +86,7 @@ export const PRODUCT_CLI_CONTRACT = Object.freeze({
 export type ProductCliRoute =
   | { kind: "viewer" }
   | { kind: "provider_check"; providerId: string; modelId: string; baseUrl: string }
+  | { kind: "local_inference_probe"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_config_save"; providerId: string; modelId: string; baseUrl: string }
   | { kind: "desktop_project_create"; displayName: string }
   | { kind: "desktop_project_list" }
@@ -162,6 +165,7 @@ export function productCliUsage(): string {
     "  cline-orchestrator setup <workspace>        # read-only setup plan",
     "  cline-orchestrator viewer  # explicit foreground, localhost-only read-only dashboard",
     "  cline-orchestrator check-provider <openai-compatible> <model-id> <http://127.0.0.1:port/v1>  # metadata-only loopback preflight",
+    "  cline-orchestrator test-local-inference <provider> <model-id> <loopback-url>  # explicit fixed harmless prompt; no task",
     "  cline-orchestrator setup-config-desktop <provider> <model> <loopback-url>  # Windows local UI, confirmed create-only",
     "  cline-orchestrator setup-project-desktop <project-name>  # native Windows explicit local registry confirmation",
     "  cline-orchestrator list-projects-desktop  # read-only local project names for native selector",
@@ -218,6 +222,10 @@ export function routeProductCli(argv: string[]): ProductCliRoute {
   if (command === "check-provider") {
     if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
     return { kind: "provider_check", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
+  }
+  if (command === "test-local-inference") {
+    if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
+    return { kind: "local_inference_probe", providerId: rest[0]!, modelId: rest[1]!, baseUrl: rest[2]! };
   }
   if (command === "setup-config-desktop") {
     if (rest.length !== 3) throw new ProductCliError(productCliUsage(), "usage_invalid");
@@ -675,6 +683,11 @@ export async function runProductCli(
   if (route.kind === "provider_check") {
     const result = await checkLocalProvider(route);
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return undefined;
+  }
+  if (route.kind === "local_inference_probe") {
+    const result = await testLocalInference(route);
+    process.stdout.write(JSON.stringify(result) + "\n");
     return undefined;
   }
   if (route.kind === "viewer") {

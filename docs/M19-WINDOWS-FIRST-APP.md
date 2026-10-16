@@ -242,6 +242,22 @@ This is a basic automated accessibility contract, NOT human approval, WCAG
 certification, real screen-reader testing, display scaling or high-contrast
 review. Those remain explicit release blockers.
 
+### M19E4C — Explicit native localhost inference test (review candidate)
+
+After a successful model metadata check, the Windows connection screen now
+enables a separate **Test inference** button. It sends one fixed, harmless,
+12-token-max chat-completion request to the selected strict literal-loopback
+HTTP /v1 model endpoint with a 20-second network timeout, no redirects,
+credentials, or arbitrary prompt. The installed CLI returns only a bounded
+status and no raw model text, task identity, secrets or private files.
+
+This is deliberate, *user-triggered inference*, not a setup side effect.
+It neither starts a local model nor starts a Cline task, daemon, installer
+or viewer. A synthetic loopback service in disposable Windows CI validates
+the installed CLI and its failure boundaries, but cannot prove a real
+llama.cpp response. The independently witnessed real-model pilot remains
+pending under M19E4A.
+
 ### M19E — Candidate acceptance and wider OS coverage
 
 Exact SHA/build provenance, hash and dependency SBOM → isolated VM installation → guided settings → real local Qwen task → browser/task evidence → foreground exit → update/rollback proof → uninstall preserving external config, registry, secrets and history. Windows first; plan Linux packaging against equivalent no-service/local-only boundaries. Follow targeted local checks with one reviewed exact-head CI candidate per cohesive slice, not continuous speculative full test runs.
