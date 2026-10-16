@@ -234,3 +234,36 @@ app's live advisor path remains disconnected until independent policy,
 durable one-use admission, credential-ref binding, provider smoke tests,
 consent revocation/restart behavior and installed Windows acceptance are
 verified. No task execution/safety/lease authority is changed.
+
+## M19R3H — Trusted runtime advisor eligibility (source candidate)
+
+TrustedAdvisorRuntimeGate accepts only a task UUID and a previously recorded
+incident digest, **not** caller-supplied project, signal, payload, model,
+filesystem path or price. It obtains the task through the canonical
+MachineOrchestratorService (workspace verified), resolves its registered
+project through the native project binding, reads the protected standing
+advisor policy directly from disk, then checks the authoritative bounded
+durable recovery event projection for an exact still-open, recent incident.
+A matched event is not enough if the task completed, changed binding or is
+awaiting a human approval. The receipt is a small allowlisted reason code.
+
+M19R3B's exact request serializer supplies the estimated cost without
+making any network call. M19R3E's pure standing-policy evaluator controls
+Off, Ask first, automatic advice, expiry and allowlisted incident types.
+M19R3C now exposes a **read-only** locked durable quota/duplicate capacity
+preflight, scoped via the selected project: this is not a grant or
+reservation. Quota/corruption/lock failure is fail-closed. Before labeling an
+incident eligible, the gate rechecks the saved consent revision, task
+identity/status, and that same incident remains open in newly read task
+event history. Operator revocation or incident resolution during evaluation
+therefore prevents a stale eligible result.
+
+The gate still performs **zero** transport calls, credential lookups, task
+execution or permission changes. Neither runtime scheduler nor HTTP/MCP
+operator action is registered to invoke it yet; this is a trusted
+application-layer admission candidate. A future opt-in runner integration
+must atomically reserve a *project-bound*, single-use durable grant after
+another fresh consent/evidence check and before any outbound network I/O;
+no time-of-check authorization must be carried over from a view or
+classification. Retest consent revocation at the send boundary. Installed
+physical Windows validation and M19R6 operator notifications remain gated.

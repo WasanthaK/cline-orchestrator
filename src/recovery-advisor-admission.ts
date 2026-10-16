@@ -204,6 +204,30 @@ export class DurableAdvisorAdmissionLedger {
     }
   }
 
+  /**
+   * Read-only capacity preflight for an already validated incident.
+   * This is a hint only: concurrent reservations can change capacity.
+   * The actual quota/duplicate enforcement is still reserveOnce() under
+   * its exclusive durable transaction; no grant is issued here.
+   */
+  async inspectAdmissionCapacity(
+    incidentId: string, estimatedCents: number,
+  ): Promise<"available" | "already_recorded" | "budget_exceeded"> {
+    if (!digest(incidentId) || !integer(estimatedCents,1,10000))
+      throw new AdvisorAdmissionError("invalid_request");
+    return this.transaction(async (s,at) => {
+      if (s.grants.some(g => g.incidentId === incidentId))
+        return "already_recorded";
+      if (s.grants.length >= 256 || s.reservations.length >= 256)
+        return "budget_exceeded";
+      const recent = s.reservations.filter(r => at - r.atMs < 3_600_000);
+      const total = recent.reduce((sum,r) => sum + r.estimatedCents, 0);
+      if (recent.length >= s.callsLimit || total + estimatedCents > s.centsLimit
+        || estimatedCents > this.config.maxGrantCents) return "budget_exceeded";
+      return "available";
+    });
+  }
+
   /** Only a trusted operator-capability boundary may call this. */
   async issue(
     incidentId: string, maxEstimatedCents: number, ttlMs: number,
