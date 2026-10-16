@@ -1489,3 +1489,18 @@ PR #20 exact-head `25e41e8` passed standard CI #38312464126 and installed Chrome
 **Release discipline:** M19 does not itself authorize an installer to run on the operator's machine, create an OS service, merge/deploy, acquire credentials, or sign/publish a package. M18D service integration and M18F staged release remain separately gated. Run focused local tests during development, then batch review-ready changes into CI rather than triggering hosted workflows for every documentation edit.
 
 **Current technical starting point:** reuse `installer-packaging.ts`, `first-run-assessment.ts`, `first-run-guided-action.ts`, `product-config.ts`, `registration-setup.ts`, `installed-passive-viewer.ts`, and the existing sanitized task/overview projections. The read-only viewer stays read-only until a reviewed authenticated action boundary exists. Do not duplicate task execution or Safety logic in the UI.
+
+
+## M19R — AI-assisted recovery supervisor (parallel to M19E5)
+
+Tracking: [issue #72](https://github.com/WasanthaK/cline-orchestrator/issues/72). Product decision 2026-10-16: Cline context overflow, unanswered questions, repeated attempts and hangs need intelligent, safe intervention. Reuse context-supervisor, handoffs, watchdog, tool-repair, escalation and review rather than adding another runner.
+
+| Slice | Scope | State |
+|---|---|---|
+| M19R1 | Typed observational signals, deterministic fail-closed advice, nonprogress fingerprint proof | Source candidate under review |
+| M19R2 | Instrument trusted event stream, progress fingerprints and incident audit, no raw model output | Pending |
+| M19R3 | Explicit opt-in ChatGPT/OpenAI advisor with redaction, response schema, rate/cost ceilings, offline fallback | Pending |
+| M19R4 | Trusted admission, unchanged Safety/leases/approvals, bounded recovery budget and idempotency | Pending |
+| M19R5 | Recovery Center UX, drilled-down task history, genuine Windows/Cline acceptance | Pending |
+
+The advisor cannot approve or skip required tests, writes or commands, and cannot create new task authority. No unsupported browser-conversation automation is implied. M19E5 installer/real-model pilot continues independently.
