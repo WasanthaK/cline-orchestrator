@@ -71,7 +71,9 @@ try {
   assert.equal(receipt.grantsAuthority, false);
   assert.equal(models, 1);
   assert.equal(completions, 1);
-  assert.doesNotMatch(result.out, /TEST_RESPONSE_DO_NOT_LOG|test-local|127\.0\.0\.1/);
+  // The command name is intentionally "test-local-inference". Reject only
+  // actual private model/endpoint values and upstream completion text.
+  assert.doesNotMatch(result.out, /TEST_RESPONSE_DO_NOT_LOG|127\\.0\\.0\\.1|"modelId"|"baseUrl"|"test-local"/);
   const missing = await command(["test-local-inference",
     "openai-compatible", "not-there", endpoint]);
   assert.equal(missing.exit, 0, missing.error);
