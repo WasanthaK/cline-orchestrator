@@ -29,6 +29,8 @@ Branch: `milestone-13/delegation`
 
 **Acceptance contract and complete role definitions:** [Internal AI Engineering Operating Model](INTERNAL-AI-ENGINEERING-OPERATING-MODEL.md). The existing M19 installer/recovery features support this lifecycle, not vice versa.
 
+**Architect↔Orchestrator interaction and review handshake:** [Research-backed handshake protocol](ARCHITECT-ORCHESTRATOR-HANDSHAKE-PROTOCOL.md). Separates receipt, execution authorization, completion evidence and review decision admission; review inbox/outbox and reconnect semantics must be demonstrated before treating a live reviewer model as an end-to-end solution.
+
 **First integrated operational acceptance:** approved sprint in Git → verified local pull → three bounded Cline assignments → automatic completion evidence → independent reasoning review → deliberately introduced drift corrected → revision-bound Gate A pre-push approval → separately authorized push → real GitHub/CI Gate B review → hold before deployment. No manual report copy/paste. Fail closed on stale authority or uncertain evidence.
 
 **Execution discipline:** documentation and gap audit first, then small outcome-sized sprints (pre-push review loop; post-push delivery/QC; connector and operational resilience as needed). Avoid micro-milestone proliferation, code-feature expansion ahead of integrated acceptance, premature commercial billing and CI-only completion claims.
