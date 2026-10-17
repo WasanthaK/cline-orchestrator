@@ -3,6 +3,7 @@ import { buildOrchestrationDashboard } from "./orchestration-dashboard.js";
 import { buildOperatorVisualization, type OperatorVisualizationV1 } from "./operator-visualization.js";
 import type { TrustedPassiveSnapshotReader } from "./passive-operator-viewer.js";
 import { projectTaskTimeline, unavailableTaskTimeline } from "./operator-task-timeline.js";
+import { unavailableRecoveryEvidence } from "./recovery-task-event-bridge.js";
 
 /**
  * Only read APIs are accepted. In particular, this adapter receives no
@@ -10,11 +11,11 @@ import { projectTaskTimeline, unavailableTaskTimeline } from "./operator-task-ti
  */
 export type TrustedDashboardMachineReader = Pick<
   MachineOrchestratorService, "listProjects" | "listWorkspaces" | "findTasks"
-> & Partial<Pick<MachineOrchestratorService, "getTask" | "getTaskEvents">>;
+> & Partial<Pick<MachineOrchestratorService, "getTask" | "getTaskEvents" | "getTaskRecoveryEvidence">>;
 
 export const MACHINE_DASHBOARD_READER_CONTRACT = Object.freeze({
   schemaVersion: 1 as const,
-  serviceQueries: ["listProjects", "listWorkspaces", "findTasks", "getTask", "getTaskEvents"] as const,
+  serviceQueries: ["listProjects", "listWorkspaces", "findTasks", "getTask", "getTaskEvents", "getTaskRecoveryEvidence"] as const,
   tasksLimit: 100 as const,
   noSyntheticHealthySources: true as const,
   noRawTaskOutput: true as const,
@@ -79,6 +80,19 @@ export function createMachineDashboardSnapshotReader(
       } catch {
         return unavailableTaskTimeline("read_failed");
       }
+    },
+    async readTaskRecoveryEvidence(identity) {
+      if (!machine.getTask || !machine.getTaskRecoveryEvidence) return unavailableRecoveryEvidence("not_connected");
+      try {
+        const task = await machine.getTask(identity.taskId);
+        if (task.taskId !== identity.taskId || task.projectId !== identity.projectId
+          || task.workspaceId !== identity.workspaceId || task.updatedAt !== identity.updatedAt)
+          return unavailableRecoveryEvidence("task_changed");
+        const report = await machine.getTaskRecoveryEvidence(identity.taskId);
+        if (report.availability === "available" && (report.taskId !== task.taskId || report.taskStatus !== task.status))
+          return unavailableRecoveryEvidence("task_changed");
+        return report;
+      } catch { return unavailableRecoveryEvidence("read_failed"); }
     },
     async readSnapshot(): Promise<OperatorVisualizationV1> {
       const results = await Promise.allSettled([

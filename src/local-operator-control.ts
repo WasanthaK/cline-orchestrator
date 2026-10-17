@@ -2,6 +2,9 @@ import crypto from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { MachineGatewayError, type MachineOrchestratorService } from "./machine-orchestrator.js";
 import { OperatorActionError, OperatorActionService } from "./operator-action.js";
+import { AdvisorSettingsStore, AdvisorSettingsError } from "./recovery-advisor-settings.js";
+import { renderAdvisorSettingsForm } from "./recovery-advisor-settings-html.js";
+import type { NativeAdvisorProjectBinding } from "./native-advisor-project-binding.js";
 
 const COOKIE = "orch_operator";
 const SESSION_MS = 15 * 60_000;
@@ -40,7 +43,7 @@ function escapeHtml(value: string): string {
 }
 
 function page(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{font:16px system-ui;max-width:650px;margin:3rem auto;padding:0 1rem;line-height:1.5}form{margin:1rem 0}input,button{font:inherit;padding:.5rem}input[type=text],input[type=password]{width:100%;box-sizing:border-box}button{cursor:pointer}.danger{background:#9b1c1c;color:white;border:0}code{overflow-wrap:anywhere}</style></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{font:16px system-ui;max-width:650px;margin:3rem auto;padding:0 1rem;line-height:1.5}form{margin:1rem 0}input,button{font:inherit;padding:.5rem}input[type=text],input[type=password]{width:100%;box-sizing:border-box}button{cursor:pointer}.option{display:block;padding:.75rem;margin:.5rem 0;border:1px solid #d0d7de;border-radius:10px}fieldset{border:1px solid #d0d7de;border-radius:12px;margin:1.25rem 0;padding:1rem}fieldset label{display:block;margin:.65rem 0}select{font:inherit;padding:.4rem;margin-left:.5rem}input[type=radio],input[type=checkbox]{accent-color:#2563eb;margin-right:.4rem}a{color:#175cd3}.minor{color:#475569;font-size:.9rem}button{background:#175cd3;color:white;border:0;border-radius:8px;padding:.65rem 1rem}.danger{background:#9b1c1c;color:white;border:0}code{overflow-wrap:anywhere}</style></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`;
 }
 
 function respond(res: ServerResponse, status: number, body: string, cookie?: string): void {
@@ -75,6 +78,8 @@ interface Session { csrf: string; expiresAt: number }
 export function startLocalOperatorControlServer(
   service: Pick<MachineOrchestratorService, "getTask" | "rejectEscalation">,
   config: LocalOperatorConfig,
+  /** Optional host-injected, project-bound local settings capability. */
+  advisorSettings?: { store: AdvisorSettingsStore; projectLabel: string } | NativeAdvisorProjectBinding,
 ): Server {
   if (config.host !== "127.0.0.1" || !Number.isInteger(config.port) || config.port < 1 || config.port > 65535 || config.token.length < 32 || config.token.length > 4096 || config.token.trim() !== config.token) {
     throw new Error("Operator control must use a configured loopback address, port and strong token");
@@ -91,7 +96,8 @@ export function startLocalOperatorControlServer(
       }
       const url = new URL(req.url ?? "/", origin);
       const path = url.pathname;
-      if (!["/operator", "/operator/login", "/operator/preview", "/operator/confirm", "/operator/logout"].includes(path)) {
+      if (!["/operator", "/operator/login", "/operator/preview", "/operator/confirm", "/operator/logout",
+        ...(advisorSettings ? ["/operator/advisor-settings", "/operator/advisor-stop", "/operator/advisor-reset"] : [])].includes(path)) {
         respond(res, 404, page("Not found", "<p>Unknown operator page.</p>"));
         return;
       }
@@ -133,8 +139,47 @@ export function startLocalOperatorControlServer(
         respond(res, 401, page("Sign in required", '<p>Session expired.</p><a href="/operator">Sign in</a>'));
         return;
       }
+      if (path === "/operator/advisor-settings" && req.method === "GET" && advisorSettings) {
+        if ("listProjects" in advisorSettings) {
+          const projects = await advisorSettings.listProjects();
+          if (url.searchParams.size > 1 ||
+            (url.searchParams.size === 1 && !url.searchParams.has("project"))) {
+            respond(res, 400, page("Invalid project selection", "<p>Choose a registered project.</p>"));
+            return;
+          }
+          const requested = url.searchParams.get("project");
+          if (!requested && projects.length !== 1) {
+            const options = projects.map(item =>
+              '<option value="' + escapeHtml(item.projectId) + '">'
+              + escapeHtml(item.displayName) + '</option>').join("");
+            respond(res, 200, page("AI recovery help",
+              projects.length === 0 ? "<p>No registered projects yet. Create a project first.</p>"
+              : '<p>Choose the project whose AI recovery preferences you want to edit.</p>'
+                + '<form method="get" action="/operator/advisor-settings">'
+                + '<label>Project <select name="project">' + options + '</select></label>'
+                + '<button type="submit">Open settings</button></form>'));
+            return;
+          }
+          const chosen = requested || projects[0]?.projectId;
+          if (!chosen || !projects.some(item => item.projectId === chosen)) {
+            respond(res, 404, page("Project not found", "<p>Project is not registered.</p>"));
+            return;
+          }
+          const binding = await advisorSettings.resolveProject(chosen);
+          const snapshot = await binding.store.inspect();
+          respond(res, 200, page("AI recovery help",
+            renderAdvisorSettingsForm(snapshot, active.csrf, binding.projectLabel, undefined, chosen,
+              advisorSettings.readCredentialReadiness?.())));
+          return;
+        }
+        const snapshot = await advisorSettings.store.inspect();
+        respond(res, 200, page("AI recovery help",
+          renderAdvisorSettingsForm(snapshot, active.csrf, advisorSettings.projectLabel)));
+        return;
+      }
       if (path === "/operator" && req.method === "GET") {
-        respond(res, 200, page("Operator control", `<p>Reject a pending safety escalation. This closes the task and grants no wider scope.</p><form method="post" action="/operator/preview"><input type="hidden" name="csrf" value="${active.csrf}"><label>Task ID<input type="text" name="task_id" required pattern="[0-9a-fA-F-]{36}"></label><button>Review rejection</button></form><form method="post" action="/operator/logout"><input type="hidden" name="csrf" value="${active.csrf}"><button>Sign out</button></form>`));
+        respond(res, 200, page("Operator control", `<p>Reject a pending safety escalation. This closes the task and grants no wider scope.</p><form method="post" action="/operator/preview"><input type="hidden" name="csrf" value="${active.csrf}"><label>Task ID<input type="text" name="task_id" required pattern="[0-9a-fA-F-]{36}"></label><button>Review rejection</button></form>${advisorSettings
+          ? '<p><a href="/operator/advisor-settings">AI recovery help settings</a></p>' : ''}<form method="post" action="/operator/logout"><input type="hidden" name="csrf" value="${active.csrf}"><button>Sign out</button></form>`));
         return;
       }
       if (req.method !== "POST") {
@@ -144,6 +189,129 @@ export function startLocalOperatorControlServer(
       const data = await form(req);
       if (!equalSecret(data.get("csrf") ?? "", active.csrf)) {
         respond(res, 403, page("Forbidden", "<p>Invalid confirmation session.</p>"));
+        return;
+      }
+      if (path === "/operator/advisor-reset" && advisorSettings && "listProjects" in advisorSettings) {
+        // Explicit authenticated operator intent, and stale-revision guard.
+        // This resets ONLY the Stop latch; it does not re-enable consultations.
+        if([...data.keys()].sort().join("|")!=="csrf|project|revision"
+          || ["csrf","project","revision"].some(key=>data.getAll(key).length!==1)) {
+          respond(res,400,page("Invalid reset request","<p>Choose a registered project.</p>"));
+          return;
+        }
+        const id=data.get("project")??"";
+        try {
+          const projects=await advisorSettings.listProjects();
+          if(!projects.some(project=>project.projectId===id)) {
+            respond(res,404,page("Project not found","<p>Project is not registered.</p>"));
+            return;
+          }
+          const project=await advisorSettings.resolveProject(id);
+          const state=await project.store.resetStop(data.get("revision")??"");
+          if(state.stopLatched || state.mode!=="off") {
+            respond(res,409,page("Reset not completed","<p>AI advisor remains stopped.</p>"));
+            return;
+          }
+          respond(res,200,page("Emergency Stop reset",
+            '<p role="status">Stop was reset. AI recovery help remains Off.</p>'
+            + '<p>Fresh opt-in is required before external advice can be used again. '
+            + 'No consultation was started.</p>'
+            + '<p><a href="/operator/advisor-settings?project='+escapeHtml(id)
+            +'">Review settings</a></p>'));
+        }catch(error) {
+          const status=error instanceof AdvisorSettingsError
+            ? error.code==="invalid"?400:error.code==="busy"||error.code==="stale"?409:503
+            : 503;
+          respond(res,status,page("Reset not completed",
+            '<p>Stop has not been confirmed clear. If a consultation is still active, '
+            + 'finish cancellation first. <a href="/operator/advisor-settings">Review settings</a>.</p>'));
+        }
+        return;
+      }
+      if (path === "/operator/advisor-stop" && advisorSettings && "listProjects" in advisorSettings) {
+        // Emergency stop is independent of the normal long-lived policy lease.
+        // Only the authenticated, same-origin, CSRF-checked operator can latch it.
+        if ([...data.keys()].sort().join("|") !== "csrf|project"
+          || data.getAll("project").length !== 1 || data.getAll("csrf").length !== 1) {
+          respond(res, 400, page("Invalid stop request", "<p>Choose a registered project.</p>"));
+          return;
+        }
+        const projectId = data.get("project") ?? "";
+        try {
+          const projects = await advisorSettings.listProjects();
+          if (!projects.some(project => project.projectId === projectId)) {
+            respond(res, 404, page("Project not found", "<p>Project is not registered.</p>"));
+            return;
+          }
+          const project = await advisorSettings.resolveProject(projectId);
+          await project.store.stopNow();
+          respond(res, 200, page("AI advisor stopped",
+            '<p role="status">AI advisor stopped for this project. New consultations are blocked.</p>'
+            + '<p>Cancellation of in-flight requests was requested. Data already transmitted to an '
+            + 'external provider cannot be recalled. Re-enable requires a separate trusted reset.</p>'
+            + '<p><a href="/operator/advisor-settings?project=' + escapeHtml(projectId)
+            + '">Review settings</a></p>'));
+        } catch {
+          respond(res, 503, page("Stop status unverified",
+            "<p>Could not verify durable Stop state. External advisor state must be treated as unavailable.</p>"));
+        }
+        return;
+      }
+      if (path === "/operator/advisor-settings" && advisorSettings) {
+        // This is operator settings only; no task action, advisor API call or
+        // durable recovery grant is created by saving the preferences.
+        const allowed = new Set(["csrf","revision","mode","cents","days","acknowledge",
+          ...("listProjects" in advisorSettings ? ["project"] : [])]);
+        if ([...data.keys()].some(key => !allowed.has(key))
+          || [...data.keys()].some(key => data.getAll(key).length !== 1)) {
+          respond(res, 400, page("Settings not saved", "<p>Invalid form data.</p>"));
+          return;
+        }
+        const mode = data.get("mode");
+        const cents = Number(data.get("cents"));
+        const days = Number(data.get("days"));
+        const ack = data.get("acknowledge");
+        if ((ack !== null && ack !== "yes") || !["off","ask_before_consulting","automatic_advice"].includes(mode ?? "")
+          || ![10,50,100,500].includes(cents) || ![7,30].includes(days)) {
+          respond(res, 400, page("Settings not saved", "<p>Invalid settings choices.</p>"));
+          return;
+        }
+        try {
+          let binding: { store: AdvisorSettingsStore; projectLabel: string };
+          let boundProject: string | undefined;
+          if ("listProjects" in advisorSettings) {
+            const selected = data.get("project") ?? "";
+            const projects = await advisorSettings.listProjects();
+            if (!projects.some(project => project.projectId === selected)) {
+              respond(res, 404, page("Project not found", "<p>Project is not registered.</p>"));
+              return;
+            }
+            binding = await advisorSettings.resolveProject(selected);
+            boundProject = selected;
+          } else {
+            binding = advisorSettings;
+          }
+          const updated = await binding.store.save({
+            expectedRevision: data.get("revision") ?? "",
+            mode: mode as "off" | "ask_before_consulting" | "automatic_advice",
+            maxEstimatedCentsPerIncident: cents,
+            durationDays: days as 7 | 30,
+            acknowledgedExternalMetadata: ack === "yes",
+          });
+          respond(res, 200, page("AI recovery help",
+            renderAdvisorSettingsForm(updated, active.csrf, binding.projectLabel, "saved", boundProject,
+              "listProjects" in advisorSettings ? advisorSettings.readCredentialReadiness?.() : undefined)));
+        } catch (error) {
+          const status = error instanceof AdvisorSettingsError && error.code === "invalid" ? 400 : 409;
+          const busy = error instanceof AdvisorSettingsError && error.code === "busy";
+          respond(res, status, page("Settings not saved",
+            (busy
+              ? '<p role="alert">A consultation may be in progress for this project. '
+                + 'Your preference has not changed. A request already sent to the advisor cannot be recalled. '
+                + 'Review the current state before trying again.</p>'
+              : '<p>No settings were changed.</p>')
+            + '<p><a href="/operator/advisor-settings">Review current settings</a>.</p>'));
+        }
         return;
       }
       if (path === "/operator/logout") {

@@ -8,6 +8,8 @@ import {
   startMachineMcpHttpServer,
 } from "./mcp-gateway.js";
 import { localOperatorConfigFromEnvironment, startLocalOperatorControlServer } from "./local-operator-control.js";
+import { createNativeAdvisorProjectBinding } from "./native-advisor-project-binding.js";
+import { installedAdvisorCredentialSource } from "./native-advisor-credential.js";
 import { SafetyPlanService } from "./safety-plan.js";
 import type { ReasoningEffort, WorkerConfig } from "./types.js";
 import { WorkspaceRegistry } from "./workspace-registry.js";
@@ -138,7 +140,11 @@ async function main(): Promise<void> {
   }
   const recovery = await service.recoverInterruptedTasks();
   const server = startMachineMcpHttpServer(service, config);
-  const operatorServer = operatorConfig ? startLocalOperatorControlServer(service, operatorConfig) : undefined;
+  // Trusted registry is the only source of selectable project IDs and labels.
+  // A preference save never enables external advisor transport.
+  const operatorServer = operatorConfig ? startLocalOperatorControlServer(
+    service, operatorConfig, createNativeAdvisorProjectBinding(registry, installedAdvisorCredentialSource()),
+  ) : undefined;
 
   if (recovery.scanned > 0) {
     process.stderr.write(

@@ -25,6 +25,16 @@ Branch: `milestone-13/delegation`
 
 ## End goal
 
+**Internal engineering objective (reaffirmed 2026-10-17):** eliminate continuous human copy/paste and routine coordination between a configurable architect/reviewer thinking platform and Cline coding workers. Git-versioned canonical/sprint plans drive bounded tasks. Cline alone develops; completion reports are checked against independent Git/test/security evidence, reviewed for objective drift and corrected in a bounded loop. A separate post-push GitHub/CI gate precedes any independently authorized merge or deployment. All agents may escalate meaningful exceptions; human owns material scope, architecture, new permissions and release decisions. Use the already-built durable runtime, recovery, CR1–CR3, M14, M15 and M16 capabilities rather than reinventing them. The current default is ChatGPT + Cline + GitHub, but roles are provider-independent. Prioritize **internal engineering productivity**, not public commercialization.
+
+**Acceptance contract and complete role definitions:** [Internal AI Engineering Operating Model](INTERNAL-AI-ENGINEERING-OPERATING-MODEL.md). The existing M19 installer/recovery features support this lifecycle, not vice versa.
+
+**Architect↔Orchestrator interaction and review handshake:** [Research-backed handshake protocol](ARCHITECT-ORCHESTRATOR-HANDSHAKE-PROTOCOL.md). Separates receipt, execution authorization, completion evidence and review decision admission; review inbox/outbox and reconnect semantics must be demonstrated before treating a live reviewer model as an end-to-end solution.
+
+**First integrated operational acceptance:** approved sprint in Git → verified local pull → three bounded Cline assignments → automatic completion evidence → independent reasoning review → deliberately introduced drift corrected → revision-bound Gate A pre-push approval → separately authorized push → real GitHub/CI Gate B review → hold before deployment. No manual report copy/paste. Fail closed on stale authority or uncertain evidence.
+
+**Execution discipline:** documentation and gap audit first, then small outcome-sized sprints (pre-push review loop; post-push delivery/QC; connector and operational resilience as needed). Avoid micro-milestone proliferation, code-feature expansion ahead of integrated acceptance, premature commercial billing and CI-only completion claims.
+
 ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline workers → registered workspaces → validation / Git safety / evidence, with durable memory, context rotation, safe concurrency, human control, multi-machine coordination and explicit release authority.
 
 ---
@@ -1489,3 +1499,30 @@ PR #20 exact-head `25e41e8` passed standard CI #38312464126 and installed Chrome
 **Release discipline:** M19 does not itself authorize an installer to run on the operator's machine, create an OS service, merge/deploy, acquire credentials, or sign/publish a package. M18D service integration and M18F staged release remain separately gated. Run focused local tests during development, then batch review-ready changes into CI rather than triggering hosted workflows for every documentation edit.
 
 **Current technical starting point:** reuse `installer-packaging.ts`, `first-run-assessment.ts`, `first-run-guided-action.ts`, `product-config.ts`, `registration-setup.ts`, `installed-passive-viewer.ts`, and the existing sanitized task/overview projections. The read-only viewer stays read-only until a reviewed authenticated action boundary exists. Do not duplicate task execution or Safety logic in the UI.
+
+
+## M19R — AI-assisted recovery supervisor (parallel to M19E5)
+
+Tracking: [issue #72](https://github.com/WasanthaK/cline-orchestrator/issues/72). Product decision 2026-10-16: Cline context overflow, unanswered questions, repeated attempts and hangs need intelligent, safe intervention. Reuse context-supervisor, handoffs, watchdog, tool-repair, escalation and review rather than adding another runner.
+
+| Slice | Scope | State |
+|---|---|---|
+| M19R1 | Typed observational signals, deterministic fail-closed advice, nonprogress fingerprint proof | Source candidate under review |
+| M19R2A | Read-only optional backend probes (`llama.cpp`, Ollama, vLLM, generic OpenAI-compatible) and typed Cline/backend progress correlation | Source candidate; not yet wired to runner or viewer |
+| M19R2B | Read-only trusted TaskStore event projection, bounded incident deduplication, independent validation proof, no raw messages | Source candidate; no tool-level event capture or active alerts |
+| M19R2C | Live Cline SDK tool lifecycle + optional inference correlation, process-local and read-only | Source candidate; no background polling or durable tool history |
+| M19R2D | Durable sanitized tool milestones and read-only task Recovery Center | Source candidate; CI pending |
+| M19R2 | Instrument trusted event stream, progress fingerprints and incident audit, no raw model output | Pending |
+| M19R3E | Low-friction standing-consent classification: once-per-project opt-in, metadata-only, bounded budgets and exception review; no per-incident confirmation phrase | Source candidate, not connected to runtime |
+| M19R3F | Authenticated local operator AI guidance Settings screen, project-bound durable Off/Automatic/Ask First preferences, no runtime call activation | Source candidate; CI pending |
+| M19R3G | Native MCP operator-host project selector and per-project advisor settings binding, no external calls | Source candidate, CI pending |
+| M19R3H | Trusted runtime advisor eligibility: current project consent, durable incident provenance and quota preflight; no network, grants or execution | Source candidate; full CI pending |
+| M19R3I | Scoped consultation coordinator: current consent lease, durable grant, budget and final incident check before external send | Source candidate, CI pending |
+| M19R3J | Native credential reference readiness, operator connection status, truthful in-flight Off response; real-provider smoke pending | Source candidate; CI pending |
+| M19R3K | Durable emergency Stop independent of settings lock, per-project HTTP cancellation signal and authenticated one-click UI | Source candidate; CI pending |
+| M19R3L | Authenticated deliberate Stop reset to Off, reset/Stop transition serialization and focused Windows packed-module acceptance | Source candidate; CI pending |
+| M19R3 | Explicit opt-in ChatGPT/OpenAI advisor with redaction, response schema, rate/cost ceilings, offline fallback | Pending |
+| M19R4 | Trusted admission, unchanged Safety/leases/approvals, bounded recovery budget and idempotency | Pending |
+| M19R5 | Recovery Center UX, drilled-down task history, genuine Windows/Cline acceptance | Pending |
+
+The advisor cannot approve or skip required tests, writes or commands, and cannot create new task authority. No unsupported browser-conversation automation is implied. M19E5 installer/real-model pilot continues independently.

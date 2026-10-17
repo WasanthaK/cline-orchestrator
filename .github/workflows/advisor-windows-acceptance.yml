@@ -1,0 +1,51 @@
+name: Advisor reset Windows acceptance
+
+on:
+  pull_request:
+    paths:
+      - "src/recovery-advisor-stop.ts"
+      - "src/recovery-advisor-settings.ts"
+      - "src/recovery-advisor-rearm.test.ts"
+      - "src/recovery-advisor-stop.test.ts"
+      - "src/recovery-advisor-settings-html.ts"
+      - "src/local-operator-control.ts"
+      - "scripts/verify-windows-advisor-rearm.mjs"
+      - ".github/workflows/advisor-windows-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packed-windows-advisor-stop-reset:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pinned dependencies
+        run: npm ci --ignore-scripts
+      - name: Verify exact-head Windows source-level stop/reset and operator CSRF
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & npx --no-install tsx --test src/recovery-advisor-rearm.test.ts src/recovery-advisor-stop.test.ts
+          if ($LASTEXITCODE -ne 0) { throw 'Windows advisor stop/reset acceptance failed' }
+      - name: Build and pack this exact candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate build failed' }
+          $tarball = (& npm pack --ignore-scripts --pack-destination $env:RUNNER_TEMP | Select-Object -Last 1).Trim()
+          if ($LASTEXITCODE -ne 0 -or !$tarball) { throw 'Cannot pack candidate' }
+          $target = Join-Path $env:RUNNER_TEMP 'advisor-runtime-candidate'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          & tar -xzf (Join-Path $env:RUNNER_TEMP $tarball) -C $target
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot extract candidate' }
+          & node scripts/verify-windows-advisor-rearm.mjs (Join-Path $target 'package')
+          if ($LASTEXITCODE -ne 0) { throw 'Packed Windows module acceptance failed' }
+      - name: Verify package allowlist
+        run: npm run verify:package

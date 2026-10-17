@@ -23,6 +23,8 @@ import type {
   WorkerConfig,
 } from "./types.js";
 import { TaskStore } from "./state.js";
+import { LiveClineRecoveryObserver, type LiveRecoveryCorrelationV1 } from "./recovery-live-cline-observer.js";
+import type { InferenceSnapshotV1 } from "./recovery-inference-monitor.js";
 
 const READ_TOOLS = new Set(["read_files", "search_codebase", "fetch_web_content"]);
 const COMMAND_TOOLS = new Set(["run_commands", "execute_command"]);
@@ -84,6 +86,41 @@ export class ClineRunner {
   private readonly contextSupervisor: ContextSupervisor;
   private readonly runtimeMode: ClineRuntimeMode;
   private readonly runtimeFactory: ClineRuntimeFactory;
+  private readonly recoveryObserver = new LiveClineRecoveryObserver();
+  private progressJournalTail: Promise<void> = Promise.resolve();
+  private lastJournalMilestone = 0;
+  private progressJournalFailed = false;
+
+  /**
+   * Record bounded typed activity only. A paired SDK tool lifecycle does not
+   * prove command success, a code change or independent validation.
+   */
+  private queueToolProgressMilestone(): void {
+    const task = this.activeTask;
+    const sample = this.recoveryObserver.snapshot(Date.now());
+    const completed = sample?.pairedToolCompletions ?? 0;
+    if (!task || sample?.state !== "running" || !Number.isSafeInteger(completed)
+      || completed < 1 || completed > 1_000_000 || this.progressJournalFailed
+      || completed <= this.lastJournalMilestone) return;
+    // Powers of two bound the number of stored milestones to 20 per run.
+    if ((completed & (completed - 1)) !== 0) return;
+    this.lastJournalMilestone = completed;
+    const taskId = task.id;
+    this.progressJournalTail = this.progressJournalTail.then(async () => {
+      await this.store.appendEvent(taskId, "recovery_tool_progress", {
+        status: "running", data: { pairedToolCompletions: completed },
+      });
+    }).catch(() => { this.progressJournalFailed = true; });
+  }
+
+  private async flushToolProgressJournal(): Promise<void> {
+    await this.progressJournalTail;
+  }
+
+  /** Sanitized in-process observation; no backend probe starts here. */
+  getRecoveryCorrelation(backend?: InferenceSnapshotV1): LiveRecoveryCorrelationV1 | undefined {
+    return this.recoveryObserver.correlation(Date.now(), backend);
+  }
   private lastActivityAt = Date.now();
   private streamedText = "";
   private cline: ClineRuntime | undefined;
@@ -160,6 +197,9 @@ export class ClineRunner {
     this.contextRotationsUsedThisRun = 0;
     this.contextRotationLimitNotified = false;
     this.runStartedAtMs = Date.now();
+    this.recoveryObserver.begin(this.runStartedAtMs);
+    this.lastJournalMilestone = 0;
+    this.progressJournalFailed = false;
     this.currentRunMetrics = {
       startedAt: new Date(this.runStartedAtMs).toISOString(),
       iterations: 0,
@@ -204,6 +244,8 @@ export class ClineRunner {
 
     cline.subscribe((event: any) => {
       this.lastActivityAt = Date.now();
+      this.recoveryObserver.recordRuntimeEvent(event, this.lastActivityAt);
+      this.queueToolProgressMilestone();
 
       if (event?.type === "chunk") {
         if (event?.payload?.type === "text" && event?.payload?.text) {
@@ -699,6 +741,7 @@ export class ClineRunner {
       triggered = true;
       void (async () => {
         await this.recordStall(task, silenceMs);
+        this.recoveryObserver.recordVerifiedWatchdogStall(Date.now());
         try {
           await cline.abort(sessionId, new Error(`orchestrator watchdog stall after ${silenceMs}ms`));
         } catch (abortError) {
@@ -854,6 +897,7 @@ export class ClineRunner {
       escalated.finishReason = "human_escalation";
       this.finishRunMetrics(escalated);
       await this.store.save(escalated);
+      this.recoveryObserver.finish("waiting_for_human", Date.now());
       return escalated;
     }
 
@@ -868,6 +912,7 @@ export class ClineRunner {
       task.error = undefined;
       this.finishRunMetrics(task);
       await this.store.save(task);
+      this.recoveryObserver.finish("unknown", Date.now());
       return task;
     }
 
@@ -882,6 +927,7 @@ export class ClineRunner {
 
     process.stdout.write(`\n[cline result: ${task.finishReason ?? "unknown"}]\n`);
     await this.store.save(task);
+    this.recoveryObserver.finish(task.status === "completed" ? "completed" : "unknown", Date.now());
     return task;
   }
 
@@ -892,6 +938,7 @@ export class ClineRunner {
     escalated.error = undefined;
     this.finishRunMetrics(escalated);
     await this.store.save(escalated);
+    this.recoveryObserver.finish("waiting_for_human", Date.now());
     return escalated;
   }
 
@@ -952,7 +999,11 @@ export class ClineRunner {
         throw error;
       }
     } finally {
+      await this.flushToolProgressJournal();
       if (this.activeTask?.id === task.id) this.activeTask = undefined;
+      if (this.recoveryObserver.snapshot(Date.now())?.state === "running") {
+        this.recoveryObserver.finish("unknown", Date.now());
+      }
       this.abortRequestedTaskIds.delete(task.id);
     }
   }
@@ -1017,7 +1068,11 @@ export class ClineRunner {
         throw error;
       }
     } finally {
+      await this.flushToolProgressJournal();
       if (this.activeTask?.id === task.id) this.activeTask = undefined;
+      if (this.recoveryObserver.snapshot(Date.now())?.state === "running") {
+        this.recoveryObserver.finish("unknown", Date.now());
+      }
       this.abortRequestedTaskIds.delete(task.id);
     }
   }
