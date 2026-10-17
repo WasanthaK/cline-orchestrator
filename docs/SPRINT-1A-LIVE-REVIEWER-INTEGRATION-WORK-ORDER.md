@@ -7,6 +7,10 @@
 **Reference:** Existing CR3 real Cline review/correction proof and M18E installed Windows/llama.cpp task proof. **Do not rerun them as standalone product milestones.**  
 **Coding worker:** Cline only, through the existing Orchestrator authorization path.
 
+## Implementation order correction — research finding 2026-10-17
+
+**Before the live model adapter**, follow [Architect ↔ Orchestrator Handshake Protocol](ARCHITECT-ORCHESTRATOR-HANDSHAKE-PROTOCOL.md). First inspect/reuse the current durable TaskStore, CR1 packet, M14 review decision journal and MCP read-only tools; establish H3 completion→immutable review-request inbox and H4 typed review response ACK and replay semantics. The existing CR3 physical dispatch/correction proofs already count. A model transport is *one consumer* of the review inbox and must not be the source of task truth. The first code task is now the smallest missing completion/review handshake seam, not re-implementing task start or building a new harness. Treat this document's model-adapter steps as the next bounded part of Sprint 1A after handshake acceptance.
+
 ## Outcome
 
 A completed, previously authorized Cline task automatically produces its existing independent completion packet and passes it to a **configured, approved real reasoning model** using `SupervisorReviewerModel`. Its typed `pass | repair | escalate` recommendation is validated through existing trusted review admission, revision checks and durable M14 step-controller workflow. Routine in-scope repairs return automatically to Cline. Material exceptions wait for a human. No operator copies a report or prompt between agents.
