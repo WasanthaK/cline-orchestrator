@@ -22,17 +22,23 @@
 | ChatGPT Project handoff | Existing MCP capability and local operator control | Useful transport/authority primitives | Interactive custom client session cannot be assumed programmable or proactively resumable; first validate **one** supported read-only packet retrieval, separately provision automated reviewer model API |
 | Product UX | M19A/B merged; M19C/D candidates | Launcher and viewer candidate exists | Actual Windows acceptance of the objective-driven journey; do not prioritize cosmetic dashboard work |
 
+## Previously verified physical acceptance — avoid repeating it
+
+The canonical master plan records **CR3 Windows physical acceptance twice** for real Cline completion → deterministic reviewer-requested repair → second completion. CR1 completion packets (CI #822), CR2 review/correction handoff (CI #829), and CR3 (CI #840) also have their own evidence. The **M18E installed Windows/llama.cpp pilot** completed a bounded Cline task with independent passing validation/diff-safety; its first run had a foreground Node exit concern, while a later installed candidate `59eea2e8` completed a bounded managed task and exited with code 0. These are existing proofs of Orchestrator-initiated Cline work and bounded correction. **Do not repeat an isolated Cline-dispatch proof as the first Sprint 1A task.**
+
+**What they do not prove:** an approved Git sprint SHA automatically feeding successive work orders; a **real** independent reasoning-model review rather than CR3's `deterministic_local_proof`; automated end-to-end objective drift checks / QC handoff across multiple tasks; a real post-push GitHub/CI Gate B; exception delivery. Those constitute the next integration/acceptance work, with specific edge-case regression tests only where integration changes the contract.
+
 ## Critical finding
 
 **This is primarily a composition and acceptance gap, not a missing collection of new engines.** CR1, CR2, CR3, M14 and M15 cover many mechanics. CR3's reviewer is `deterministic_local_proof`, so **claiming that a real independent thinking model is already running would be misleading**. The M14 loop contract explicitly has `startsCline:false` and `performsGitDelivery:false`; coordination with separately authorized runtime and delivery boundaries must be composed and tested. The GitHub delivery proposal also explicitly asserts `pushAuthorized:false`.
 
 ## First implementation slice (one meaningful outcome)
 
-**Sprint 1A — Operational pre-push loop:**
+**Sprint 1A — Close only the unproven plan/review automation gaps (reuse proven live Cline/CR3 paths):**
 
 Approved canonical and sprint plan identity → registered disposable workspace → bounded Cline task → actual completion packet → opted-in reviewer/model or interactive supported review client → typed approve/correct/evidence/escalate → authorized Cline correction → refreshed evidence and exact revision-bound Gate A result.
 
-Do not build a new task engine, generic planner database, new worker type, or dashboard. Reuse existing code. Start by writing one **failing integration test** for this complete contract, making the minimum connections to pass it, then run focused local tests and one batched CI.
+Do not build a new task engine, generic planner database, new worker type, or dashboard. Reuse existing code. Start with contract-level regression tests around approved Git plan revision binding, live reviewer adapter/triggers, stale-evidence rejection and automatic multi-task progression. Reuse recorded CR3 and M18E physical proofs. Then demonstrate the **new complete loop** once, rather than re-proving standalone task start; run focused local tests before batched CI.
 
 ### Acceptance failures that must be exercised
 
