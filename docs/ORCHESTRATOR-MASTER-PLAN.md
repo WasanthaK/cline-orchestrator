@@ -25,6 +25,14 @@ Branch: `milestone-13/delegation`
 
 ## End goal
 
+**Internal engineering objective (reaffirmed 2026-10-17):** eliminate continuous human copy/paste and routine coordination between a configurable architect/reviewer thinking platform and Cline coding workers. Git-versioned canonical/sprint plans drive bounded tasks. Cline alone develops; completion reports are checked against independent Git/test/security evidence, reviewed for objective drift and corrected in a bounded loop. A separate post-push GitHub/CI gate precedes any independently authorized merge or deployment. All agents may escalate meaningful exceptions; human owns material scope, architecture, new permissions and release decisions. Use the already-built durable runtime, recovery, CR1–CR3, M14, M15 and M16 capabilities rather than reinventing them. The current default is ChatGPT + Cline + GitHub, but roles are provider-independent. Prioritize **internal engineering productivity**, not public commercialization.
+
+**Acceptance contract and complete role definitions:** [Internal AI Engineering Operating Model](INTERNAL-AI-ENGINEERING-OPERATING-MODEL.md). The existing M19 installer/recovery features support this lifecycle, not vice versa.
+
+**First integrated operational acceptance:** approved sprint in Git → verified local pull → three bounded Cline assignments → automatic completion evidence → independent reasoning review → deliberately introduced drift corrected → revision-bound Gate A pre-push approval → separately authorized push → real GitHub/CI Gate B review → hold before deployment. No manual report copy/paste. Fail closed on stale authority or uncertain evidence.
+
+**Execution discipline:** documentation and gap audit first, then small outcome-sized sprints (pre-push review loop; post-push delivery/QC; connector and operational resilience as needed). Avoid micro-milestone proliferation, code-feature expansion ahead of integrated acceptance, premature commercial billing and CI-only completion claims.
+
 ChatGPT → Planner / Architect / Reviewer → Orchestrator → bounded Cline workers → registered workspaces → validation / Git safety / evidence, with durable memory, context rotation, safe concurrency, human control, multi-machine coordination and explicit release authority.
 
 ---
