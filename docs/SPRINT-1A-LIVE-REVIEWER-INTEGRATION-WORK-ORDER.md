@@ -7,6 +7,22 @@
 **Reference:** Existing CR3 real Cline review/correction proof and M18E installed Windows/llama.cpp task proof. **Do not rerun them as standalone product milestones.**  
 **Coding worker:** Cline only, through the existing Orchestrator authorization path.
 
+## Delivery directive — Wire the complete loop first (2026-10-17)
+
+**This supersedes the prior proposal to deliver or test the inbox, model adapter, completion trigger and correction loop as standalone partial slices.** We have already accepted CR1–CR3, M14, real Cline physical execution and the durable engineering framework. Their separate verification is not the milestone.
+
+**Implement ONE integrated vertical feature** using the existing services:
+1. A human-approved, version-identified sprint/work order is initiated via Orchestrator's **existing authorized** start path. This is a prerequisite/input, not a new launcher.
+2. When the actual durable task reaches terminal status and its independently validated completion packet is settled, Orchestrator **automatically** publishes a deduplicated durable review request and invokes a configured reviewer adapter. A missed SDK event or restart is reconciled from TaskStore, not lost forever. Failure or unavailable reviewer holds safely and raises an exception.
+3. The reviewer receives approved objective/sprint context plus exact packet/run/Git evidence and responds `pass | repair | escalate`. Admit only fresh structured decisions through existing trusted review services, preserving all current authority boundaries.
+4. A permitted `repair` automatically resumes **the same approved Cline work** using CR2/M14 and produces a new completion/packet/review cycle. `pass` produces a verified **pre-push review outcome**, not Git authority. `escalate` records a specific operator question and pauses only affected work.
+5. Show the user one authoritative task/review/status timeline through existing read-only MCP or viewer; no report copy/paste, no invented approval.
+6. One end-to-end acceptance scenario, not multiple infrastructure demonstrations: approved task -> real Cline -> deliberate in-scope error -> reviewer repair -> real Cline correction -> independent validated PASS; separately prove material escalation, duplicate callback, replay after restart and stale evidence rejection.
+
+**Engineering method:** First locate missing *production* call sites (not test-only compositions), then implement minimal glue, then tests covering the entire new path. Deterministic reviewer is acceptable for offline integration regression, but claim real AI review only after an approved model/provider smoke. Do not rebuild task store, queue, runner, planner or transport; do not run new standalone Cline dispatch pilots. No work on DeepSeek Harness, polish, Git push, merge or deploy before this acceptance. Keep code changes Cline-owned and govern them through existing Orchestrator task authority.
+
+**Practical blocker:** This ChatGPT session has GitHub access, but no active tool connection to the user's local Orchestrator. Documenting a work order or committing it to Git **does not dispatch Cline**. One-time authenticated Orchestrator/ChatGPT connection (or an explicitly approved, already-supported bootstrap task on the workstation) is required before we can actually run Cline. Do not misrepresent Git commits as implementation progress.
+
 ## Implementation order correction — research finding 2026-10-17
 
 **Before the live model adapter**, follow [Architect ↔ Orchestrator Handshake Protocol](ARCHITECT-ORCHESTRATOR-HANDSHAKE-PROTOCOL.md). First inspect/reuse the current durable TaskStore, CR1 packet, M14 review decision journal and MCP read-only tools; establish H3 completion→immutable review-request inbox and H4 typed review response ACK and replay semantics. The existing CR3 physical dispatch/correction proofs already count. A model transport is *one consumer* of the review inbox and must not be the source of task truth. The first code task is now the smallest missing completion/review handshake seam, not re-implementing task start or building a new harness. Treat this document's model-adapter steps as the next bounded part of Sprint 1A after handshake acceptance.
